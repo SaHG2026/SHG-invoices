@@ -3,22 +3,29 @@
 import { useEffect } from 'react';
 
 /**
- * A small centred dialog for "this looks odd, is it deliberate?".
+ * "This looks odd — is it deliberate?"
  *
  * Deliberately a popup rather than an inline panel. An inline warning appears
- * somewhere in a form you have already stopped reading — you have hit save,
+ * somewhere in a form you have already stopped reading — you have hit save and
  * your attention has left the fields. A popup takes over, states the one fact,
  * and asks one question.
  *
- * It never blocks. Spec §6 on duplicates: "Never silently block." Every use of
- * this has a way through, and the way through is the first button.
+ * It is styled to be noticed: a filled gold band, the title in the display
+ * face, the facts in a ruled block. Gold rather than brick, because spec §9
+ * reserves brick for overdue and says "never decoratively" — a duplicate is a
+ * question, not an emergency.
+ *
+ * It never blocks. Spec §6: "Never silently block." Every use has a way
+ * through, and the way through is the first button.
  */
 
 export interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  /** One line per thing that looks odd. Usually one. */
+  /** One block per thing that looks odd. Usually one. */
   points: React.ReactNode[];
+  /** The question, asked once, under the facts. */
+  question?: string;
   /** The way through. Named for what it does, per spec §8. */
   confirmLabel: string;
   cancelLabel?: string;
@@ -30,6 +37,7 @@ export function ConfirmDialog({
   open,
   title,
   points,
+  question,
   confirmLabel,
   cancelLabel = 'Go back',
   onConfirm,
@@ -60,36 +68,48 @@ export function ConfirmDialog({
         confusing to hear, and a test caught exactly that collision.
         Keyboard users have Escape, handled above.
       */}
-      <div aria-hidden onClick={onCancel} className="absolute inset-0 bg-ink/50" />
+      <div aria-hidden onClick={onCancel} className="absolute inset-0 bg-ink/60" />
 
-      <div className="relative w-full max-w-[360px] rounded-sm border-l-[3px] border-gold bg-card p-4 shadow-[0_4px_28px_rgba(18,56,75,0.28)]">
-        <h2 className="text-h2 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
-          {title}
-        </h2>
-
-        <ul className="mt-3">
-          {points.map((point, index) => (
-            <li key={index} className="border-t border-hair py-2 text-sm text-ink first:border-t-0">
-              {point}
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="touch flex-1 rounded-sm bg-ink px-3 text-sm text-snow"
+      <div className="row-in relative w-full max-w-[380px] overflow-hidden rounded-sm bg-card shadow-[0_6px_36px_rgba(18,56,75,0.35)]">
+        <div className="bg-gold px-4 py-3">
+          <h2
+            className="text-h2 text-ink"
+            style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}
           >
-            {confirmLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="touch flex-1 rounded-sm border border-hair bg-card px-3 text-sm text-ink"
-          >
-            {cancelLabel}
-          </button>
+            {title}
+          </h2>
+        </div>
+
+        <div className="px-4 py-4">
+          <ul>
+            {points.map((point, index) => (
+              <li
+                key={index}
+                className="border-t border-hair py-3 text-base leading-snug text-ink first:border-t-0 first:pt-0"
+              >
+                {point}
+              </li>
+            ))}
+          </ul>
+
+          {question ? <p className="mt-3 text-base font-medium text-ink">{question}</p> : null}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="touch flex-1 rounded-sm bg-ink px-3 text-base text-snow"
+            >
+              {confirmLabel}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="touch flex-1 rounded-sm border border-hair bg-card px-3 text-base text-ink"
+            >
+              {cancelLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>

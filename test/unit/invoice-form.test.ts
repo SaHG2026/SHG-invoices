@@ -154,12 +154,14 @@ describe('due dates', () => {
   it('highlights the preset matching the current due date', () => {
     expect(activePreset('2026-09-04', today, DUE_PRESETS_DAYS)).toBe(7);
     expect(activePreset('2026-09-11', today, DUE_PRESETS_DAYS)).toBe(14);
-    expect(activePreset('2026-09-27', today, DUE_PRESETS_DAYS)).toBe(30);
+    expect(activePreset('2026-09-18', today, DUE_PRESETS_DAYS)).toBe(21);
     expect(activePreset('2026-09-15', today, DUE_PRESETS_DAYS)).toBeNull();
+    // A 30-day supplier's date matches no button; their terms still apply.
+    expect(activePreset('2026-09-27', today, DUE_PRESETS_DAYS)).toBeNull();
   });
 
   it('keeps the presets and the maths reading from one constant', () => {
-    expect([...DUE_PRESETS_DAYS]).toEqual([7, 14, 30]);
+    expect([...DUE_PRESETS_DAYS]).toEqual([7, 14, 21]);
   });
 });
 

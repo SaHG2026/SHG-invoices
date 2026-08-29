@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: profile, isLoading: false, isError: false }),
+  useProfiles: () => ({ data: [profile] }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -242,6 +243,8 @@ describe('the duplicate warning — spec §6', () => {
     amount_cents: 522_000,
     invoice_number: 'INV-1234',
     due_date: '2026-09-11',
+    invoice_date: '2026-09-11',
+    created_by: profile.id,
   };
 
   function fillWithNumber() {
@@ -259,21 +262,23 @@ describe('the duplicate warning — spec §6', () => {
     save();
 
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('An earlier entry from');
+    expect(dialog).toHaveTextContent('Duplicate entry found for');
     expect(dialog).toHaveTextContent('Bidfood');
-    expect(dialog).toHaveTextContent('$5,220.00');
+    expect(dialog).toHaveTextContent('INV-1234');
     expect(dialog).toHaveTextContent('Fri 11 Sep 2026');
+    expect(dialog).toHaveTextContent('$5,220.00');
     expect(dialog).toHaveTextContent('GMH-260801-07');
+    expect(dialog).toHaveTextContent('Enter it anyway?');
     expect(mocks.createInvoiceMutate).not.toHaveBeenCalled();
   });
 
-  it('never blocks — "Save it anyway" goes through', async () => {
+  it('never blocks — "Enter anyway" goes through', async () => {
     mocks.findDuplicates.mockResolvedValue([existing]);
     open();
     fillWithNumber();
     save();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Save it anyway' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter anyway' }));
 
     await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));
     expect(mocks.createInvoiceMutate.mock.calls[0]![0].payload.invoice_number).toBe('INV-1234');
@@ -314,17 +319,37 @@ describe('the duplicate warning — spec §6', () => {
   });
 });
 
+describe('the due-date shortcuts', () => {
+  it('offers 7, 14 and 21 days', () => {
+    open();
+    for (const days of [7, 14, 21]) {
+      expect(screen.getByRole('button', { name: `Due in ${days} days` })).toBeInTheDocument();
+    }
+  });
+
+  it('sets the due date and marks itself chosen', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Due in 21 days' }));
+
+    expect(screen.getByLabelText('Due')).toHaveValue(due(21));
+    expect(screen.getByRole('button', { name: 'Due in 21 days' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});
+
 describe('everything on one screen', () => {
   it('shows every field without a disclosure to open', () => {
     open();
-    for (const label of ['Supplier', 'Invoice number', 'Amount', 'Invoice date', 'Due date']) {
+    for (const label of ['Supplier', 'Invoice number', 'Amount', 'Date', 'Due']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
   });
 
   it('starts the invoice date on today', () => {
     open();
-    expect(screen.getByLabelText('Invoice date')).toHaveValue(TODAY);
+    expect(screen.getByLabelText('Date')).toHaveValue(TODAY);
   });
 });
 
@@ -361,14 +386,14 @@ describe('a due date already in the past', () => {
     open();
     pickSupplier('Bidfood');
     enterAmount('100');
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: due(-3) } });
+    fireEvent.change(screen.getByLabelText('Due'), { target: { value: due(-3) } });
     save();
 
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('has already passed');
     expect(mocks.createInvoiceMutate).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save it anyway' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enter anyway' }));
     await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));
   });
 
@@ -376,7 +401,7 @@ describe('a due date already in the past', () => {
     open();
     pickSupplier('Bidfood');
     enterAmount('100');
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: TODAY } });
+    fireEvent.change(screen.getByLabelText('Due'), { target: { value: TODAY } });
     save();
 
     await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));

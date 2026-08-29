@@ -7,7 +7,7 @@ import { SupplierField } from './SupplierField';
 import { useToast } from '@/components/ui/Toast';
 import { useBusinesses, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
 import { findDuplicates, useCreateInvoice } from '@/lib/queries/invoices';
-import { useCurrentProfile } from '@/lib/queries/session';
+import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
 import {
   activePreset,
   buildInvoicePayload,
@@ -62,6 +62,7 @@ interface Warning {
 function SheetBody({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const { data: profile } = useCurrentProfile();
+  const { data: allProfiles = [] } = useProfiles();
   const { data: businesses = [] } = useBusinesses();
   const { data: suppliers = [] } = useSuppliers();
   const createInvoice = useCreateInvoice();
@@ -132,8 +133,8 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         key: 'past-due',
         node: (
           <>
-            The due date <strong>{formatDay(parsed.due_date)}</strong> has already passed. It will
-            show as overdue straight away.
+            The due date <strong>{formatDayWithYear(parsed.due_date)}</strong> has already passed.
+            It will show as overdue straight away.
           </>
         ),
       });
@@ -143,13 +144,27 @@ function SheetBody({ onClose }: { onClose: () => void }) {
       try {
         const duplicates = await findDuplicates(parsed.supplier_id, invoiceNumber);
         for (const existing of duplicates.slice(0, 3)) {
+          // Spec §6 asks for the amount and who entered it; the client asked
+          // for the supplier, the number and when it was logged. All five fit,
+          // and each of them is a different way of recognising "oh, that one".
+          const enteredBy = allProfiles.find((person) => person.id === existing.created_by);
           found.push({
             key: existing.id,
             node: (
               <>
-                An earlier entry from <strong>{supplier.name}</strong> for{' '}
-                <strong>{formatCents(existing.amount_cents)}</strong>, due{' '}
-                <strong>{formatDayWithYear(existing.due_date)}</strong> — {existing.internal_ref}.
+                <span className="block">
+                  Duplicate entry found for <strong>{supplier.name}</strong> with invoice number{' '}
+                  <strong>{existing.invoice_number}</strong>, logged{' '}
+                  <strong>{formatDayWithYear(existing.invoice_date)}</strong>.
+                </span>
+                <span className="mt-1 block text-sm text-mute">
+                  <span className="money" style={{ textAlign: 'left' }}>
+                    {formatCents(existing.amount_cents)}
+                  </span>
+                  {' · '}
+                  {existing.internal_ref}
+                  {enteredBy ? ` · entered by ${enteredBy.display_name}` : ''}
+                </span>
               </>
             ),
           });
@@ -318,16 +333,22 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           ) : null}
         </div>
 
-        {/* The two dates, side by side. Invoice date is today unless changed;
-            due date follows the supplier's terms unless changed. */}
-        <div className="mb-3 grid grid-cols-2 gap-3">
+        {/*
+          The two dates, side by side. Invoice date is today unless changed;
+          due date follows the supplier's terms unless changed. The shortcuts
+          sit on the due-date heading line, because that is the one that moves
+          and it keeps the pickers aligned underneath each other.
+        */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label
-              className="mb-1 block text-xs uppercase tracking-widest text-mute"
-              htmlFor="invoice-date"
-            >
-              Invoice date
-            </label>
+            <div className="mb-1 flex h-6 items-center">
+              <label
+                className="text-xs uppercase tracking-widest text-mute"
+                htmlFor="invoice-date"
+              >
+                Date
+              </label>
+            </div>
             <input
               id="invoice-date"
               type="date"
@@ -339,12 +360,35 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <label
-              className="mb-1 block text-xs uppercase tracking-widest text-mute"
-              htmlFor="due-date"
-            >
-              Due date
-            </label>
+            <div className="mb-1 flex h-6 items-center justify-between gap-1">
+              <label className="text-xs uppercase tracking-widest text-mute" htmlFor="due-date">
+                Due
+              </label>
+              <div className="flex gap-1">
+                {DUE_PRESETS_DAYS.map((days) => {
+                  const isChosen = chosenPreset === days;
+                  const isSupplierTerm = supplier?.default_terms_days === days;
+                  return (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => setDueDate(addDays(today, days))}
+                      aria-pressed={isChosen}
+                      aria-label={`Due in ${days} days`}
+                      className={`rounded-sm border px-2 py-0.5 text-xs ${
+                        isChosen
+                          ? 'border-ink bg-ink text-snow'
+                          : isSupplierTerm
+                            ? 'border-slate bg-card text-slate'
+                            : 'border-hair bg-card text-mute'
+                      }`}
+                    >
+                      {days}d
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <input
               id="due-date"
               type="date"
@@ -355,39 +399,14 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             <p className="figure-date mt-1 text-xs text-mute">{formatDay(dueDate)}</p>
           </div>
         </div>
-
-        {/* Shortcuts for the due date, which is the one that usually moves. */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-widest text-mute">Due in</span>
-          {DUE_PRESETS_DAYS.map((days) => {
-            const isChosen = chosenPreset === days;
-            const isSupplierTerm = supplier?.default_terms_days === days;
-            return (
-              <button
-                key={days}
-                type="button"
-                onClick={() => setDueDate(addDays(today, days))}
-                aria-pressed={isChosen}
-                className={`touch rounded-sm border px-4 text-sm ${
-                  isChosen
-                    ? 'border-ink bg-ink text-snow'
-                    : isSupplierTerm
-                      ? 'border-slate bg-card text-slate'
-                      : 'border-hair bg-card text-ink'
-                }`}
-              >
-                {days}d
-              </button>
-            );
-          })}
-        </div>
       </Sheet>
 
       <ConfirmDialog
         open={warnings !== null}
-        title={warnings?.length === 1 ? 'One thing to check' : 'A couple of things to check'}
+        title="Check this first"
         points={(warnings ?? []).map((warning) => warning.node)}
-        confirmLabel="Save it anyway"
+        question="Enter it anyway?"
+        confirmLabel="Enter anyway"
         onConfirm={() => {
           setWarnings(null);
           void save(true);

@@ -24,6 +24,7 @@ import { PIN_LENGTH, PIN_MAX_ATTEMPTS } from './constants';
 
 const STORE_PREFIX = 'shg.pin.';
 const ATTEMPT_PREFIX = 'shg.pin.attempts.';
+const UNLOCK_PREFIX = 'shg.unlocked.';
 const ITERATIONS = 150_000;
 
 interface StoredPin {
@@ -182,19 +183,66 @@ export function clearPin(profileId: string): void {
   remove(ATTEMPT_PREFIX + profileId);
 }
 
-/**
- * Wipe every PIN on this device. Called on explicit sign-out: once the session
- * is gone the PIN unlocks nothing, and leaving it behind would be a stale
- * secret sitting in storage for no reason.
- */
-export function clearAllPins(): void {
+/* -------------------------------------------------------------------------- *
+ * Whether the gate is currently open.
+ *
+ * This lives here, next to the PIN itself, because the two are one idea: the
+ * lock state of this device. It used to live in the gate component while the
+ * PIN lived here, and sign-out only knew about this file — so it cleared the
+ * PIN and left "already unlocked" behind in sessionStorage. Signing back in
+ * then walked straight past the PIN screen.
+ *
+ * Two halves of one fact, owned by two files, is how that happens. Now there
+ * is one owner and one function that clears everything.
+ *
+ * sessionStorage rather than localStorage on purpose: it survives switching
+ * apps and backgrounding, but not closing the app. Spec §7.1 — the PIN on
+ * every open, the password every thirty days.
+ * -------------------------------------------------------------------------- */
+
+export function isUnlocked(profileId: string): boolean {
   try {
-    const keys: string[] = [];
+    return sessionStorage.getItem(UNLOCK_PREFIX + profileId) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markUnlocked(profileId: string): void {
+  try {
+    sessionStorage.setItem(UNLOCK_PREFIX + profileId, '1');
+  } catch {
+    /* the gate reappears next render; harmless */
+  }
+}
+
+/**
+ * Wipe every trace of the device lock — PINs, failed attempts, and the
+ * unlocked flag. Called on explicit sign-out.
+ *
+ * Once the session is gone the PIN unlocks nothing, so leaving it is a stale
+ * secret for no reason. And leaving the unlocked flag is worse than useless:
+ * it lets the next sign-in skip the lock entirely.
+ */
+export function clearAllLockState(): void {
+  try {
+    const local: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith(STORE_PREFIX) || key.startsWith(ATTEMPT_PREFIX))) keys.push(key);
+      if (key && (key.startsWith(STORE_PREFIX) || key.startsWith(ATTEMPT_PREFIX))) local.push(key);
     }
-    for (const key of keys) remove(key);
+    for (const key of local) remove(key);
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const session: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(UNLOCK_PREFIX)) session.push(key);
+    }
+    for (const key of session) sessionStorage.removeItem(key);
   } catch {
     /* ignore */
   }

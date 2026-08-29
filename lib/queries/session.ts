@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/browser';
-import { clearAllPins } from '@/lib/pin';
+import { clearAllLockState } from '@/lib/pin';
 import { qk } from './keys';
 import type { Profile } from '@/lib/types';
 
@@ -66,9 +66,10 @@ export function useSignOut() {
 
   return useMutation({
     mutationFn: async () => {
-      // Wipe the PINs first. Once the session is gone the PIN unlocks nothing,
-      // and a stale secret left in storage serves no purpose.
-      clearAllPins();
+      // Wipe the whole device lock first — PINs, failed attempts, and the
+      // "already unlocked" flag. Missing that last one meant signing back in
+      // walked straight past the PIN screen.
+      clearAllLockState();
       const { error } = await supabase().auth.signOut();
       if (error) throw error;
     },

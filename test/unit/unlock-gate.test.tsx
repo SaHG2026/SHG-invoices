@@ -26,6 +26,9 @@ const pin = vi.hoisted(() => ({
   setPin: vi.fn(async () => {}),
   verifyPin: vi.fn(async () => ({ ok: true, attemptsLeft: 5, lockedOut: false })),
   clearPin: vi.fn(),
+  isUnlocked: vi.fn(() => false),
+  markUnlocked: vi.fn(),
+  clearAllLockState: vi.fn(),
 }));
 
 const session = vi.hoisted(() => ({
@@ -59,6 +62,7 @@ beforeEach(() => {
   pin.hasPin.mockReturnValue(false);
   pin.setPin.mockResolvedValue(undefined);
   pin.verifyPin.mockResolvedValue({ ok: true, attemptsLeft: 5, lockedOut: false });
+  pin.isUnlocked.mockReturnValue(false);
   session.useCurrentProfile.mockReturnValue({
     data: profile,
     isLoading: false,
@@ -163,8 +167,8 @@ describe('unlocking with an existing PIN', () => {
     );
   });
 
-  it('stays locked once unlocked in a previous render only if the session says so', async () => {
-    sessionStorage.setItem(`shg.unlocked.${profile.id}`, '1');
+  it('goes straight through when already unlocked this session', async () => {
+    pin.isUnlocked.mockReturnValue(true);
     renderGate();
 
     // Already unlocked this session: straight through, no pad.

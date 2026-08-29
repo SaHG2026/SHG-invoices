@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PinPad } from './PinPad';
 import { useCurrentProfile, useSignOut } from '@/lib/queries/session';
-import { clearPin, hasPin, pinAvailable, setPin, verifyPin } from '@/lib/pin';
+import {
+  clearPin,
+  hasPin,
+  isUnlocked,
+  markUnlocked,
+  pinAvailable,
+  setPin,
+  verifyPin,
+} from '@/lib/pin';
 import { PIN_LENGTH } from '@/lib/constants';
 import type { Profile } from '@/lib/types';
 
@@ -38,24 +46,6 @@ type Stage =
   | 'locked' // PIN exists, not yet entered this session
   | 'open' // through the gate
   | 'no-pin-support'; // insecure context; see below
-
-const UNLOCK_PREFIX = 'shg.unlocked.';
-
-function readUnlocked(profileId: string): boolean {
-  try {
-    return sessionStorage.getItem(UNLOCK_PREFIX + profileId) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeUnlocked(profileId: string): void {
-  try {
-    sessionStorage.setItem(UNLOCK_PREFIX + profileId, '1');
-  } catch {
-    /* the gate reappears next time; harmless */
-  }
-}
 
 function Field({ children }: { children: React.ReactNode }) {
   return (
@@ -95,7 +85,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
       setStage('no-pin-support');
       return;
     }
-    if (readUnlocked(profile.id)) {
+    if (isUnlocked(profile.id)) {
       setStage('open');
       return;
     }
@@ -105,7 +95,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
   /** The single way through the gate, from every screen below. */
   const open = useCallback(() => {
     if (!profile) return;
-    writeUnlocked(profile.id);
+    markUnlocked(profile.id);
     setStage('open');
   }, [profile]);
 

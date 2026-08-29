@@ -78,6 +78,17 @@
     line-height: var(--text-base--line-height);
     /* Nothing in this app scrolls sideways. */
     overflow-x: hidden;
+
+    /*
+     * Kills the rubber-band overscroll and, with it, pull-to-refresh.
+     *
+     * Two reasons. The bounce exposes the page background behind a full-bleed
+     * dark screen like the unlock pad, which looks broken. And an accidental
+     * pull while scrolling a long pending list would reload the app — which,
+     * mid-way through entering an invoice, means losing it (notes §1.1 is the
+     * same class of problem from a different direction).
+     */
+    overscroll-behavior-y: none;
   }
 
   h1,

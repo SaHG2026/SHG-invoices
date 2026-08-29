@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import TokenSpecimen from '@/app/page';
+import TokenSpecimen from '@/app/(app)/specimen/page';
 import { formatCents } from '@/lib/money';
 import { formatDateTime, formatDay } from '@/lib/date';
 import { makeInvoices } from '../fixtures/invoices';

@@ -332,8 +332,19 @@ The spec says the PIN "unlocks a session, it is not the security boundary". Impl
 - Email + password produces a Supabase session in a cookie set by `@supabase/ssr`. No sign-up route
   exists; the three users are created by hand.
 - Supabase Auth configured to a 30-day inactivity window.
-- The PIN is a **local UI lock**: a per-device salted hash in `localStorage`, with throttling (five wrong
-  attempts falls back to full email and password). It gates the interface, not the data.
+- The PIN is a **local UI lock**: a per-device salted hash in `localStorage` (PBKDF2-SHA256, 150k
+  iterations), with throttling — five wrong attempts deletes the stored PIN and forces a full
+  email-and-password sign-in. Deleting rather than timing out, because a timeout is skipped by
+  clearing site data, and the password is the thing that actually establishes who somebody is.
+- "Unlocked" lives in `sessionStorage`, so it survives switching apps and backgrounding but not
+  closing the app. That is spec §7.1's intent: the PIN on every open, the password every thirty days.
+
+**[decision] No PIN outside a secure context.** `crypto.subtle` exists only on https or localhost, so
+over a plain `http://192.168.x.x` address it is undefined. Rather than fall back to a weaker hash —
+which would still look and feel like a lock, and so be trusted like one — the app skips the PIN
+entirely there and says so in a banner. The session is still real and RLS is still doing the actual
+protecting. The practical consequence is that **testing the PIN on a phone requires the deployed
+https URL**, not the local network address.
 
 **The uncomfortable part, up front:** under this design somebody holding an unlocked phone can reach the
 data without knowing the PIN, because the session cookie is present either way. Making the PIN real

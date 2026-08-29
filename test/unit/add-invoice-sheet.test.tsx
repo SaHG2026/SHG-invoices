@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, SUPPLIERS } from '../fixtures/invoices';
-import { addDays, formatDayWithYear, sydneyToday } from '@/lib/date';
+import { addDays, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import type { Profile } from '@/lib/types';
 
 /**
@@ -60,7 +60,7 @@ const { AddInvoiceSheet } = await import('@/components/invoice/AddInvoiceSheet')
  */
 const TODAY = sydneyToday();
 const due = (days: number) => addDays(TODAY, days);
-const dueLabel = (days: number) => formatDayWithYear(addDays(TODAY, days));
+const dueLabel = (days: number) => formatDay(addDays(TODAY, days));
 
 beforeEach(() => {
   localStorage.clear();
@@ -241,40 +241,56 @@ describe('the duplicate warning — spec §6', () => {
     internal_ref: 'GMH-260801-07',
     amount_cents: 522_000,
     invoice_number: 'INV-1234',
+    due_date: '2026-09-11',
   };
 
   function fillWithNumber() {
     pickSupplier('Bidfood');
     enterAmount('5220');
-    fireEvent.click(screen.getByRole('button', { name: /Invoice number, date/ }));
     fireEvent.change(screen.getByLabelText('Invoice number'), {
       target: { value: 'INV-1234' },
     });
   }
 
-  it('warns, naming the existing invoice, instead of saving', async () => {
+  it('warns in a popup naming the supplier, amount and due date', async () => {
     mocks.findDuplicates.mockResolvedValue([existing]);
     open();
     fillWithNumber();
     save();
 
-    const warning = await screen.findByRole('alert');
-    expect(warning).toHaveTextContent(/already logged/);
-    expect(within(warning).getByText('GMH-260801-07')).toBeInTheDocument();
-    expect(within(warning).getByText('$5,220.00')).toBeInTheDocument();
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('An earlier entry from');
+    expect(dialog).toHaveTextContent('Bidfood');
+    expect(dialog).toHaveTextContent('$5,220.00');
+    expect(dialog).toHaveTextContent('Fri 11 Sep 2026');
+    expect(dialog).toHaveTextContent('GMH-260801-07');
     expect(mocks.createInvoiceMutate).not.toHaveBeenCalled();
   });
 
-  it('never blocks — "Save anyway" goes through', async () => {
+  it('never blocks — "Save it anyway" goes through', async () => {
     mocks.findDuplicates.mockResolvedValue([existing]);
     open();
     fillWithNumber();
     save();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Save anyway' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save it anyway' }));
 
     await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));
     expect(mocks.createInvoiceMutate.mock.calls[0]![0].payload.invoice_number).toBe('INV-1234');
+  });
+
+  it('"Go back" returns to the form with everything still typed', async () => {
+    mocks.findDuplicates.mockResolvedValue([existing]);
+    open();
+    fillWithNumber();
+    save();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Go back' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Invoice number')).toHaveValue('INV-1234');
+    expect(screen.getByLabelText('Amount')).toHaveValue('5220');
+    expect(mocks.createInvoiceMutate).not.toHaveBeenCalled();
   });
 
   it('does not check when no invoice number was entered', async () => {
@@ -298,13 +314,73 @@ describe('the duplicate warning — spec §6', () => {
   });
 });
 
-describe('the optional fields', () => {
-  it('are collapsed until asked for — spec §7.3', () => {
+describe('everything on one screen', () => {
+  it('shows every field without a disclosure to open', () => {
     open();
-    expect(screen.queryByLabelText('Invoice number')).not.toBeInTheDocument();
+    for (const label of ['Supplier', 'Invoice number', 'Amount', 'Invoice date', 'Due date']) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /Invoice number, date/ }));
-    expect(screen.getByLabelText('Invoice number')).toBeInTheDocument();
+  it('starts the invoice date on today', () => {
+    open();
+    expect(screen.getByLabelText('Invoice date')).toHaveValue(TODAY);
+  });
+});
+
+describe('the supplier list is not in the way', () => {
+  it('stays shut until something is typed', () => {
+    open();
+    // Focused and ready, but no menu hanging under the field.
+    expect(screen.queryByRole('button', { name: /Bidfood/ })).not.toBeInTheDocument();
+
+    typeSupplier('bid');
+    expect(screen.getByRole('button', { name: /Bidfood/ })).toBeInTheDocument();
+  });
+
+  it('opens the full list from the chevron, for browsing one-handed', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+
+    // Everything, not just the top five.
+    for (const supplier of SUPPLIERS) {
+      expect(screen.getByRole('button', { name: new RegExp(supplier.name) })).toBeInTheDocument();
+    }
+  });
+
+  it('closes again from the chevron', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide supplier list' }));
+    expect(screen.queryByRole('button', { name: /Bidfood/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('a due date already in the past', () => {
+  it('asks before saving, because it will show as overdue immediately', async () => {
+    open();
+    pickSupplier('Bidfood');
+    enterAmount('100');
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: due(-3) } });
+    save();
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('has already passed');
+    expect(mocks.createInvoiceMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save it anyway' }));
+    await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));
+  });
+
+  it('says nothing when the due date is today or later', async () => {
+    open();
+    pickSupplier('Bidfood');
+    enterAmount('100');
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: TODAY } });
+    save();
+
+    await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });
 

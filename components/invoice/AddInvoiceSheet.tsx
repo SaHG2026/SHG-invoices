@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Sheet } from '@/components/ui/Sheet';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
 import { useToast } from '@/components/ui/Toast';
 import { useBusinesses, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
@@ -15,7 +16,7 @@ import {
   type InvoiceFormValues,
 } from '@/lib/invoice-form';
 import { readLastBusinessId, writeLastBusinessId } from '@/lib/recents';
-import { addDays, formatDayWithYear, sydneyToday } from '@/lib/date';
+import { addDays, compareDates, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { DUE_PRESETS_DAYS } from '@/lib/constants';
 import type { Invoice, Supplier } from '@/lib/types';
@@ -24,14 +25,16 @@ import type { Invoice, Supplier } from '@/lib/types';
  * The screen the whole app is judged on. Spec §1: "Time to log an invoice on a
  * phone, one-handed, from cold app open: under 15 seconds."
  *
- * Four taps and a number for the common case:
- *   business (pre-selected)  ->  supplier (type three letters, tap)
- *   ->  amount  ->  due date (pre-filled from the supplier's terms)  ->  save
+ * Everything is on one screen. There is no disclosure and nothing to scroll
+ * past: business, supplier, invoice number, amount, and the two dates side by
+ * side. The earlier version hid the invoice number and the invoice date behind
+ * a "More" chevron, and hiding a field people fill in most of the time costs
+ * more taps than showing it costs space.
  *
- * Everything optional lives behind the disclosure, which is collapsed. Nothing
- * gets added above that line without something else coming out.
+ * Order matters and is deliberate — supplier, number, amount, dates — because
+ * it is the order the information appears on a docket you are holding.
  *
- * Form state is plain `useState`, set once, and never derived from query data
+ * Form state is plain `useState`, set once, never derived from query data
  * during render (notes §1.1). The Sheet holds the form guard, so no query
  * anywhere refetches on focus while this is open.
  */
@@ -43,6 +46,12 @@ interface AddInvoiceSheetProps {
 
 export function AddInvoiceSheet({ open, onClose }: AddInvoiceSheetProps) {
   return open ? <SheetBody onClose={onClose} /> : null;
+}
+
+/** One thing that looks odd enough to ask about before saving. */
+interface Warning {
+  key: string;
+  node: React.ReactNode;
 }
 
 /**
@@ -64,13 +73,12 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     () => readLastBusinessId() ?? businesses[0]?.id ?? '',
   );
   const [supplier, setSupplier] = useState<Supplier | null>(null);
-  const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(null, today));
-  const [invoiceDate, setInvoiceDate] = useState<string>(today);
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [showMore, setShowMore] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState<string>(today);
+  const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(null, today));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [duplicates, setDuplicates] = useState<Invoice[] | null>(null);
+  const [warnings, setWarnings] = useState<Warning[] | null>(null);
   const [checking, setChecking] = useState(false);
 
   // The business list can arrive after first render; adopt the first one only
@@ -109,7 +117,53 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function save(skipDuplicateCheck = false) {
+  /**
+   * Everything worth stopping for, gathered before saving.
+   *
+   * Both cases are warnings, never blocks. Spec §6 says so for duplicates —
+   * "suppliers restart numbering" — and a due date already past is often
+   * correct too, because invoices arrive late.
+   */
+  async function collectWarnings(parsed: InvoiceFormValues): Promise<Warning[]> {
+    const found: Warning[] = [];
+
+    if (compareDates(parsed.due_date, today) < 0) {
+      found.push({
+        key: 'past-due',
+        node: (
+          <>
+            The due date <strong>{formatDay(parsed.due_date)}</strong> has already passed. It will
+            show as overdue straight away.
+          </>
+        ),
+      });
+    }
+
+    if (invoiceNumber.trim() !== '' && supplier) {
+      try {
+        const duplicates = await findDuplicates(parsed.supplier_id, invoiceNumber);
+        for (const existing of duplicates.slice(0, 3)) {
+          found.push({
+            key: existing.id,
+            node: (
+              <>
+                An earlier entry from <strong>{supplier.name}</strong> for{' '}
+                <strong>{formatCents(existing.amount_cents)}</strong>, due{' '}
+                <strong>{formatDayWithYear(existing.due_date)}</strong> — {existing.internal_ref}.
+              </>
+            ),
+          });
+        }
+      } catch {
+        // A failed duplicate check must not stop a legitimate save. The
+        // warning is a courtesy; losing the invoice is not.
+      }
+    }
+
+    return found;
+  }
+
+  async function save(skipChecks = false) {
     if (!profile) return;
 
     const parsed = invoiceFormSchema.safeParse(values);
@@ -124,22 +178,14 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     }
     setErrors({});
 
-    // Spec §6: a warning, never a block. Checked here rather than on every
-    // keystroke so it costs nothing until the moment it matters.
-    if (!skipDuplicateCheck && invoiceNumber.trim() !== '') {
+    if (!skipChecks) {
       setChecking(true);
-      try {
-        const found = await findDuplicates(parsed.data.supplier_id, invoiceNumber);
-        if (found.length > 0) {
-          setDuplicates(found);
-          setChecking(false);
-          return;
-        }
-      } catch {
-        // A failed duplicate check must not stop a legitimate save. The
-        // warning is a courtesy; losing the invoice is not.
-      }
+      const found = await collectWarnings(parsed.data);
       setChecking(false);
+      if (found.length > 0) {
+        setWarnings(found);
+        return;
+      }
     }
 
     const business = businesses.find((b) => b.id === parsed.data.business_id);
@@ -173,98 +219,146 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   }
 
   const busy = checking || createInvoice.isPending;
+  const fieldClass =
+    'touch w-full rounded-sm border bg-card px-3 text-base text-ink outline-none focus:border-slate';
 
   return (
-    <Sheet
-      open
-      title="New invoice"
-      onClose={onClose}
-      footer={
-        <button
-          type="button"
-          onClick={() => save()}
-          disabled={busy}
-          className="touch w-full rounded-sm bg-gold px-4 text-base font-medium text-ink disabled:opacity-40"
-        >
-          {busy ? 'Saving…' : 'Save invoice'}
-        </button>
-      }
-    >
-      {duplicates ? (
-        <DuplicateWarning
-          duplicates={duplicates}
-          onSaveAnyway={() => {
-            setDuplicates(null);
-            void save(true);
-          }}
-          onCancel={() => setDuplicates(null)}
+    <>
+      <Sheet
+        open
+        title="New invoice"
+        onClose={onClose}
+        footer={
+          <button
+            type="button"
+            onClick={() => save()}
+            disabled={busy}
+            className="touch w-full rounded-sm bg-gold px-4 text-base font-medium text-ink disabled:opacity-40"
+          >
+            {busy ? 'Saving…' : 'Save invoice'}
+          </button>
+        }
+      >
+        {/* Business — last used is pre-selected, so this is usually already right. */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {businesses.map((business) => {
+            const isChosen = business.id === effectiveBusinessId;
+            return (
+              <button
+                key={business.id}
+                type="button"
+                onClick={() => setBusinessId(business.id)}
+                aria-pressed={isChosen}
+                className={`touch rounded-sm border px-4 text-sm ${
+                  isChosen ? 'border-ink bg-ink text-snow' : 'border-hair bg-card text-ink'
+                }`}
+              >
+                {business.code}
+              </button>
+            );
+          })}
+        </div>
+
+        <SupplierField
+          suppliers={suppliers}
+          selected={supplier}
+          onSelect={chooseSupplier}
+          onCreate={onCreateSupplier}
+          creating={createSupplier.isPending}
+          error={errors.supplier_id}
         />
-      ) : null}
 
-      {/* Business — last used is pre-selected, so this is usually already right. */}
-      <div className="mb-5 flex flex-wrap gap-2">
-        {businesses.map((business) => {
-          const isChosen = business.id === effectiveBusinessId;
-          return (
-            <button
-              key={business.id}
-              type="button"
-              onClick={() => setBusinessId(business.id)}
-              aria-pressed={isChosen}
-              className={`touch rounded-sm border px-4 text-sm ${
-                isChosen ? 'border-ink bg-ink text-snow' : 'border-hair bg-card text-ink'
-              }`}
-            >
-              {business.code}
-            </button>
-          );
-        })}
-      </div>
-
-      <SupplierField
-        suppliers={suppliers}
-        selected={supplier}
-        onSelect={chooseSupplier}
-        onCreate={onCreateSupplier}
-        creating={createSupplier.isPending}
-        error={errors.supplier_id}
-      />
-
-      {/* Amount. type="text" with inputMode="decimal" — notes §4: type="number"
-          brings spinners, changes value on scroll, and fights locale separators. */}
-      <div className="mb-5">
-        <label className="mb-1 block text-xs uppercase tracking-widest text-mute" htmlFor="amount">
-          Amount
-        </label>
-        <div
-          className={`flex items-center rounded-sm border bg-card ${errors.amount ? 'border-brick' : 'border-hair'}`}
-        >
-          <span className="money pl-3 text-base text-mute" style={{ textAlign: 'left' }}>
-            $
-          </span>
+        <div className="mb-4">
+          <label
+            className="mb-1 block text-xs uppercase tracking-widest text-mute"
+            htmlFor="invoice-number"
+          >
+            Invoice number
+          </label>
           <input
-            id="amount"
+            id="invoice-number"
             type="text"
-            inputMode="decimal"
             autoComplete="off"
-            placeholder="0.00"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            className="money touch w-full bg-transparent px-2 text-base text-ink outline-none"
-            style={{ textAlign: 'left' }}
+            autoCapitalize="characters"
+            placeholder="Optional"
+            value={invoiceNumber}
+            onChange={(event) => setInvoiceNumber(event.target.value)}
+            className={`${fieldClass} border-hair`}
           />
         </div>
-        {errors.amount ? (
-          <p role="alert" className="mt-1 text-sm text-brick">
-            {errors.amount}
-          </p>
-        ) : null}
-      </div>
 
-      {/* Due date. The supplier's own terms are already applied. */}
-      <div className="mb-5">
-        <span className="mb-1 block text-xs uppercase tracking-widest text-mute">Due</span>
-        <div className="flex flex-wrap gap-2">
+        {/* Amount. type="text" with inputMode="decimal" — notes §4: type="number"
+            brings spinners, changes value on scroll, and fights locale separators. */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs uppercase tracking-widest text-mute" htmlFor="amount">
+            Amount
+          </label>
+          <div
+            className={`flex items-center rounded-sm border bg-card ${errors.amount ? 'border-brick' : 'border-hair'}`}
+          >
+            <span className="money pl-3 text-base text-mute" style={{ textAlign: 'left' }}>
+              $
+            </span>
+            <input
+              id="amount"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="0.00"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              className="money touch w-full bg-transparent px-2 text-base text-ink outline-none"
+              style={{ textAlign: 'left' }}
+            />
+          </div>
+          {errors.amount ? (
+            <p role="alert" className="mt-1 text-sm text-brick">
+              {errors.amount}
+            </p>
+          ) : null}
+        </div>
+
+        {/* The two dates, side by side. Invoice date is today unless changed;
+            due date follows the supplier's terms unless changed. */}
+        <div className="mb-3 grid grid-cols-2 gap-3">
+          <div>
+            <label
+              className="mb-1 block text-xs uppercase tracking-widest text-mute"
+              htmlFor="invoice-date"
+            >
+              Invoice date
+            </label>
+            <input
+              id="invoice-date"
+              type="date"
+              value={invoiceDate}
+              onChange={(event) => setInvoiceDate(event.target.value)}
+              className={`figure-date ${fieldClass} border-hair`}
+            />
+            <p className="figure-date mt-1 text-xs text-mute">{formatDay(invoiceDate)}</p>
+          </div>
+
+          <div>
+            <label
+              className="mb-1 block text-xs uppercase tracking-widest text-mute"
+              htmlFor="due-date"
+            >
+              Due date
+            </label>
+            <input
+              id="due-date"
+              type="date"
+              value={dueDate}
+              onChange={(event) => setDueDate(event.target.value)}
+              className={`figure-date ${fieldClass} ${errors.due_date ? 'border-brick' : 'border-hair'}`}
+            />
+            <p className="figure-date mt-1 text-xs text-mute">{formatDay(dueDate)}</p>
+          </div>
+        </div>
+
+        {/* Shortcuts for the due date, which is the one that usually moves. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-widest text-mute">Due in</span>
           {DUE_PRESETS_DAYS.map((days) => {
             const isChosen = chosenPreset === days;
             const isSupplierTerm = supplier?.default_terms_days === days;
@@ -282,136 +376,24 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                       : 'border-hair bg-card text-ink'
                 }`}
               >
-                +{days}d
+                {days}d
               </button>
             );
           })}
-          <label className="touch flex items-center rounded-sm border border-hair bg-card px-3 text-sm text-ink">
-            <span className="sr-only">Pick a due date</span>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(event) => setDueDate(event.target.value)}
-              className="figure-date bg-transparent text-sm text-ink outline-none"
-            />
-          </label>
         </div>
-        <p className="figure-date mt-2 text-sm text-ink">{formatDayWithYear(dueDate)}</p>
-        {errors.due_date ? (
-          <p role="alert" className="mt-1 text-sm text-brick">
-            {errors.due_date}
-          </p>
-        ) : null}
-      </div>
+      </Sheet>
 
-      {/* Everything optional, collapsed. Spec §7.3. */}
-      <button
-        type="button"
-        onClick={() => setShowMore((current) => !current)}
-        aria-expanded={showMore}
-        className="touch flex w-full items-center text-left text-sm text-slate"
-      >
-        <span className="mr-2">{showMore ? '⌃' : '⌄'}</span>
-        Invoice number, date
-      </button>
-
-      {showMore ? (
-        <div className="mt-3 border-t border-hair pt-4">
-          <div className="mb-4">
-            <label
-              className="mb-1 block text-xs uppercase tracking-widest text-mute"
-              htmlFor="invoice-number"
-            >
-              Invoice number
-            </label>
-            <input
-              id="invoice-number"
-              type="text"
-              autoComplete="off"
-              autoCapitalize="characters"
-              value={invoiceNumber}
-              onChange={(event) => setInvoiceNumber(event.target.value)}
-              className="touch w-full rounded-sm border border-hair bg-card px-3 text-base text-ink outline-none focus:border-slate"
-            />
-          </div>
-
-          <div>
-            <label
-              className="mb-1 block text-xs uppercase tracking-widest text-mute"
-              htmlFor="invoice-date"
-            >
-              Invoice date
-            </label>
-            <input
-              id="invoice-date"
-              type="date"
-              value={invoiceDate}
-              onChange={(event) => setInvoiceDate(event.target.value)}
-              className="figure-date touch w-full rounded-sm border border-hair bg-card px-3 text-base text-ink outline-none focus:border-slate"
-            />
-            <p className="figure-date mt-1 text-sm text-mute">{formatDayWithYear(invoiceDate)}</p>
-          </div>
-        </div>
-      ) : null}
-    </Sheet>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-
-/**
- * Spec §6: "show an inline warning naming the existing invoice, its amount and
- * who entered it. Offer 'Save anyway' and 'Open the existing one'. Never
- * silently block."
- */
-function DuplicateWarning({
-  duplicates,
-  onSaveAnyway,
-  onCancel,
-}: {
-  duplicates: Invoice[];
-  onSaveAnyway: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div role="alert" className="mb-5 border-l-[3px] border-gold bg-snow p-3">
-      <p className="text-sm font-medium text-ink">
-        {duplicates.length === 1
-          ? 'That invoice number is already logged for this supplier.'
-          : `That invoice number is already logged ${duplicates.length} times for this supplier.`}
-      </p>
-
-      <ul className="mt-2">
-        {duplicates.slice(0, 3).map((invoice) => (
-          <li key={invoice.id} className="figure-date py-1 text-sm text-mute">
-            <span className="money mr-2 text-ink" style={{ textAlign: 'left' }}>
-              {formatCents(invoice.amount_cents)}
-            </span>
-            {invoice.internal_ref}
-          </li>
-        ))}
-      </ul>
-
-      <p className="mt-2 text-sm text-mute">
-        Suppliers do restart their numbering, so this may be fine.
-      </p>
-
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={onSaveAnyway}
-          className="touch flex-1 rounded-sm border border-ink bg-ink px-3 text-sm text-snow"
-        >
-          Save anyway
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="touch flex-1 rounded-sm border border-hair bg-card px-3 text-sm text-ink"
-        >
-          Go back
-        </button>
-      </div>
-    </div>
+      <ConfirmDialog
+        open={warnings !== null}
+        title={warnings?.length === 1 ? 'One thing to check' : 'A couple of things to check'}
+        points={(warnings ?? []).map((warning) => warning.node)}
+        confirmLabel="Save it anyway"
+        onConfirm={() => {
+          setWarnings(null);
+          void save(true);
+        }}
+        onCancel={() => setWarnings(null)}
+      />
+    </>
   );
 }

@@ -87,12 +87,14 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 h-full w-full cursor-default bg-ink/40"
-      />
+      {/*
+        The backdrop is a convenience for mouse and thumb, not a control. It is
+        hidden from assistive technology because the explicit close button in the header
+        already does the same job — two elements announcing the same name is
+        confusing to hear, and a test caught exactly that collision.
+        Keyboard users have Escape, handled above.
+      */}
+      <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/40" />
 
       <div
         ref={panelRef}

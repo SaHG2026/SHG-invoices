@@ -13,9 +13,17 @@ import type { Supplier } from '@/lib/types';
  * programmatic keyboard opening outside a user gesture." Focusing later, from
  * an effect that runs after data loads, silently does nothing on a phone.
  *
- * Selecting fills the field with the supplier's name and closes the list.
- * Typing again reopens it, so correcting a mis-tap costs one character rather
- * than a clear-and-restart.
+ * ---------------------------------------------------------------------------
+ * The list does NOT open on focus.
+ *
+ * It used to, and it read as clutter: the sheet opened with a menu already
+ * hanging under the first field, before anyone had expressed any intent. Now
+ * it appears when you type, which is when you have.
+ *
+ * The chevron is the other way in — for when you want to browse rather than
+ * search, one-handed, without typing anything. Two intentions, two gestures,
+ * neither of them the default.
+ * ---------------------------------------------------------------------------
  */
 
 interface SupplierFieldProps {
@@ -36,56 +44,83 @@ export function SupplierField({
   error,
 }: SupplierFieldProps) {
   const [query, setQuery] = useState('');
-  const [listOpen, setListOpen] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Read once per mount: this is a device preference, not live data, and
-  // re-reading on every keystroke would be pointless work.
+  // Read once per mount: a device preference, not live data.
   const recentIds = useMemo(() => readRecentSupplierIds(), []);
 
-  const matches = useMemo(
-    () => rankSuppliers(suppliers, query, { recentIds }),
-    [suppliers, query, recentIds],
-  );
-  const offerCreate = canCreateSupplier(suppliers, query);
+  const listOpen = browsing || (typing && query.trim() !== '');
 
-  const value = listOpen ? query : (selected?.name ?? query);
+  const matches = useMemo(
+    () =>
+      rankSuppliers(suppliers, browsing ? '' : query, {
+        recentIds,
+        // Browsing shows everything, scrollable. Searching shows the best few.
+        limit: browsing ? suppliers.length : 5,
+      }),
+    [suppliers, query, recentIds, browsing],
+  );
+
+  const offerCreate = !browsing && canCreateSupplier(suppliers, query);
 
   function choose(supplier: Supplier) {
     onSelect(supplier);
     setQuery(supplier.name);
-    setListOpen(false);
+    setTyping(false);
+    setBrowsing(false);
     inputRef.current?.blur();
   }
 
+  function close() {
+    setTyping(false);
+    setBrowsing(false);
+  }
+
   return (
-    <div className="mb-5">
+    <div className="mb-4">
       <label className="mb-1 block text-xs uppercase tracking-widest text-mute" htmlFor="supplier">
         Supplier
       </label>
 
-      <input
-        id="supplier"
-        ref={inputRef}
-        type="text"
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="words"
-        spellCheck={false}
-        // The sheet opens from a tap, so this is inside a user gesture and the
-        // keyboard actually appears. See the note above.
-        autoFocus
-        placeholder="Start typing"
-        value={value}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setListOpen(true);
-        }}
-        onFocus={() => setListOpen(true)}
-        className={`touch w-full rounded-sm border bg-card px-3 text-base text-ink outline-none focus:border-slate ${
-          error ? 'border-brick' : 'border-hair'
-        }`}
-      />
+      <div
+        className={`flex items-center rounded-sm border bg-card ${error ? 'border-brick' : 'border-hair'}`}
+      >
+        <input
+          id="supplier"
+          ref={inputRef}
+          type="text"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="words"
+          spellCheck={false}
+          autoFocus
+          placeholder="Start typing"
+          value={typing || browsing ? query : (selected?.name ?? query)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setTyping(true);
+            setBrowsing(false);
+          }}
+          className="touch min-w-0 flex-1 bg-transparent px-3 text-base text-ink outline-none"
+        />
+
+        <button
+          type="button"
+          aria-label={browsing ? 'Hide supplier list' : 'Show all suppliers'}
+          aria-expanded={browsing}
+          onClick={() => {
+            setBrowsing((current) => !current);
+            setTyping(false);
+          }}
+          className="touch flex shrink-0 items-center justify-center px-3 text-mute"
+        >
+          <span aria-hidden className="text-base">
+            {browsing ? '⌃' : '⌄'}
+          </span>
+        </button>
+      </div>
 
       {error ? (
         <p role="alert" className="mt-1 text-sm text-brick">
@@ -94,7 +129,7 @@ export function SupplierField({
       ) : null}
 
       {listOpen ? (
-        <ul className="mt-1 border border-hair bg-card">
+        <ul className="mt-1 max-h-[40dvh] overflow-y-auto overscroll-contain border border-hair bg-card">
           {matches.map((supplier) => (
             <li key={supplier.id} className="border-b border-hair last:border-b-0">
               <button
@@ -119,7 +154,9 @@ export function SupplierField({
 
           {matches.length === 0 && !offerCreate ? (
             <li className="px-3 py-3 text-sm text-mute">
-              No supplier matches that. Keep typing to add a new one.
+              {browsing
+                ? 'No suppliers yet. Type a name to add the first one.'
+                : 'No supplier matches that. Keep typing to add a new one.'}
             </li>
           ) : null}
 
@@ -131,7 +168,7 @@ export function SupplierField({
                 onMouseDown={(event) => {
                   event.preventDefault();
                   onCreate(query.trim());
-                  setListOpen(false);
+                  close();
                 }}
                 className="touch flex w-full items-center px-3 text-left text-base text-slate active:bg-snow disabled:opacity-50"
               >

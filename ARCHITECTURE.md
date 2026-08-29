@@ -613,6 +613,24 @@ Default to CSV unless the bookkeeper specifically asks for a formatted workbook.
 them is not "CSV or Excel" — they will say Excel, because that is the program they open — but **"what do
 you do with the file when you get it?"** If the answer is "import it", CSV wins on every count.
 
+**Status:** the client is asking the bookkeeper that question. Nothing is built until the answer comes
+back, and the answer decides which of the two rows above applies.
+
+---
+
+## 18. Supplier payment terms — deferred to Phase 6, deliberately
+
+`suppliers.default_terms_days` exists and works: choosing a supplier fills in the due date from their
+own terms, counted from the invoice date (§4 of `lib/invoice-form.ts` carries the reasoning).
+
+What does not exist yet is any screen to *set* it. That is the supplier admin screen in Phase 6.
+
+The client was offered a terms field on the inline "add a new supplier" flow to close the gap early,
+and chose to keep the phase order instead. So until Phase 6, suppliers created from the sheet carry no
+terms and fall back to `DEFAULT_TERMS_DAYS`. Due dates remain editable on every invoice, so nothing is
+blocked — it is a convenience that arrives later, and Phase 6 should include a pass over the suppliers
+created in the meantime.
+
 ### Still open
 
 1. **Spec §3 assumptions 1, 2, 3 and 5** — separate totals per business, suppliers shared across

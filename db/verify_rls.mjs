@@ -49,6 +49,7 @@ const TABLES = [
   'invoices',
   'invoice_notes',
   'activity_log',
+  'push_subscriptions',
   'invoice_ref_counters',
 ];
 
@@ -69,7 +70,7 @@ for (const table of TABLES) {
 
 console.log('');
 
-for (const table of ['suppliers', 'invoices', 'invoice_notes', 'activity_log']) {
+for (const table of ['suppliers', 'invoices', 'invoice_notes', 'activity_log', 'push_subscriptions', 'profiles']) {
   const { error } = await anon.from(table).insert({}).select();
   check(`write ${table} is refused`, error !== null, error?.code ?? 'INSERT SUCCEEDED');
 }

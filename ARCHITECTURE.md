@@ -345,6 +345,75 @@ these phones ever leave the shops.
 
 ---
 
+## 8.1 Roles, the owner's view, and notifications
+
+Added after Phase 1 started, at the client's request. Recorded here because it touches the schema.
+
+**`role` is not a permission.** Mani and Rabindra are `owner`; Milan and Sujan are `member`. All four
+have identical access to every invoice — spec §2 and §3.5 are unchanged, and no RLS policy anywhere
+mentions `role`. It exists so the app knows whose screen gets the extra section. Migration 005 carries
+a comment saying that if `role` ever starts deciding what somebody can *do*, it has to move into a
+policy, because the UI is never the enforcement layer (notes §2).
+
+Mani and Rabindra get the **same** treatment deliberately, so the owner's view can be tuned against a
+live account without touching Mani's.
+
+**The owner's treatment** is a light accent and an activity overview on Home — what the team did
+today, who logged what. Designed in Phase 4, alongside the screen it lives on. Explicitly not a second
+layout: spec §9's direction is specific, and two visual designs is two things to keep in step forever.
+
+**The bell is for everyone.** A header bell showing unread activity, read from `activity_log`, which
+already exists and is already written by the audit trigger. Every person gets it; it is not an owner
+feature.
+
+**Notification preference** is `profiles.notify_on_new_invoice`, on by default for Mani and Rabindra.
+Each person can change their own, and *only* their own, and only that one field. Two mechanisms in
+migration 007 do that, because they do different jobs:
+
+- the RLS policy `self_update` decides **which row** you may touch — yours
+- the column grant `grant update (notify_on_new_invoice)` decides **which field** you may set
+
+RLS cannot restrict columns. Without the grant, a person could rename themselves, change their accent,
+or promote themselves to owner.
+
+### Push — [decision] Phase 7, with the in-app feed as the real channel
+
+Client chose phone push over in-app-only and over email. Building it, in Phase 7, because it genuinely
+cannot come earlier: a push subscription requires a service worker, and the service worker is what
+Phase 7 installs.
+
+The shape:
+
+```
+invoice inserted
+   -> Supabase database webhook
+   -> Edge Function (Deno)
+   -> reads push_targets  (active people who asked to be told, minus the author)
+   -> web-push, signed with the VAPID private key
+   -> the phone's push service
+   -> service worker shows "Sujan added an invoice — $5,220, Bidfood"
+```
+
+`push_subscriptions` and the `push_targets` view ship in migration 006 now, empty. Not speculation:
+the schema is being pasted in by hand, and one extra round trip costs more than an unused table does.
+The VAPID private key lives as an Edge Function secret and never enters the app bundle — same rule as
+the service-role key.
+
+**Two uncomfortable parts, stated now rather than in Phase 7.**
+
+1. **On an iPhone, push only works if Mani adds the app to his Home Screen first.** Not a setting, not
+   something I can work around — Apple requires it. If he leaves it as a browser tab, the notification
+   silently does not arrive. Android has no such restriction.
+2. **Push is never guaranteed delivery.** The phone can be off, the endpoint can expire, the OS can
+   drop it. Nobody's push implementation is reliable, and one that people come to trust for money is
+   worse than none.
+
+So the in-app feed is the source of truth and push is a nudge on top of it. That is why the bell is
+built in Phase 5 regardless of push: if a notification never arrives, the information is still there
+the next time the app is opened, and it is still correct.
+
+---
+
 ## 9. Constants
 
 `lib/constants.ts` is the only place these exist. Anything appearing in both a Zod schema and a UI hint
@@ -482,9 +551,9 @@ Phases are spec §10, unchanged. For each one:
 | 2 Auth | Login works on your phone; PIN unlock works; session survives; every route redirects when signed out. |
 | 3 Add invoice | Cold open to saved invoice under 15s on a real phone, timed not estimated. Sheet survives backgrounding. Duplicate warning fires. Offline save queues honestly. This phase gets re-polished until the timing is real. |
 | 4 Home + pending | The Week answers the Monday-morning question in 3 seconds. Spine renders. Filtered total provably equals the filtered list. 200 rows scroll smoothly on the phone. |
-| 5 Payment + detail | A whole run ticks in one transaction; killing the connection mid-tick leaves all-or-nothing. Un-tick and void log correctly. Detail stream reads chronologically. |
+| 5 Payment + detail | A whole run ticks in one transaction; killing the connection mid-tick leaves all-or-nothing. Un-tick and void log correctly. Detail stream reads chronologically. Header bell shows unread activity for everyone. |
 | 6 Supplier, history, admin | Search finds an invoice by any of the four identifiers; "everything Sujan ticked off in July" in two taps. |
-| 7 PWA + hardening | Installs to a home screen; loads offline; error boundaries; empty states; mobile QA on the actual phones. |
+| 7 PWA + hardening | Installs to a home screen; loads offline; error boundaries; empty states; mobile QA on the actual phones. Push notification on invoice insert, tested end to end on Mani's actual phone with the app installed — see §8.1 for why that last condition is not optional. |
 
 ### Version control
 

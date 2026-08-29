@@ -1,0 +1,536 @@
+# Sagarmatha Payments — Architecture & Workflow
+
+Companion to `sagarmatha-payments-spec.md` (what to build) and `CLAUDE-CODE-NOTES.md` (where the bugs will be).
+This document is the third leg: **how it is put together, and in what order.**
+
+Everything here is a decision, not an option. Where I have deviated from the spec or chosen between
+two defensible paths, it is marked **[decision]** with the reasoning.
+
+---
+
+## 0. The shape of the thing, in one paragraph
+
+A single Next.js app, deployed to Vercel, that is a **thin shell around a client-side data layer
+talking directly to Supabase with the signed-in user's JWT.** Postgres holds the rules; RLS enforces
+them; the browser holds one TanStack Query cache; the UI is a pure function of that cache. There is
+no server-side data fetching, no service-role key in the running app, and no second cache. That one
+constraint eliminates most of §1 and all of §2 of the notes by construction.
+
+---
+
+## 1. Rendering model — [decision] client-first, not server-first
+
+Next.js 15 App Router pushes you toward Server Components and server-side data fetching. **We are not
+doing that for any invoice data.** Reasons, in order of weight:
+
+1. **`auth.uid()` must work.** The audit trigger, the RLS policies and `mark_invoices_paid` all depend
+   on `auth.uid()` returning the real person. The moment data fetching moves server-side, the
+   temptation to reach for the service-role key appears, and `auth.uid()` returns null — the exact
+   trap named in notes §2. If the app never holds the service-role key at runtime, the trap cannot be
+   sprung.
+2. **One cache, not two.** Next's fetch cache plus TanStack Query's cache is two sources of truth for
+   the same rows. Notes §1.4 (optimistic update reverted by a late refetch) is what happens when two
+   caches disagree. We have one.
+3. **Optimistic writes and the offline queue live in the browser anyway.** Splitting reads to the
+   server and writes to the client leaves the optimistic update with nothing coherent to update.
+4. **Speed of entry.** The add-invoice sheet must not wait on a server round-trip to render.
+
+What the server does, and nothing more:
+
+| Server-side thing | Job |
+|---|---|
+| `middleware.ts` | Refresh the Supabase auth cookie, redirect unauthenticated requests to `/login`. Route guarding only — never data. |
+| `app/layout.tsx` | Fonts, CSS tokens, manifest link. |
+| `app/(app)/layout.tsx` | Static shell (header, nav, sheet host). No data. |
+| `/login` | The only route that posts credentials. |
+
+Session transport is **cookies**, via `@supabase/ssr`'s `createBrowserClient`, so middleware can see
+the session. No `localStorage` session.
+
+**Anti-pattern to watch for:** `router.refresh()`. It re-runs the server layout and remounts the tree.
+Called while the add-invoice sheet is open it reproduces notes §1.1 exactly. Banned outside `/login`
+and sign-out.
+
+---
+
+## 2. The most important data decision — [decision] the unpaid set is client-resident
+
+There are four businesses. The unpaid invoice set will be somewhere between 30 and a few hundred rows.
+It is small.
+
+Therefore: **one query fetches every unpaid invoice (joined to supplier and business). Home, Pending,
+the payment-run grouping, the business filter, all four sorts and the sticky footer total are all
+derived — synchronously, client-side — from that single array.**
+
+This is a correctness measure, not an optimisation. Notes §3 says the sticky total must reflect the
+current filter, and that a total from a separate query is a trust-destroying bug. If the total and the
+list are both `useMemo` over the same array, they *cannot* disagree. There is no code path where they
+diverge.
+
+```
+useUnpaidInvoices()            ->  Invoice[]   (one query, one cache entry)
+   |- selectByBusiness(rows, businessId)
+   |- bucketByUrgency(rows, today)      -> { overdue, today, thisWeek, later }
+   |- groupIntoRuns(rows)               -> PaymentRun[]   (supplier_id + due_date)
+   |- sortBy(rows, 'due'|'supplier'|'amount'|'added')
+   \- sumCents(rows)                    -> the sticky total
+```
+
+All five are pure functions in `lib/derive/`. All five are unit-testable without a database, which is
+what makes the notes §6 test list cheap to actually write.
+
+**History is the exception.** Paid and void invoices grow without bound, so History is a separate,
+server-filtered, paginated query with its own search. It never feeds a total that has to agree with a
+list on another screen.
+
+---
+
+## 3. Time — one module, one hook, no exceptions
+
+Notes §1.2 is the bug most likely to be believed rather than noticed. The defence is that there is
+exactly one way to obtain "today" in this codebase.
+
+```ts
+// lib/date.ts
+export const TZ = 'Australia/Sydney';
+export function sydneyToday(now?: Date): string;   // 'YYYY-MM-DD'
+export function formatDay(d: string): string;      // 'Fri 11 Sep'
+export function formatDateTime(ts: string): string; // '11 Sep, 8:30am', rendered in Sydney
+export function daysBetween(a: string, b: string): number;
+```
+
+**[decision] `date-fns` is not used, and has been removed.** Spec §4 lists it in the stack. Every job
+it would have done here is done better without it:
+
+- *Date arithmetic.* `date-fns` parses `'2026-08-28'` into a `Date` at **local** midnight, which
+  reintroduces exactly the timezone this module exists to keep out. `lib/date.ts` anchors to UTC
+  instead, so "add 7 days" is 7 × 86,400,000 ms with no daylight-saving discontinuity and no
+  dependence on where the machine is.
+- *Formatting.* Handled by an explicit month/weekday table — see below.
+
+Nothing else needed it, so it is one fewer dependency rather than one that sits unused. If a later
+phase genuinely wants it, adding it back is one command.
+
+**[decision] Month and weekday names are a hard-coded table, not `Intl`.** Found while building
+Phase 1: Node's ICU renders `en-AU` September as **"Sept"** and inserts a comma after the weekday —
+`'Fri, 11 Sept'` where spec §8 requires `'Fri 11 Sep'`. That output is not stable across Node versions
+or across browsers, so a phone and a laptop can disagree about the same invoice. `Intl` is still used,
+but only ever to ask for *numbers* in a given timezone. Numbers are locale-stable; names are not.
+
+Rules, enforced by lint rule and by review:
+
+- `new Date()` appears in `lib/date.ts` and nowhere else in application code.
+- `toISOString()` is banned outright. It is the exact mechanism of the previous app's week bug.
+- `due_date` / `invoice_date` are Postgres `date` and TypeScript `string` (`'YYYY-MM-DD'`). They are
+  **never** parsed into a `Date`. Comparing two `'YYYY-MM-DD'` strings lexicographically is correct
+  and timezone-proof; that is how urgency bucketing works.
+- `paid_at` / `created_at` are `timestamptz`, formatted for display in Sydney, never compared to a date.
+- `useSydneyToday()` returns today's date string and schedules one timer to Sydney midnight, so a phone
+  left open overnight re-buckets instead of lying.
+- Postgres never computes urgency. The one place the database knows about Sydney is `sydney_today()`,
+  used solely to stamp the internal ref — a label, not a comparison.
+
+---
+
+## 4. Money — one parser, one formatter
+
+```ts
+// lib/money.ts
+export function parseAmountToCents(input: string): number | null;  // null = reject, never coerce
+export function formatCents(cents: number): string;                // Intl, en-AU, AUD
+export function sumCents(rows: { amount_cents: number }[]): number; // integers only
+```
+
+`parseAmountToCents` strips `$`, spaces and thousands separators, rejects anything that is not a clean
+decimal with at most two places, and produces integer cents by string manipulation — not
+`Math.round(parseFloat(x) * 100)`, which drifts. Round-trip tested against `"5,220.00"`, `"0.05"`,
+`"1000000"`, `"5.005"`, `"abc"`, `""` (notes §6).
+
+Nothing in `components/` is permitted to call `.toFixed()`.
+
+---
+
+## 5. Database
+
+### 5.1 Migrations
+
+Plain SQL, applied with the Supabase CLI, checked into the repo:
+
+```
+db/migrations/
+  001_enums_and_tables.sql
+  002_indexes.sql
+  003_rls.sql
+  004_internal_ref.sql
+  005_audit_trigger.sql
+  006_rpc_payments.sql
+db/seed/
+  001_businesses.sql
+  002_profiles.sql        # run after the three auth users exist
+```
+
+Types are generated from the live schema (`supabase gen types typescript`) into `lib/db-types.ts`.
+That is type safety, not an ORM — it satisfies the §4 constraint.
+
+Schema is exactly spec §5, plus the two additions below.
+
+### 5.2 Internal ref — [decision] counter table + BEFORE INSERT trigger
+
+Notes §2 requires that two simultaneous inserts cannot produce the same ref. `select max()` then insert
+loses that race. An advisory lock works but adds a lock to reason about. The race-free form that needs
+neither is an upsert against a counter table, resolved in one statement under Postgres' own row lock:
+
+```sql
+create table invoice_ref_counters (
+  business_id uuid not null references businesses(id),
+  day         date not null,
+  n           int  not null,
+  primary key (business_id, day)
+);
+
+-- inside a BEFORE INSERT trigger on invoices:
+insert into invoice_ref_counters (business_id, day, n)
+values (new.business_id, v_day, 1)
+on conflict (business_id, day)
+  do update set n = invoice_ref_counters.n + 1
+returning n into v_n;
+
+new.internal_ref := v_code || '-' || to_char(v_day, 'YYMMDD') || '-' || lpad(v_n::text, 2, '0');
+```
+
+`v_day` is `(now() at time zone 'Australia/Sydney')::date` — the day it was *logged*, matching the
+spec's wording ("third invoice logged for Hurstville on 28 Aug"), not the invoice date.
+
+**Known and accepted consequence:** an offline retry that hits `on conflict (id) do nothing` (§7) still
+fires the BEFORE INSERT trigger and burns a counter value, so ref sequences can contain gaps. Refs are
+identifiers, not a count — gaps are harmless and far preferable to any scheme that risks a collision.
+Recorded here so it is not later "fixed" into a race.
+
+### 5.3 Audit trigger
+
+`after insert or update on invoices`, writing a diff of changed fields into `activity_log.detail`.
+Actor resolution:
+
+```sql
+coalesce(auth.uid(), nullif(current_setting('app.actor_id', true), '')::uuid)
+```
+
+`auth.uid()` covers every real user write. The `app.actor_id` fallback exists only so seed and
+migration scripts can attribute themselves; the application never sets it. The `not null` constraint on
+`actor_id` stays — notes §2 is explicit that relaxing it loses attribution permanently.
+
+### 5.4 Payment RPCs
+
+```sql
+create function mark_invoices_paid(p_ids uuid[], p_ref text)
+returns setof invoices
+language sql
+security invoker            -- RLS and auth.uid() both still apply
+as $BODY$
+  update invoices
+     set status = 'paid', paid_at = now(), paid_by = auth.uid(),
+         payment_ref = nullif(trim(p_ref), ''), updated_at = now()
+   where id = any(p_ids) and status = 'unpaid'
+  returning *;
+$BODY$;
+```
+
+One statement, one transaction — notes §1.6, and it covers both a single tick and a whole payment run,
+so there is only one code path to get right. It returns only the rows it actually flipped, so if
+someone else ticked one off two seconds earlier the client can say so honestly instead of silently
+disagreeing with the server.
+
+`security invoker`, not `definer` — the function must not become a hole around RLS.
+
+Siblings on the same pattern: `unmark_invoice_paid(p_id)` and `void_invoice(p_id, p_reason)`.
+
+### 5.5 RLS
+
+As spec §5. Every table gets `enable row level security` and the `member_all` policy, plus the
+`profiles (id) where active` index from notes §2.
+
+**Phase 1 exit test:** an anonymous `supabase-js` client and a wrong-JWT client each get zero rows and a
+failed insert on every table. Written as a script so it can be re-run after any policy change, not a
+one-off click-through.
+
+---
+
+## 6. The form guard — [decision] one global, not one per component
+
+Notes §1.1 shipped three times because each fix was local. So the fix is a single global, wired into
+the QueryClient defaults where no future screen can forget it.
+
+```ts
+// lib/form-guard.ts
+let openForms = 0;
+export const formGuard = {
+  isBlocked: () => openForms > 0,
+  acquire: () => { openForms++; return () => { openForms--; }; },
+};
+// useFormGuard() acquires on mount, releases on unmount.
+```
+
+```ts
+new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: () => !formGuard.isBlocked(),
+      refetchOnReconnect:   () => !formGuard.isBlocked(),
+      staleTime: 30_000,
+    },
+  },
+});
+```
+
+Every sheet, modal and inline edit calls `useFormGuard()` in its root component. One line, and it
+becomes impossible to have an open form and a live focus-refetch at the same time, regardless of which
+query happens to be on screen. Form state itself lives in `react-hook-form`, with `defaultValues` set
+once at mount and never re-derived from query data on render.
+
+Verification is a Playwright test, not a memo: open sheet, type, fire `visibilitychange`, wait, assert
+the field still holds the value.
+
+---
+
+## 7. Writes, optimism and the offline queue
+
+All writes go through mutation factories in `lib/queries/`. The house pattern:
+
+```
+onMutate:   await queryClient.cancelQueries(key)     // non-negotiable, notes §1.4
+            snapshot = getQueryData(key)
+            setQueryData(key, next)
+onError:    restore snapshot + a toast that names the cause
+onSettled:  await the mutation fully, then invalidateQueries(key)
+```
+
+`staleTime` on the unpaid query is 30s, never 0 (notes §1.4).
+
+**Create and edit share one payload builder.** `buildInvoicePayload(form)` is called by both paths; the
+create path additionally supplies a client-generated `id`. There is no `if (isNew)` branch that writes
+in one arm and not the other — notes §1.3.
+
+**Idempotency.** The client generates the invoice `id` with `crypto.randomUUID()` *before* sending, and
+the insert is `.upsert(row, { onConflict: 'id', ignoreDuplicates: true })`, i.e. `on conflict do
+nothing`. A retried write from the queue is a no-op, not a duplicate (notes §1.5).
+
+**The queue** is TanStack Query's own paused-mutation mechanism persisted to IndexedDB
+(`persistQueryClient` plus `resumePausedMutations` on reconnect) — not a hand-rolled queue, and
+crucially **not the service worker**. The SW makes the app installable and serves the shell offline; it
+touches no writes at all. Only mutations are persisted to disk; reads are not, because an hours-stale
+total is worse than an honest empty state (notes §1.5).
+
+UI honesty: a queued write reads "Saved — will send when you're back online", and a pill in the header
+shows the pending count. A queued write never gets a plain success toast.
+
+---
+
+## 8. Auth and the PIN — the security posture, stated plainly
+
+The spec says the PIN "unlocks a session, it is not the security boundary". Implemented literally:
+
+- Email + password produces a Supabase session in a cookie set by `@supabase/ssr`. No sign-up route
+  exists; the three users are created by hand.
+- Supabase Auth configured to a 30-day inactivity window.
+- The PIN is a **local UI lock**: a per-device salted hash in `localStorage`, with throttling (five wrong
+  attempts falls back to full email and password). It gates the interface, not the data.
+
+**The uncomfortable part, up front:** under this design somebody holding an unlocked phone can reach the
+data without knowing the PIN, because the session cookie is present either way. Making the PIN real
+means encrypting the refresh token with a key derived from it — which means middleware can no longer
+read the session, so route guarding moves client-side, and a forgotten PIN forces a full re-login. That
+is a genuine trade and the spec has already chosen the fast side of it deliberately. I am building what
+the spec says. Noting it so the choice stays conscious, and marking it the first thing to revisit if
+these phones ever leave the shops.
+
+---
+
+## 9. Constants
+
+`lib/constants.ts` is the only place these exist. Anything appearing in both a Zod schema and a UI hint
+imports the same symbol (notes §5).
+
+```ts
+export const WEEK_HORIZON_DAYS = 7;      // the "next 7 days" bucket AND the copy
+export const DUE_PRESETS = [7, 14, 30];  // the pills AND the date maths
+export const DEFAULT_TERMS_DAYS = 14;    // fallback when a supplier has none
+export const DUPE_LOOKBACK_DAYS = 180;   // duplicate-warning window
+export const SESSION_DAYS = 30;
+export const PIN_LENGTH = 6;
+export const PIN_MAX_ATTEMPTS = 5;
+export const MIN_TOUCH_PX = 44;
+export const ROW_HEIGHT_PX = 56;
+```
+
+---
+
+## 10. Directory layout
+
+```
+app/
+  layout.tsx                    fonts, tokens, providers
+  login/page.tsx
+  unlock/page.tsx
+  (app)/
+    layout.tsx                  shell + business segmented control + sheet host
+    page.tsx                    Home — The Week
+    pending/page.tsx
+    history/page.tsx
+    suppliers/page.tsx
+    suppliers/[id]/page.tsx
+    invoices/[id]/page.tsx
+  manifest.ts
+middleware.ts
+lib/
+  constants.ts  money.ts  date.ts  form-guard.ts
+  supabase/{browser.ts, middleware.ts}
+  db-types.ts                   generated
+  queries/{keys.ts, invoices.ts, suppliers.ts, activity.ts}
+  derive/{urgency.ts, runs.ts, sort.ts, totals.ts}
+  offline/persist.ts
+components/
+  ui/{Sheet, Pill, Chip, Row, Money, DateLabel, Spine, Toast, Empty}
+  invoice/{AddInvoiceSheet, InvoiceRow, PaymentRunRow, DuplicateWarning, ActivityStream}
+db/{migrations, seed}/
+test/{fixtures, unit, e2e}/
+```
+
+Roughly thirty files of application code. That is the whole app, and it is why the spec §4 "do not add"
+list is right — every one of those libraries costs more than the surface it would abstract.
+
+---
+
+## 11. Styling
+
+Tailwind v4, CSS-first. The §9 palette and type scale go into a single `@theme` block in
+`app/globals.css` as design tokens (`--color-ink`, `--color-gold`, `--radius: 4px`, `--row-h: 56px`).
+There is no `tailwind.config.js` holding a parallel copy of the same values.
+
+Fonts via `next/font/google` (Archivo, IBM Plex Sans, IBM Plex Mono), self-hosted at build time and
+exposed as `--font-display`, `--font-body`, `--font-mono`. `tabular-nums` is applied by a `.money` /
+`.date` utility, not sprinkled per component.
+
+**The due spine** gets its own component with an explicit brief: a 3px absolutely positioned rule,
+segmented per urgency bucket, a tick and date label at each date change, today marked with a
+`position: sticky` filled square. It is the one piece of this UI worth building twice to get right.
+
+---
+
+## 12. Testing — small, and aimed at the known bugs
+
+Vitest and Testing Library for the fast layer; Playwright for the three interaction bugs unit tests
+cannot reach.
+
+| Test | Catches |
+|---|---|
+| `bucketByUrgency` at 09:00 and 23:00 Sydney, whole suite run under both `TZ=UTC` and `TZ=Australia/Sydney` | notes §1.2 — the invoice-week bug |
+| Money round-trip table | notes §3 |
+| Render every screen against a 200-invoice fixture, assert no `undefined`, `NaN` or `[object Object]` | notes §6, spec §9 quality floor |
+| Create, edit the amount, save, refetch, assert it persisted | notes §1.3 |
+| Concurrent inserts for the same business and day produce two distinct refs | notes §2 |
+| `sumCents(filtered)` equals the rendered total, across every filter combination | notes §3 |
+| Playwright: open sheet, type, background, return, value intact | notes §1.1 |
+| Playwright: mark paid offline, reconnect, exactly one row changed | notes §1.5 |
+| Playwright: 360px viewport with keyboard open, Save button reachable | notes §4 |
+
+The fixture generator lives in `test/fixtures/` and also seeds a dev database, so the 200-row
+performance pass and the render tests run against the same data.
+
+---
+
+## 13. Environments
+
+| | |
+|---|---|
+| Local | `npm run dev` against the live Supabase project. One project, not two — three users on a free tier does not justify a staging database. |
+| Preview | Vercel preview deploy per branch, same Supabase project. |
+| Production | Vercel production. |
+| Secrets | `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` only. **The service-role key is never added to Vercel.** If it is not there it cannot be used, and §1's guarantee holds by construction. |
+
+Because there is one database, migrations are additive and reviewed before they run. Anything
+destructive needs explicit sign-off.
+
+---
+
+## 14. Workflow
+
+### How the phases run
+
+Phases are spec §10, unchanged. For each one:
+
+1. I build it.
+2. I stop.
+3. I report: **what changed, what needs deploying, what you should check on your phone.** Plain
+   language, cause not jargon, uncomfortable part first (notes §7).
+4. You test on a real phone and tell me what is off.
+5. I fix, then we move on. No running ahead.
+
+### What I need from you, and when
+
+| Needed by | What | Why |
+|---|---|---|
+| Before Phase 1 | A Supabase project (free tier), and its URL, anon key and database password | I cannot create an account in your name. Once it exists I apply every migration myself. |
+| Before Phase 1 finishes | The three email addresses for Mani, Milan and Sujan | Auth users must exist before `profiles` can be seeded — `profiles.id` references `auth.users(id)`. |
+| Before Phase 2 | A Vercel account connected to the repo | So you can test on a phone from Phase 2 onward, not only at the end. |
+| Before Phase 3 | The supplier list, with `default_terms_days` where known | Spec §12 — that field is what makes the add-invoice flow fast. Names alone will do to start; terms can be filled in per supplier later. |
+
+### Phase gates — what "done" means
+
+| Phase | Done when |
+|---|---|
+| 1 Foundation | Schema applied; RLS proven by script to block an anonymous client; two concurrent inserts produce distinct refs; token file and type scale render on a test page. **You review the schema and tokens before I continue.** |
+| 2 Auth | Login works on your phone; PIN unlock works; session survives; every route redirects when signed out. |
+| 3 Add invoice | Cold open to saved invoice under 15s on a real phone, timed not estimated. Sheet survives backgrounding. Duplicate warning fires. Offline save queues honestly. This phase gets re-polished until the timing is real. |
+| 4 Home + pending | The Week answers the Monday-morning question in 3 seconds. Spine renders. Filtered total provably equals the filtered list. 200 rows scroll smoothly on the phone. |
+| 5 Payment + detail | A whole run ticks in one transaction; killing the connection mid-tick leaves all-or-nothing. Un-tick and void log correctly. Detail stream reads chronologically. |
+| 6 Supplier, history, admin | Search finds an invoice by any of the four identifiers; "everything Sujan ticked off in July" in two taps. |
+| 7 PWA + hardening | Installs to a home screen; loads offline; error boundaries; empty states; mobile QA on the actual phones. |
+
+### Version control
+
+Git initialised at Phase 1, one branch per phase (`phase-1-foundation` and so on), merged after your
+sign-off. Every phase is revertible as a unit, and the Vercel preview URL for a branch is what you test
+before it becomes production.
+
+---
+
+## 15. Decisions taken, and what is still open
+
+### Resolved
+
+**Supabase project — client-provided.** He has an account and will create the project and hand over the
+credentials. What is needed: project URL, `anon` key, and either the database password or the project
+ref so migrations can be applied with the CLI. The service-role key is deliberately *not* requested; per
+§1 and §13 it must never enter this codebase or Vercel.
+
+**CSV export stays in v2.** Spec §3.4 leaves this movable and it was put to me to decide.
+
+An earlier draft of this document said the export would be "awkward to bolt on later". That was wrong
+and is corrected here. CSV export is read-only: no table, no column, no new state. Every property that
+makes the other §11 items expensive to defer — partial payments needing a state machine, photos needing
+Storage and an upload path, recurring invoices needing a scheduler — is absent. It costs roughly the
+same in six months as it does in Phase 6.
+
+With the cost of waiting near zero, the deciding factor is that nobody has asked for it. Building
+unrequested features is the thing spec §11 exists to prevent.
+
+The trigger to reconsider: if the bookkeeper requests the same data twice, it gets built, and at that
+point it is one file. Phase 6 will keep History's filter parameters as a plain reusable object so the
+export can run the same query without a page limit — that costs nothing now and is the only
+accommodation made for it.
+
+### Still open
+
+1. **Spec §3 assumptions 1, 2, 3 and 5** — separate totals per business, suppliers shared across
+   businesses, GST-inclusive amounts with no split, no approval workflow. [proceeding on: all yes, as
+   written in the spec]
+2. **Invoice photos.** Spec §11 ranks this highest after v1 and notes it may want pulling into Phase 3.
+   [proceeding on: out of v1, and nothing at all is being put in place for it]
+
+   An earlier draft of this document said the nullable column and the Storage bucket would go in at
+   Phase 1 "so adding it later is a UI job rather than a migration". Reversed on reflection, for two
+   reasons. Notes §8 says plainly *do not build any §11 item early, including invoice photos, however
+   tempting* — and a column added in anticipation is a small version of building it early. More to the
+   point, the justification did not survive scrutiny: adding the column later is
+   `alter table invoices add column photo_path text`, which is one line and carries no risk. Nothing
+   is bought by doing it now.

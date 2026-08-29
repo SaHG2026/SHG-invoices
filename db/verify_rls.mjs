@@ -62,16 +62,42 @@ function check(description, passed, detail = '') {
 
 console.log('\nAnonymous client, against every table:\n');
 
+/**
+ * PGRST205 means "no such table", which is NOT the same as "you may not read
+ * this table" — and treating it as a pass is how a verification script comes
+ * to certify a table that was never created. An empty result is also not
+ * proof: the table may simply be empty. Only an explicit refusal counts.
+ *
+ * 42501 is insufficient_privilege — the grant stopped it.
+ * PGRST116 / an empty array behind a policy means RLS filtered every row.
+ */
+const MISSING = 'PGRST205';
+
 for (const table of TABLES) {
   const { data, error } = await anon.from(table).select('*').limit(1);
-  const blocked = error !== null || (Array.isArray(data) && data.length === 0);
-  check(`read ${table} returns nothing`, blocked, error ? error.code : `${data?.length ?? 0} rows`);
+
+  if (error?.code === MISSING) {
+    check(`read ${table} is refused`, false, 'TABLE DOES NOT EXIST — nothing was verified');
+    continue;
+  }
+
+  const refused = error !== null;
+  const emptyBehindPolicy = !error && Array.isArray(data) && data.length === 0;
+  check(
+    `read ${table} is refused`,
+    refused || emptyBehindPolicy,
+    error ? error.code : `${data?.length ?? 0} rows`,
+  );
 }
 
 console.log('');
 
 for (const table of ['suppliers', 'invoices', 'invoice_notes', 'activity_log', 'push_subscriptions', 'profiles']) {
   const { error } = await anon.from(table).insert({}).select();
+  if (error?.code === MISSING) {
+    check(`write ${table} is refused`, false, 'TABLE DOES NOT EXIST — nothing was verified');
+    continue;
+  }
   check(`write ${table} is refused`, error !== null, error?.code ?? 'INSERT SUCCEEDED');
 }
 

@@ -87,6 +87,12 @@ create table if not exists invoices (
   )
 );
 
+-- The reference generator (002) is responsible for producing unique refs, and
+-- is proven by db/verify_refs.sql. This index is the backstop: if it is ever
+-- wrong again, the insert fails loudly instead of quietly producing two
+-- invoices that claim to be the same one. Notes §2 — the database enforces.
+create unique index if not exists invoices_internal_ref_unique on invoices (internal_ref);
+
 create index if not exists invoices_due_unpaid on invoices (due_date) where status = 'unpaid';
 create index if not exists invoices_supplier    on invoices (supplier_id);
 create index if not exists invoices_business    on invoices (business_id);

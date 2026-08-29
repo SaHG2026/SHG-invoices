@@ -68,7 +68,15 @@ begin
     do update set n = invoice_ref_counters.n + 1
   returning n into v_n;
 
-  new.internal_ref := v_code || '-' || to_char(v_day, 'YYMMDD') || '-' || lpad(v_n::text, 2, '0');
+  -- Pad to two digits, but never truncate.
+  --
+  -- lpad(n, 2, '0') alone is wrong: PostgreSQL's lpad truncates when the
+  -- string is already longer than the target, so the 100th invoice of the day
+  -- would be handed '10' — the reference belonging to the 10th. Everything
+  -- below 100 is correct, which is what makes that the dangerous kind of bug.
+  new.internal_ref := v_code || '-' || to_char(v_day, 'YYMMDD') || '-' ||
+    case when v_n < 100 then lpad(v_n::text, 2, '0') else v_n::text end;
+
   return new;
 end;
 $fn$;

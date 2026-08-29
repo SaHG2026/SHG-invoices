@@ -17,7 +17,27 @@ import type { Profile } from '@/lib/types';
  * "Unlocked" lives in sessionStorage, so it survives switching apps and
  * backgrounding but not closing the app. That is the intent of spec §7.1: the
  * PIN on every open, the password only every thirty days.
+ *
+ * ---------------------------------------------------------------------------
+ * One `stage`, not three booleans.
+ *
+ * This started as `unlocked`, `needsPin` and `ready` held separately, and they
+ * could contradict each other. Setting a PIN flipped `unlocked` to true but
+ * left `needsPin` true, and `needsPin` was checked first — so the setup screen
+ * rendered itself again forever. The PIN was saved correctly; the screen just
+ * never moved.
+ *
+ * Three booleans describe eight states when only four exist. The four that do
+ * not exist are where the bugs live, so they are now unrepresentable.
+ * ---------------------------------------------------------------------------
  */
+
+type Stage =
+  | 'checking' // waiting on the profile and on storage
+  | 'setup' // signed in, no PIN on this device yet
+  | 'locked' // PIN exists, not yet entered this session
+  | 'open' // through the gate
+  | 'no-pin-support'; // insecure context; see below
 
 const UNLOCK_PREFIX = 'shg.unlocked.';
 
@@ -33,7 +53,7 @@ function writeUnlocked(profileId: string): void {
   try {
     sessionStorage.setItem(UNLOCK_PREFIX + profileId, '1');
   } catch {
-    /* the gate simply reappears next render; harmless */
+    /* the gate reappears next time; harmless */
   }
 }
 
@@ -65,34 +85,42 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
   const signOut = useSignOut();
 
   // Storage cannot be read during render without breaking hydration, so the
-  // gate starts closed and opens in an effect once the browser is in charge.
-  const [ready, setReady] = useState(false);
-  const [unlocked, setUnlocked] = useState(false);
-  const [needsPin, setNeedsPin] = useState(false);
-  const [available, setAvailable] = useState(true);
+  // gate starts closed and decides in an effect once the browser is in charge.
+  const [stage, setStage] = useState<Stage>('checking');
 
   useEffect(() => {
     if (!profile) return;
-    setAvailable(pinAvailable());
-    setUnlocked(readUnlocked(profile.id));
-    setNeedsPin(!hasPin(profile.id));
-    setReady(true);
+
+    if (!pinAvailable()) {
+      setStage('no-pin-support');
+      return;
+    }
+    if (readUnlocked(profile.id)) {
+      setStage('open');
+      return;
+    }
+    setStage(hasPin(profile.id) ? 'locked' : 'setup');
   }, [profile]);
 
+  /** The single way through the gate, from every screen below. */
   const open = useCallback(() => {
     if (!profile) return;
     writeUnlocked(profile.id);
-    setUnlocked(true);
+    setStage('open');
   }, [profile]);
 
-  if (isLoading || (profile && !ready)) {
-    return <Field><p className="text-center text-sm text-hair/60">Loading…</p></Field>;
+  if (isLoading || (profile && stage === 'checking')) {
+    return (
+      <Field>
+        <p className="text-center text-sm text-hair/60">Loading…</p>
+      </Field>
+    );
   }
 
   if (isError || !profile) {
-    // The middleware would have redirected an unauthenticated request, so
-    // reaching here with no profile means the account exists in auth but has
-    // no active profile row — i.e. it has been deactivated.
+    // Middleware redirects an unauthenticated request, so reaching here with
+    // no profile means the account exists in auth but has no active profile
+    // row — it has been deactivated.
     return (
       <Field>
         <h1 className="text-h2 text-snow" style={{ fontFamily: 'var(--font-display)' }}>
@@ -112,11 +140,11 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!available) {
-    // crypto.subtle is missing, which means this is an insecure context — a
-    // plain http:// address on the local network. Rather than fall back to a
-    // weaker hash and let it be trusted, say so and let them through: the
-    // session is still real and RLS is still doing the actual protecting.
+  if (stage === 'no-pin-support') {
+    // crypto.subtle is missing, so this is an insecure context — a plain
+    // http:// address on the local network. Rather than fall back to a weaker
+    // hash and let it be trusted, say so and let them through: the session is
+    // real and RLS is still doing the actual protecting.
     return (
       <>
         <p className="bg-gold px-4 py-2 text-center text-xs text-ink">
@@ -127,23 +155,15 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (needsPin) return <SetPinScreen profile={profile} onDone={open} onSkip={open} />;
-  if (!unlocked) return <UnlockScreen profile={profile} onDone={open} />;
+  if (stage === 'setup') return <SetPinScreen profile={profile} onDone={open} />;
+  if (stage === 'locked') return <UnlockScreen profile={profile} onDone={open} />;
 
   return <>{children}</>;
 }
 
 /* -------------------------------------------------------------------------- */
 
-function SetPinScreen({
-  profile,
-  onDone,
-  onSkip,
-}: {
-  profile: Profile;
-  onDone: () => void;
-  onSkip: () => void;
-}) {
+function SetPinScreen({ profile, onDone }: { profile: Profile; onDone: () => void }) {
   const [first, setFirst] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -183,10 +203,7 @@ function SetPinScreen({
     <Field>
       <div className="mb-8 flex flex-col items-center">
         <Chip profile={profile} large />
-        <h1
-          className="mt-4 text-h2 text-snow"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
+        <h1 className="mt-4 text-h2 text-snow" style={{ fontFamily: 'var(--font-display)' }}>
           {first === null ? `Choose a ${PIN_LENGTH}-digit PIN` : 'Enter it again'}
         </h1>
         <p className="mt-1 text-center text-sm text-hair/70">
@@ -206,7 +223,7 @@ function SetPinScreen({
 
       <button
         type="button"
-        onClick={onSkip}
+        onClick={onDone}
         className="touch mt-8 w-full text-center text-sm text-hair/60 underline"
       >
         Not now

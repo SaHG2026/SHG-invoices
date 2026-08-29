@@ -11,13 +11,39 @@ import type { DateStr, Timestamp } from './date';
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
 
+/**
+ * Not a permission. All four people have identical access to every invoice;
+ * `role` only decides who sees the owner's overview and the lightly accented
+ * treatment. No RLS policy references it — see migration 007.
+ */
+export type ProfileRole = 'member' | 'owner';
+
 export interface Profile {
   id: string;
   display_name: string;
   initials: string;
-  /** Hex, for the attribution chip. Mani gold, Milan slate, Sujan chilli. */
+  /** Hex, for the attribution chip. Mani gold, Milan slate, Sujan chilli, Rabindra ink. */
   accent: string;
+  role: ProfileRole;
+  /**
+   * The one field a person may change about themselves. Enforced by an RLS
+   * policy (which row) plus a column-level grant (which field), because RLS
+   * alone cannot restrict columns.
+   */
+  notify_on_new_invoice: boolean;
   active: boolean;
+}
+
+/** One row per person per device. Written from Phase 7 onward. */
+export interface PushSubscription {
+  id: string;
+  profile_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  created_at: Timestamp;
+  last_used_at: Timestamp | null;
 }
 
 export interface Business {

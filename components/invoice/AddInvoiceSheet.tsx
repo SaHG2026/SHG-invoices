@@ -11,12 +11,12 @@ import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
 import {
   activePreset,
   buildInvoicePayload,
-  defaultDueDate,
   invoiceFormSchema,
+  resolveDueDate,
   type InvoiceFormValues,
 } from '@/lib/invoice-form';
 import { readLastBusinessId, writeLastBusinessId } from '@/lib/recents';
-import { addDays, compareDates, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
+import { compareDates, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { DUE_PRESETS_DAYS } from '@/lib/constants';
 import type { Invoice, Supplier } from '@/lib/types';
@@ -77,7 +77,23 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [invoiceDate, setInvoiceDate] = useState<string>(today);
-  const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(null, today));
+
+  /*
+   * The due date is expressed one of two ways, never both.
+   *
+   *   termDays        — "14 days", from the supplier's own terms or a preset.
+   *                     Follows the invoice date, because that is what a term
+   *                     means: 14 days from the date on the docket.
+   *   explicitDueDate — a date picked directly. Stays where it was put.
+   *
+   * Holding it this way is what makes changing the invoice date do the right
+   * thing. Storing only the resolved date would mean either overwriting a date
+   * somebody typed, or leaving a term stale after the invoice date moved.
+   */
+  const [termDays, setTermDays] = useState<number | null>(null);
+  const [explicitDueDate, setExplicitDueDate] = useState<string | null>(null);
+
+  const dueDate = resolveDueDate({ invoiceDate, termDays, explicitDueDate });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<Warning[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -96,17 +112,17 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     note: '',
   };
 
-  const chosenPreset = activePreset(dueDate, today, DUE_PRESETS_DAYS);
+  const chosenPreset = activePreset(dueDate, invoiceDate, DUE_PRESETS_DAYS);
 
   /** Picking a supplier re-dates the invoice to that supplier's own terms. */
-  const chooseSupplier = useCallback(
-    (next: Supplier) => {
-      setSupplier(next);
-      setDueDate(defaultDueDate(next, today));
-      setErrors((current) => ({ ...current, supplier_id: '' }));
-    },
-    [today],
-  );
+  const chooseSupplier = useCallback((next: Supplier) => {
+    setSupplier(next);
+    // Adopt their terms, and drop any date picked before they were chosen —
+    // their terms are a better guess than the fallback that produced it.
+    setTermDays(next.default_terms_days);
+    setExplicitDueDate(null);
+    setErrors((current) => ({ ...current, supplier_id: '' }));
+  }, []);
 
   async function onCreateSupplier(name: string) {
     if (!profile) return;
@@ -372,7 +388,10 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                     <button
                       key={days}
                       type="button"
-                      onClick={() => setDueDate(addDays(today, days))}
+                      onClick={() => {
+                        setTermDays(days);
+                        setExplicitDueDate(null);
+                      }}
                       aria-pressed={isChosen}
                       aria-label={`Due in ${days} days`}
                       className={`rounded-sm border px-2 py-0.5 text-xs ${
@@ -393,7 +412,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
               id="due-date"
               type="date"
               value={dueDate}
-              onChange={(event) => setDueDate(event.target.value)}
+              onChange={(event) => setExplicitDueDate(event.target.value)}
               className={`figure-date ${fieldClass} ${errors.due_date ? 'border-brick' : 'border-hair'}`}
             />
             <p className="figure-date mt-1 text-xs text-mute">{formatDay(dueDate)}</p>

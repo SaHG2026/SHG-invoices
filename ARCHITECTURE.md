@@ -600,6 +600,19 @@ point it is one file. Phase 6 will keep History's filter parameters as a plain r
 export can run the same query without a page limit — that costs nothing now and is the only
 accommodation made for it.
 
+**Raised again during Phase 3, as "an excel style file".** Still not confirmed, and the client's own
+reason for holding is the right one: nobody knows what format the bookkeeper actually wants. Worth
+knowing when it is decided, because the two answers differ a lot in cost:
+
+| | |
+|---|---|
+| **CSV** | Opens in Excel, opens in anything. No dependency, roughly an hour, and every accounting package on earth imports it. |
+| **True `.xlsx`** | Needed only if the bookkeeper wants formatting, formulas, or multiple tabs. Requires a spreadsheet library — the first dependency added purely for output — and about half a day. |
+
+Default to CSV unless the bookkeeper specifically asks for a formatted workbook. The question to put to
+them is not "CSV or Excel" — they will say Excel, because that is the program they open — but **"what do
+you do with the file when you get it?"** If the answer is "import it", CSV wins on every count.
+
 ### Still open
 
 1. **Spec §3 assumptions 1, 2, 3 and 5** — separate totals per business, suppliers shared across

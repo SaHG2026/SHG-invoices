@@ -320,22 +320,42 @@ describe('the duplicate warning — spec §6', () => {
 });
 
 describe('the due-date shortcuts', () => {
-  it('offers 7, 14 and 21 days', () => {
+  it('offers 7, 14 and 30 days', () => {
     open();
-    for (const days of [7, 14, 21]) {
+    for (const days of [7, 14, 30]) {
       expect(screen.getByRole('button', { name: `Due in ${days} days` })).toBeInTheDocument();
     }
   });
 
   it('sets the due date and marks itself chosen', () => {
     open();
-    fireEvent.click(screen.getByRole('button', { name: 'Due in 21 days' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Due in 30 days' }));
 
-    expect(screen.getByLabelText('Due')).toHaveValue(due(21));
-    expect(screen.getByRole('button', { name: 'Due in 21 days' })).toHaveAttribute(
+    expect(screen.getByLabelText('Due')).toHaveValue(due(30));
+    expect(screen.getByRole('button', { name: 'Due in 30 days' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
+  });
+
+  it('follows the invoice date when the due date is a term', () => {
+    open();
+    pickSupplier('PFD Food Services'); // 7-day terms
+    expect(screen.getByLabelText('Due')).toHaveValue(due(7));
+
+    // Backdate the invoice by three days: the due date moves back with it,
+    // rather than handing a late-arriving docket three extra days to pay.
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: due(-3) } });
+    expect(screen.getByLabelText('Due')).toHaveValue(due(4));
+  });
+
+  it('leaves a due date somebody typed exactly where they put it', () => {
+    open();
+    pickSupplier('PFD Food Services');
+    fireEvent.change(screen.getByLabelText('Due'), { target: { value: due(45) } });
+
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: due(-3) } });
+    expect(screen.getByLabelText('Due')).toHaveValue(due(45));
   });
 });
 

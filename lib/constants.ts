@@ -12,12 +12,9 @@ export const WEEK_HORIZON_DAYS = 7;
 
 /**
  * The due-date preset pills in the add-invoice sheet, and their date maths.
- *
- * 21 rather than the spec's 30, at the client's request after using the sheet.
- * Suppliers on 30-day terms still get the right date automatically from their
- * own `default_terms_days`; only the shortcut button is absent.
+ * Counted from the INVOICE date, not from today — see defaultDueDate.
  */
-export const DUE_PRESETS_DAYS = [7, 14, 21] as const;
+export const DUE_PRESETS_DAYS = [7, 14, 30] as const;
 
 /** Used when a supplier has no `default_terms_days` of its own. */
 export const DEFAULT_TERMS_DAYS = 14;

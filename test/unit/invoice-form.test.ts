@@ -5,6 +5,7 @@ import {
   defaultDueDate,
   emptyInvoiceForm,
   invoiceFormSchema,
+  resolveDueDate,
   type InvoiceFormValues,
 } from '@/lib/invoice-form';
 import { DEFAULT_TERMS_DAYS, DUE_PRESETS_DAYS } from '@/lib/constants';
@@ -154,14 +155,60 @@ describe('due dates', () => {
   it('highlights the preset matching the current due date', () => {
     expect(activePreset('2026-09-04', today, DUE_PRESETS_DAYS)).toBe(7);
     expect(activePreset('2026-09-11', today, DUE_PRESETS_DAYS)).toBe(14);
-    expect(activePreset('2026-09-18', today, DUE_PRESETS_DAYS)).toBe(21);
+    expect(activePreset('2026-09-27', today, DUE_PRESETS_DAYS)).toBe(30);
     expect(activePreset('2026-09-15', today, DUE_PRESETS_DAYS)).toBeNull();
-    // A 30-day supplier's date matches no button; their terms still apply.
-    expect(activePreset('2026-09-27', today, DUE_PRESETS_DAYS)).toBeNull();
   });
 
   it('keeps the presets and the maths reading from one constant', () => {
-    expect([...DUE_PRESETS_DAYS]).toEqual([7, 14, 21]);
+    expect([...DUE_PRESETS_DAYS]).toEqual([7, 14, 30]);
+  });
+});
+
+describe('terms count from the invoice date, not from today', () => {
+  /**
+   * "14 day terms" is a fact about the invoice — fourteen days from the date
+   * printed on it. The two only coincide when the docket arrives the day it
+   * was written. An invoice that turns up three days late is already three
+   * days into its terms; counting from today would quietly hand it three
+   * extra days to pay, on every late-arriving invoice, forever.
+   */
+  const pfd = SUPPLIERS.find((s) => s.name === 'PFD Food Services')!; // 7 days
+
+  it('uses the invoice date as the starting point', () => {
+    expect(defaultDueDate(pfd, '2026-08-25')).toBe('2026-09-01');
+    expect(defaultDueDate(pfd, '2026-08-28')).toBe('2026-09-04');
+  });
+
+  it('does not give a late-arriving invoice extra days', () => {
+    // Docket dated the 25th, entered on the 28th. Due the 1st, not the 4th.
+    expect(defaultDueDate(pfd, '2026-08-25')).not.toBe(defaultDueDate(pfd, '2026-08-28'));
+  });
+});
+
+describe('resolveDueDate', () => {
+  it('follows the invoice date while it is expressed as a term', () => {
+    expect(
+      resolveDueDate({ invoiceDate: '2026-08-28', termDays: 14, explicitDueDate: null }),
+    ).toBe('2026-09-11');
+    // Move the invoice date; the due date moves with it.
+    expect(
+      resolveDueDate({ invoiceDate: '2026-08-25', termDays: 14, explicitDueDate: null }),
+    ).toBe('2026-09-08');
+  });
+
+  it('leaves a date somebody typed exactly where they put it', () => {
+    expect(
+      resolveDueDate({ invoiceDate: '2026-08-28', termDays: 14, explicitDueDate: '2026-10-01' }),
+    ).toBe('2026-10-01');
+    expect(
+      resolveDueDate({ invoiceDate: '2026-08-01', termDays: 7, explicitDueDate: '2026-10-01' }),
+    ).toBe('2026-10-01');
+  });
+
+  it('falls back to the shared default when the supplier has no terms', () => {
+    expect(
+      resolveDueDate({ invoiceDate: '2026-08-28', termDays: null, explicitDueDate: null }),
+    ).toBe('2026-09-11');
   });
 });
 

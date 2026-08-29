@@ -97,24 +97,50 @@ export function buildInvoicePayload(
 /* -------------------------------------------------------------------------- */
 
 /**
- * The due date a supplier implies. Spec §7.3: the supplier's default term is
- * highlighted if set, and this is what makes four taps enough for the common
- * case.
+ * The due date a supplier's terms imply.
+ *
+ * Counted from the INVOICE date, not from today. "14 day terms" is a fact
+ * about the invoice — fourteen days from the date printed on it — and the two
+ * only coincide when the docket arrives the day it was written. An invoice
+ * that turns up three days late is already three days into its terms, and
+ * counting from today would quietly give it three extra days to pay.
+ *
+ * Spec §7.3: the supplier's own term is what makes four taps enough for the
+ * common case.
  */
-export function defaultDueDate(supplier: Supplier | null, today: DateStr): DateStr {
-  return addDays(today, supplier?.default_terms_days ?? DEFAULT_TERMS_DAYS);
+export function defaultDueDate(supplier: Supplier | null, invoiceDate: DateStr): DateStr {
+  return addDays(invoiceDate, supplier?.default_terms_days ?? DEFAULT_TERMS_DAYS);
 }
 
 /** Which of the +7 / +14 / +30 pills is currently the chosen one, if any. */
 export function activePreset(
   dueDate: DateStr,
-  today: DateStr,
+  invoiceDate: DateStr,
   presets: readonly number[],
 ): number | null {
   for (const days of presets) {
-    if (addDays(today, days) === dueDate) return days;
+    if (addDays(invoiceDate, days) === dueDate) return days;
   }
   return null;
+}
+
+/**
+ * Resolve the due date from whichever the person last expressed.
+ *
+ * Two ways to say it, and they behave differently when the invoice date moves:
+ *
+ *   a term  ("14 days", from a supplier or a preset) — follows the invoice
+ *            date, because that is what a term means
+ *   a date  (picked directly)                        — stays put, because a
+ *            date someone typed is not a guess to be overruled
+ */
+export function resolveDueDate(options: {
+  invoiceDate: DateStr;
+  termDays: number | null;
+  explicitDueDate: DateStr | null;
+}): DateStr {
+  if (options.explicitDueDate) return options.explicitDueDate;
+  return addDays(options.invoiceDate, options.termDays ?? DEFAULT_TERMS_DAYS);
 }
 
 /**

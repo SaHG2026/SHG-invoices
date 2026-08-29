@@ -61,11 +61,18 @@ select kind, name, detail from (
   union all
 
   -- The seed. Four people, four businesses.
-  select 6, 'person', display_name::text,
-         (role || ' · ' || initials || ' · ' || accent ||
-          ' · notify=' || notify_on_new_invoice::text ||
-          ' · active=' || active::text)::text
-    from profiles
+  --
+  -- Columns are read through to_jsonb rather than named directly, so a column
+  -- that has not been added yet comes back as "(missing)" instead of aborting
+  -- the whole query. A tool for finding missing columns must not fall over on
+  -- a missing column.
+  select 6, 'person', p.display_name::text,
+         (coalesce(to_jsonb(p) ->> 'role', '(missing)') ||
+          ' · ' || coalesce(to_jsonb(p) ->> 'initials', '(missing)') ||
+          ' · ' || coalesce(to_jsonb(p) ->> 'accent', '(missing)') ||
+          ' · notify=' || coalesce(to_jsonb(p) ->> 'notify_on_new_invoice', '(missing)') ||
+          ' · active=' || coalesce(to_jsonb(p) ->> 'active', '(missing)'))::text
+    from profiles p
 
   union all
 

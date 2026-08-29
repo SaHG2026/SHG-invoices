@@ -550,10 +550,11 @@ Phases are spec §10, unchanged. For each one:
 | 1 Foundation | Schema applied; RLS proven by script to block an anonymous client; two concurrent inserts produce distinct refs; token file and type scale render on a test page. **You review the schema and tokens before I continue.** |
 | 2 Auth | Login works on your phone; PIN unlock works; session survives; every route redirects when signed out. |
 | 3 Add invoice | Cold open to saved invoice under 15s on a real phone, timed not estimated. Sheet survives backgrounding. Duplicate warning fires. Offline save queues honestly. This phase gets re-polished until the timing is real. |
-| 4 Home + pending | The Week answers the Monday-morning question in 3 seconds. Spine renders. Filtered total provably equals the filtered list. 200 rows scroll smoothly on the phone. |
+| 4 Dashboard + pending | Greeting reads correctly at four times of day. Dashboard lists Overall plus the four businesses, each with its own total. Selecting one scopes every screen below it. The `+` is reachable from all of them. Spine renders. Filtered total provably equals the filtered list. 200 rows scroll smoothly on the phone. See §16. |
 | 5 Payment + detail | A whole run ticks in one transaction; killing the connection mid-tick leaves all-or-nothing. Un-tick and void log correctly. Detail stream reads chronologically. Header bell shows unread activity for everyone. |
 | 6 Supplier, history, admin | Search finds an invoice by any of the four identifiers; "everything Sujan ticked off in July" in two taps. |
 | 7 PWA + hardening | Installs to a home screen; loads offline; error boundaries; empty states; mobile QA on the actual phones. Push notification on invoice insert, tested end to end on Mani's actual phone with the app installed — see §8.1 for why that last condition is not optional. |
+| 8 Deli Delights sales | Customers, sales invoices and receipts as their own ledger — see §17. Starts only after v1 has been in daily use for a month, so it is built from how the shops actually work rather than from a guess. |
 
 ### Version control
 
@@ -603,3 +604,118 @@ accommodation made for it.
    point, the justification did not survive scrutiny: adding the column later is
    `alter table invoices add column photo_path text`, which is one line and carries no risk. Nothing
    is bought by doing it now.
+
+---
+
+## 16. Information architecture — revised after the Phase 1 review
+
+The spec put the business filter on a segmented control pinned to the bottom of Home
+(`All · GMH · GMP · MJR · DDL`). On a phone that reads as a filter on one list, and the client asked
+for a clearer division after seeing it. Revised structure:
+
+```
+Dashboard
+  greeting — "Good morning, Sujan"
+  overall total owing
+
+  ┌ Overall ─────────────────────────┐    every business combined
+  ├ GroceryMate Hurstville ──────────┤
+  ├ GroceryMate Parramatta ──────────┤    each with its own outstanding
+  ├ Majheri Restaurant ──────────────┤    total and count
+  └ Deli Delights ───────────────────┘
+```
+
+Selecting **Overall** or any one business opens the same five capabilities, scoped to that selection:
+
+| | |
+|---|---|
+| Pending payments | Sortable by earliest due, biggest amount, supplier name. Running total of whatever is filtered. |
+| Mark paid | Toggle, then the payer's chip is permanent on that invoice. |
+| Add invoice | Number, amount, due date, invoice date defaulting to today and editable, supplier quick-select. |
+| History | Everything paid or voided, searchable, filterable by who did it. |
+| Suppliers | Add and edit. |
+
+**[decision] The `+` button stays global.** It sits on the dashboard and on every screen below it, and
+it pre-selects the last business used. Adding a level of navigation is the right call for reading the
+ledger, but the spec's first metric is fifteen seconds from cold open to a saved invoice, and making
+someone walk into a business first would spend three of those seconds on navigation. Reading is
+hierarchical; writing is not.
+
+**[decision] Nothing about this changes the data layer.** Architecture §2 already loads every unpaid
+invoice into one client-side array, and per-business views are a filter over it — the same filter that
+already backs the segmented control, applied at a different level of the navigation. The totals on the
+dashboard and the totals inside each business are computed from that one array, so they cannot
+disagree with each other.
+
+### The greeting
+
+Time-of-day, in Sydney, from the same `lib/date.ts` that everything else uses — never the phone's
+clock, which may be set to anything.
+
+| Sydney time | Greeting |
+|---|---|
+| 05:00–11:59 | Good morning, Sujan |
+| 12:00–16:59 | Afternoon, Sujan |
+| 17:00–21:59 | Evening, Sujan |
+| 22:00–04:59 | Late night, Sujan? |
+
+Spec §8 still applies: sentence case, no exclamation marks, no emoji. The greeting is warmth, not
+noise, and it is the one place in the app allowed any.
+
+### Notification rules, consolidated
+
+The rule generalises to: **tell the people who asked to be told, never about their own actions.**
+
+| Event | Who hears about it |
+|---|---|
+| Invoice added | Anyone with notifications on, except whoever added it |
+| Invoice marked paid | Anyone with notifications on, except whoever ticked it |
+| Everything else | Nobody — it is in the history, which is always readable |
+
+Currently that means Mani, who is notified when Milan, Sujan or Rabindra logs or pays something, and
+never when he does it himself. It falls out of `push_targets` (§8.1) plus an actor exclusion, so
+there is no per-person rule to maintain and no branch that names Mani.
+
+History is unconditional and independent of notifications: every payment always records when and by
+whom, and the audit trigger writes it regardless of anybody's settings.
+
+---
+
+## 17. Deli Delights — [decision] a second ledger, not a flag
+
+Deli Delights is a packaged food company. It buys from suppliers like the other three, **and it sells
+to customers**, and it needs to know who owes it money and whether they have paid.
+
+That is a different ledger, not a variation on this one. The honest picture:
+
+|  | Supplier invoices (built) | Customer invoices (new) |
+|---|---|---|
+| Direction | Money out | Money in |
+| Counterparty | Supplier | Customer |
+| Overdue means | **Our** problem — pay it | **Their** problem — chase it |
+| The action | Mark paid | Record a receipt, send a reminder |
+| The headline question | What leaves the account this week | Who owes us, and for how long |
+
+### Why not one table with a direction flag
+
+It would look tidier and it would be wrong. Every list, every total and the whole due spine would need
+to know which direction it was showing, and the one screen the spec cares most about — "what leaves
+the account this week" — would have to filter money *in* back out of itself on every render. The
+design's clarity comes from that screen answering exactly one question. A direction flag puts a
+condition inside every answer.
+
+### What it will be instead
+
+Its own tables — `customers`, `sales_invoices`, `receipts` — reusing the parts that are genuinely
+generic: the reference generator, the audit trigger, the money and date modules, the payment-run
+grouping. Roughly a phase of work.
+
+### Where it goes: Phase 8
+
+After v1 is in daily use, and here is the reason rather than the excuse. Chasing a customer is a
+different job from paying a supplier — it involves reminders, part payments and a relationship — and
+none of us knows yet which of those Deli Delights actually needs. Building it before the payables app
+has been used for a month means guessing at all of it, and spec §11's discipline exists precisely for
+this case.
+
+Nothing about the current schema blocks it, and nothing needs adding now.

@@ -116,6 +116,17 @@ export function sydneyToday(now: Date = new Date()): DateStr {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/**
+ * The hour of the day in Sydney, 0–23.
+ *
+ * Used for the dashboard greeting. Deliberately not the phone's own clock: a
+ * phone can be set to any timezone, and a person in the Hurstville shop at 9am
+ * should be told good morning whatever their handset thinks.
+ */
+export function sydneyHour(now: Date = new Date()): number {
+  return zonedParts(now, TZ).hour;
+}
+
 /** Milliseconds from `now` until the next Sydney midnight. */
 export function msUntilSydneyMidnight(now: Date = new Date()): number {
   const { hour, minute, second } = zonedParts(now, TZ);

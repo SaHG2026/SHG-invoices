@@ -57,6 +57,18 @@ export function WeekView({ scope }: { scope: Scope }) {
     () => filterByScope(invoices, scope, businesses),
     [invoices, scope, businesses],
   );
+
+  /*
+   * Whether there is anything to draw, which is not the same as whether
+   * anything is owed.
+   *
+   * `summary` counts only unpaid invoices, so gating the sections on it meant
+   * ticking off the last one replaced the entire screen with "No invoices
+   * outstanding here" — including the row that had just been ticked, and its
+   * Undo with it. Exactly the disappearing act keeping paid rows was supposed
+   * to end.
+   */
+  const hasRows = scoped.length > 0;
   const summary = useMemo(() => summarise(scoped), [scoped]);
   const buckets = useMemo(
     () => (today ? bucketByUrgency(scoped, today) : null),
@@ -105,8 +117,8 @@ export function WeekView({ scope }: { scope: Scope }) {
           <nav className="mb-6 overflow-hidden rounded-sm border border-edge bg-card">
             {(
               [
-                [pendingHref(scope), 'All pending, sorted and filtered'],
-                [historyHref(scope), 'History — what has been paid'],
+                [pendingHref(scope), 'Pending'],
+                [historyHref(scope), 'History'],
                 /*
                   Customers, only here.
                   It is in the side menu too, but Deli Delights is the only
@@ -115,7 +127,7 @@ export function WeekView({ scope }: { scope: Scope }) {
                   would imply they have customers as well.
                 */
                 ...(scope === 'ddl'
-                  ? ([['/customers' as Route, 'Customers — who we sell to']] as const)
+                  ? ([['/customers' as Route, 'Customers']] as const)
                   : []),
               ] as const
             ).map(([href, label]) => (
@@ -132,7 +144,7 @@ export function WeekView({ scope }: { scope: Scope }) {
             ))}
           </nav>
 
-          {buckets && summary.invoice_count > 0
+          {buckets && hasRows
             ? (Object.keys(SECTION_LABEL) as Urgency[]).map((urgency) => {
                 const rows = buckets[urgency];
                 if (rows.length === 0) return null;
@@ -185,7 +197,7 @@ export function WeekView({ scope }: { scope: Scope }) {
               })
             : null}
 
-          {!isLoading && summary.invoice_count === 0 ? (
+          {!isLoading && !hasRows ? (
             <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
               No invoices outstanding here. Add one with the + button.
             </p>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NAV_ITEMS, activeSection, isBusinessActive } from '@/lib/nav';
+import { businessIdForPath } from '@/lib/scope';
 import { BUSINESSES } from '../fixtures/invoices';
 
 /**
@@ -112,5 +113,29 @@ describe('the business rows', () => {
     for (const business of BUSINESSES) {
       expect(isBusinessActive('/b/all', business.code)).toBe(false);
     }
+  });
+});
+
+describe('the + knows which business you are standing in', () => {
+  it('picks the business from a business URL', () => {
+    for (const business of BUSINESSES) {
+      const path = `/b/${business.code.toLowerCase()}`;
+      expect(businessIdForPath(path, BUSINESSES), path).toBe(business.id);
+      expect(businessIdForPath(`${path}/pending`, BUSINESSES)).toBe(business.id);
+    }
+  });
+
+  it('picks nothing on Overall, where the last one used is still the best guess', () => {
+    expect(businessIdForPath('/b/all', BUSINESSES)).toBeNull();
+  });
+
+  it('picks nothing outside the business screens', () => {
+    for (const path of ['/', '/suppliers', '/customers', '/settings', '/invoices/abc']) {
+      expect(businessIdForPath(path, BUSINESSES), path).toBeNull();
+    }
+  });
+
+  it('picks nothing for a business that does not exist', () => {
+    expect(businessIdForPath('/b/nope', BUSINESSES)).toBeNull();
   });
 });

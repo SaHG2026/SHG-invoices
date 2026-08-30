@@ -122,23 +122,21 @@ export function InvoiceRow({
               ✓
             </span>
           </button>
-        ) : onUndo && invoice.status === 'paid' ? (
-          /* A filled tick you can tap back. Same slot, same size, so the row
-             does not shuffle sideways the moment it is ticked. */
-          <button
-            type="button"
-            onClick={onUndo}
-            aria-label={`Undo — put ${invoice.supplier.name} ${formatCents(invoice.amount_cents)} back to unpaid`}
-            className={`touch flex shrink-0 items-center justify-center ${showSpine ? 'pl-3' : 'pl-2'}`}
+        ) : invoice.status === 'paid' ? (
+          /* Same slot, same size, so the row does not shuffle sideways the
+             moment it is ticked — but a filled tick now says "done" and does
+             nothing, because the thing that undoes it says Undo. */
+          <span
+            aria-hidden
+            className={`flex shrink-0 items-center justify-center ${showSpine ? 'pl-3' : 'pl-2'}`}
           >
             <span
-              aria-hidden
-              className="flex size-6 items-center justify-center rounded-full text-xs transition-colors duration-150"
+              className="flex size-6 items-center justify-center rounded-full text-xs"
               style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
             >
               ✓
             </span>
-          </button>
+          </span>
         ) : null}
 
         <button
@@ -180,10 +178,7 @@ export function InvoiceRow({
 
             <span className="figure-date block truncate text-xs text-muted">
               {invoice.status === 'paid' ? (
-                <>
-                  Paid{payer ? ` by ${payer.display_name}` : ''}
-                  {onUndo ? ' · tap the tick to undo' : ''}
-                </>
+                <>Paid{payer ? ` by ${payer.display_name}` : ''}</>
               ) : (
                 <>
                   {formatDay(invoice.due_date)}
@@ -208,6 +203,23 @@ export function InvoiceRow({
             {expanded ? '⌃' : '⌄'}
           </span>
         </button>
+
+        {/*
+          Undo, spelled out, outside the expanding button.
+          It was a green tick with "tap the tick to undo" in 12px grey
+          underneath — which asks somebody to read an instruction to discover a
+          control. A word they can see and hit is not a hint.
+        */}
+        {onUndo && invoice.status === 'paid' ? (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="touch mr-2 shrink-0 rounded-full px-3 text-xs font-medium"
+            style={{ backgroundColor: 'var(--action-bg)', color: 'var(--action)' }}
+          >
+            Undo
+          </button>
+        ) : null}
       </div>
 
       {expanded ? (

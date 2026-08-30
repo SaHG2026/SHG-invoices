@@ -172,7 +172,7 @@ describe('the sticky total equals what is on screen', () => {
     await screen.findByRole('heading', { name: 'Pending' });
     const total = footerTotal();
 
-    for (const label of ['Supplier', 'Amount', 'Recently added', 'Due date']) {
+    for (const label of ['By supplier', 'Highest amount', 'By supplier', 'Upcoming']) {
       fireEvent.click(screen.getByRole('button', { name: label }));
       expect(footerTotal()).toBe(total);
       expect(rowButtons()).toHaveLength(invoices.length);
@@ -185,7 +185,7 @@ describe('sorting', () => {
     open();
     await screen.findByRole('heading', { name: 'Pending' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Amount' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Highest amount' }));
     const amounts = rowButtons().map((row) =>
       Number(row.querySelector('.money')!.textContent!.replace(/[^0-9.]/g, '')),
     );
@@ -200,12 +200,12 @@ describe('sorting', () => {
     open();
     await screen.findByRole('heading', { name: 'Pending' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Supplier' }));
-    expect(screen.getByRole('button', { name: 'Supplier' })).toHaveAttribute(
+    fireEvent.click(screen.getByRole('button', { name: 'By supplier' }));
+    expect(screen.getByRole('button', { name: 'By supplier' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    expect(screen.getByRole('button', { name: 'Due date' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Upcoming' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );

@@ -96,3 +96,26 @@ export function filterByScope(
   if (!business) return [];
   return rows.filter((row) => row.business_id === business.id);
 }
+
+/**
+ * The business you are currently looking at, from the URL.
+ *
+ * The `+` is global (ARCHITECTURE §16) and pre-selected the last business used
+ * on this device, which is right from the dashboard and wrong from inside a
+ * business: standing in Majheri and adding an invoice to Hurstville because
+ * that is where you were yesterday is a mistake the interface invited.
+ *
+ * Returns null for Overall and for every screen that is not a business, where
+ * "the last one you used" is still the best available guess.
+ */
+export function businessIdForPath(
+  pathname: string,
+  businesses: readonly Business[],
+): string | null {
+  const match = /^\/b\/([^/?#]+)/.exec(pathname);
+  if (!match) return null;
+
+  const scope = parseScope(match[1]);
+  if (isAll(scope)) return null;
+  return businessForScope(scope, businesses)?.id ?? null;
+}

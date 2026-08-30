@@ -160,13 +160,13 @@ describe('the customer list', () => {
     const box = screen.getByLabelText('New customer name');
 
     fireEvent.change(box, { target: { value: 'New Grocer' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalled());
     expect(box).toHaveValue('');
 
     mocks.create.mockRejectedValue(new Error('There is already a customer called X.'));
     fireEvent.change(box, { target: { value: 'Duplicate Co' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
 
     // Losing what somebody typed is never acceptable.
     await waitFor(() => expect(box).toHaveValue('Duplicate Co'));

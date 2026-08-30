@@ -261,7 +261,7 @@ export default function Dashboard() {
       */}
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-h2 text-ink">Businesses</h2>
+          <h2 className="text-h2 text-ink">Invoices overview</h2>
           <Link
             href={scopeHref('all')}
             className="touch flex items-baseline gap-2 text-sm text-action"

@@ -17,12 +17,22 @@ import type { Business, InvoiceRow } from '../types';
 
 export type SortKey = 'due' | 'supplier' | 'amount' | 'added';
 
-/** Spec §7.4 — a single row of pills, in this order. */
+/**
+ * The three questions people actually ask of a pending list.
+ *
+ * Was four, labelled by the field each one sorted on — "Due date", "Amount",
+ * "Supplier", "Recently added". Those name the mechanism rather than the
+ * question, and "Recently added" answered one nobody was asking: the only
+ * reason to sort by entry order is to find something you have just typed,
+ * which is what search is for.
+ *
+ * `SortKey` still carries 'added' because the type describes what sortInvoices
+ * can do, not what this list offers.
+ */
 export const SORT_OPTIONS: ReadonlyArray<{ key: SortKey; label: string }> = [
-  { key: 'due', label: 'Due date' },
-  { key: 'supplier', label: 'Supplier' },
-  { key: 'amount', label: 'Amount' },
-  { key: 'added', label: 'Recently added' },
+  { key: 'due', label: 'Upcoming' },
+  { key: 'amount', label: 'Highest amount' },
+  { key: 'supplier', label: 'By supplier' },
 ];
 
 export interface InvoiceFilter {

@@ -69,6 +69,7 @@ describe('preview', () => {
   it.skipIf(!OUT)('snapshot', async () => {
     const Dashboard = (await import('@/app/(app)/page')).default;
     const { NavDrawer } = await import('@/components/app/NavDrawer');
+    const { AddInvoiceSheet } = await import('@/components/invoice/AddInvoiceSheet');
 
     const closed = render(
       <ToastProvider>
@@ -85,6 +86,16 @@ describe('preview', () => {
       </ToastProvider>,
     );
     const drawerHtml = open.container.innerHTML;
+
+    // The add-invoice sheet, which is the screen that has to survive a
+    // keyboard. Rendered inside the dashboard so it sits over a real page.
+    const sheet = render(
+      <ToastProvider>
+        <Dashboard />
+        <AddInvoiceSheet open onClose={() => {}} />
+      </ToastProvider>,
+    );
+    const sheetHtml = sheet.container.innerHTML;
 
     const css = CSS ? readFileSync(CSS, 'utf8') : '';
 
@@ -106,7 +117,9 @@ describe('preview', () => {
 
     writeFileSync(OUT, page(dashboardHtml), 'utf8');
     writeFileSync(OUT.replace(/\.html$/, '-menu.html'), page(drawerHtml), 'utf8');
+    writeFileSync(OUT.replace(/\.html$/, '-sheet.html'), page(sheetHtml), 'utf8');
 
     open.unmount();
+    sheet.unmount();
   });
 });

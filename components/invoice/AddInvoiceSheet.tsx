@@ -16,7 +16,9 @@ import {
   resolveDueDate,
   type InvoiceFormValues,
 } from '@/lib/invoice-form';
+import { usePathname } from 'next/navigation';
 import { readLastBusinessId, writeLastBusinessId } from '@/lib/recents';
+import { businessIdForPath } from '@/lib/scope';
 import { compareDates, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { DUE_PRESETS_DAYS } from '@/lib/constants';
@@ -83,10 +85,27 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const createInvoice = useCreateInvoice();
   const createSupplier = useCreateSupplier();
 
+  const pathname = usePathname();
   const today = useMemo(() => sydneyToday(), []);
 
-  const [businessId, setBusinessId] = useState<string>(
-    () => readLastBusinessId() ?? businesses[0]?.id ?? '',
+  /*
+   * Which business this invoice is for, in order of what the person most
+   * likely means:
+   *
+   *   1. what they have just tapped in this sheet
+   *   2. the business they are standing in — adding from inside Majheri means
+   *      Majheri, not wherever they were yesterday
+   *   3. the last one they used on this device, from the dashboard
+   *   4. the first business, so the field is never empty
+   *
+   * Held as "have they chosen yet" rather than as the id itself, so a late
+   * businesses query or a navigation cannot leave a stale pre-selection behind.
+   */
+  const [chosenBusinessId, setChosenBusinessId] = useState<string | null>(null);
+  const lastUsedBusinessId = useMemo(() => readLastBusinessId(), []);
+  const scopeBusinessId = useMemo(
+    () => businessIdForPath(pathname ?? '', businesses),
+    [pathname, businesses],
   );
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -115,7 +134,8 @@ function SheetBody({ onClose }: { onClose: () => void }) {
 
   // The business list can arrive after first render; adopt the first one only
   // if nothing has been chosen yet.
-  const effectiveBusinessId = businessId || businesses[0]?.id || '';
+  const effectiveBusinessId =
+    chosenBusinessId ?? scopeBusinessId ?? lastUsedBusinessId ?? businesses[0]?.id ?? '';
 
   const values: InvoiceFormValues = {
     business_id: effectiveBusinessId,
@@ -293,7 +313,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
               <button
                 key={business.id}
                 type="button"
-                onClick={() => setBusinessId(business.id)}
+                onClick={() => setChosenBusinessId(business.id)}
                 aria-pressed={isChosen}
                 className={`touch flex items-center gap-2 rounded-full border pl-2 pr-4 text-sm transition-colors duration-150 ${
                   isChosen ? 'border-action bg-action text-action-text' : 'border-hairline bg-card text-ink'

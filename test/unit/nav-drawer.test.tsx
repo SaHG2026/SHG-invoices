@@ -250,3 +250,43 @@ describe('the header it hangs off', () => {
     ).toHaveAttribute('href', '/settings');
   });
 });
+
+describe('the counts are what is still owed', () => {
+  it('does not keep counting an invoice that has been paid', async () => {
+    /*
+     * Reported as "even when paid, there's still label of pending invoices on
+     * the side menu". The unpaid query now carries this session's ticked-off
+     * invoices so their rows do not vanish, and the menu was counting the
+     * array as it arrived.
+     */
+    vi.resetModules();
+    const gmh = BUSINESSES.find((b) => b.code === 'GMH')!;
+    const mixed = invoices.map((invoice) =>
+      invoice.business_id === gmh.id ? { ...invoice, status: 'paid' as const } : invoice,
+    );
+
+    vi.doMock('@/lib/queries/invoices', () => ({
+      useUnpaidInvoices: () => ({ data: mixed, isLoading: false }),
+      useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      findDuplicates: vi.fn(),
+    }));
+
+    const { NavDrawer: Drawer } = await import('@/components/app/NavDrawer');
+    render(<Drawer onClose={() => {}} />);
+
+    // Every GMH invoice is paid, so no number sits beside it at all.
+    const row = screen.getByText(gmh.name).closest('a')!;
+    expect(row.textContent).toBe(gmh.name);
+
+    // The businesses that still owe are unaffected.
+    const gmp = BUSINESSES.find((b) => b.code === 'GMP')!;
+    const stillOwed = mixed.filter(
+      (i) => i.business_id === gmp.id && i.status === 'unpaid',
+    ).length;
+    expect(
+      within(screen.getByText(gmp.name).closest('a')!).getByText(String(stillOwed)),
+    ).toBeInTheDocument();
+
+    vi.doUnmock('@/lib/queries/invoices');
+  });
+});

@@ -119,8 +119,16 @@ describe('the sections', () => {
       const rows = buckets[key];
       if (rows.length === 0) continue;
 
-      const section = screen.getByText(new RegExp(`^${label}`)).closest('section')!;
-      expect(within(section).getByText(formatCents(sumCents(rows)))).toBeInTheDocument();
+      /*
+       * The section's own header line, not the whole section.
+       *
+       * Searching the section found two matches as soon as one invoice in it
+       * happened to be worth what the section was worth — which is a fixture
+       * coincidence, not a bug, and exactly the kind of flake that gets a real
+       * failure dismissed later.
+       */
+      const heading = screen.getByText(new RegExp(`^${label}`)).parentElement!;
+      expect(within(heading).getByText(formatCents(sumCents(rows)))).toBeInTheDocument();
     }
   });
 
@@ -192,7 +200,7 @@ describe('scoping', () => {
 
   it('links to the pending list for the same scope', () => {
     open('gmh');
-    expect(screen.getByText(/All pending/).closest('a')).toHaveAttribute(
+    expect(screen.getByText('Pending').closest('a')).toHaveAttribute(
       'href',
       '/b/gmh/pending',
     );
@@ -206,5 +214,42 @@ describe('nothing broken — notes §6', () => {
     for (const token of ['undefined', 'NaN', '[object Object]', 'Invalid Date']) {
       expect(text).not.toContain(token);
     }
+  });
+});
+
+describe('ticking off the last one', () => {
+  it('leaves the rows on screen instead of emptying the whole page', async () => {
+    /*
+     * Reported as "the checked off one is still disappearing if all are
+     * checked off". The rows were kept, but the sections were gated on the
+     * count of what was still OWED — so paying the last invoice replaced the
+     * entire screen with "No invoices outstanding here", taking the row that
+     * had just been ticked and its Undo with it.
+     */
+    vi.resetModules();
+    const paidOff = invoices
+      .filter((invoice) => invoice.business.code === 'GMH')
+      .map((invoice) => ({ ...invoice, status: 'paid' as const }));
+
+    vi.doMock('@/lib/queries/invoices', () => ({
+      useUnpaidInvoices: () => ({ data: paidOff, isLoading: false }),
+      useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      findDuplicates: vi.fn(),
+    }));
+
+    const { ToastProvider: Fresh } = await import('@/components/ui/Toast');
+    const { WeekView: Screen } = await import('@/components/screens/WeekView');
+    render(
+      <Fresh>
+        <Screen scope="gmh" />
+      </Fresh>,
+    );
+
+    expect(screen.queryByText(/No invoices outstanding here/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Undo').length).toBeGreaterThan(0);
+
+    // And the money is right: nothing is owed, even though rows are showing.
+    expect(screen.getByText('Nothing outstanding.')).toBeInTheDocument();
+    vi.doUnmock('@/lib/queries/invoices');
   });
 });

@@ -1299,3 +1299,107 @@ are things you press.
   initials until his own file arrives.
 
 Tests: 437, up from 427, under all three timezones.
+
+
+---
+
+## 24. Second round of phone feedback
+
+### 24.1 "The checked off one is still disappearing if all are checked off"
+
+§23 kept paid rows on screen, and then the week gated its sections on
+`summary.invoice_count`, which counts only what is still **owed**. So paying
+the last invoice replaced the whole screen with "No invoices outstanding here"
+— taking the row that had just been ticked, and its Undo, with it. Half a fix
+is its own bug.
+
+The sections now gate on whether there is anything to *draw*, which is not the
+same question as whether anything is owed. The header still says "Nothing
+outstanding", because that part was true.
+
+### 24.2 "Even when paid, there's still label of pending invoices on the menu"
+
+Same root. The unpaid query now carries this session's ticked-off invoices, and
+the drawer counted the array as it arrived. It counts `onlyUnpaid` now.
+
+Both are the cost of §23's decision to put paid rows into the shared array, and
+both were found by a person rather than by a test. The lesson is already
+written into `onlyUnpaid`: every reader of that array has to say out loud
+whether it wants what is on screen or what is owed. There is no default that is
+right for both.
+
+### 24.3 The add-invoice sheet — one bad measurement
+
+**Reported as:** "jumps in like crazy. Clips off the title where you select the
+business. And can't even scroll down."
+
+All three from one line:
+
+```
+const hidden = window.innerHeight - viewport.height - viewport.offsetTop;
+```
+
+That difference is the keyboard — **and also the mobile browser's collapsing
+URL bar**, which is 60-100px and moves while you scroll. So the sheet was
+lifting off the bottom with no keyboard present, capping its own height to
+match, and losing its top edge off the screen. On a desktop browser, where
+there is no collapsing chrome, it was invisible.
+
+Two changes:
+
+- **A keyboard is at least 150px.** Nothing smaller is treated as one. No phone
+  keyboard is under it; no browser chrome is over it.
+- **The sheet is sized from `visualViewport.height`, not `100dvh`.** `dvh` does
+  not shrink when the keyboard opens on iOS, so a sheet capped against it and
+  then lifted had its top pushed off the screen. Measured against what is
+  actually visible, the sheet cannot be taller than the space it is in.
+
+Verified by measurement rather than by eye: with a 320px keyboard the panel
+sits at top 24, bottom 500 in an 820px viewport — entirely above the keyboard,
+title visible, scrolling to the end.
+
+The sheet now changes **height** rather than travelling. Growing and shrinking
+from the top edge reads as making room; lifting the whole panel reads as being
+shoved.
+
+### 24.4 Undo gets a word
+
+It was a green tick, with "tap the tick to undo" in 12px grey underneath. That
+asks somebody to read an instruction to discover a control. There is now an
+**Undo** button on the row; the tick stays as a status light and does nothing.
+
+### 24.5 The `+` follows where you are
+
+`businessIdForPath` reads the business out of the URL and the sheet prefers it
+over the last-used one. Standing in Majheri and adding an invoice to Hurstville
+because that is where you were yesterday was a mistake the interface invited.
+Order of preference: what you just tapped, where you are standing, what you
+used last, the first business.
+
+### 24.6 Words
+
+| Was | Now |
+|---|---|
+| Businesses | Invoices overview |
+| All pending, sorted and filtered | Pending |
+| History - what has been paid | History |
+| Due date, Supplier, Amount, Recently added | Upcoming, Highest amount, By supplier |
+
+**"Recently added" is gone rather than renamed.** The other three name a
+question somebody asks; entry order answers one nobody does - the only reason
+to want it is to find something you have just typed, which is what search is
+for. `SortKey` keeps `'added'`, because the type describes what `sortInvoices`
+can do, not what this screen offers.
+
+### 24.7 "Still no option to add customer!!!"
+
+The field was there from the first build, and the client reported its absence
+twice. **Twice is not a discoverability quibble, it is the answer.** It was a
+bare input with placeholder text, directly above a real search box - so it read
+as a second search box, and a placeholder disappears the moment you type.
+
+It is now a titled panel, "Add a customer", with a labelled `+ Add` button. The
+`customers` table was verified present and RLS-protected before anything was
+changed, so this was never a broken page.
+
+Tests: 452, up from 446, under all three timezones.

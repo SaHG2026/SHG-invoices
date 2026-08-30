@@ -220,14 +220,14 @@ describe('coming up', () => {
   it('reorders when the sort changes', () => {
     open();
     fireEvent.click(screen.getByRole('button', { name: /Sort:/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Amount' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Highest amount' }));
 
     // Biggest first, so the largest run in the whole set must now be on screen.
     const biggest = [...groupIntoRuns(invoices)].sort(
       (a, b) => b.total_cents - a.total_cents,
     )[0]!;
     expect(screen.getAllByText(biggest.supplier.name).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /Sort: amount/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sort: highest amount/ })).toBeInTheDocument();
   });
 });
 

@@ -32,29 +32,55 @@ interface SheetProps {
   footer?: React.ReactNode;
 }
 
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0);
+/**
+ * A keyboard is at least this tall.
+ *
+ * `window.innerHeight - visualViewport.height` is the difference between what
+ * the layout thinks exists and what is actually visible — which is the
+ * keyboard, and ALSO the mobile browser's collapsing URL bar. On a phone that
+ * bar is worth 60-100px and it moves while you scroll, so the raw difference
+ * was reporting a phantom keyboard with no keyboard on screen: the sheet lifted
+ * off the bottom for no reason, its height was reduced to match, and the top of
+ * it went out of view. That is the "jumps in like crazy" and the clipped
+ * business row, from one measurement.
+ *
+ * No on-screen keyboard is under 150px on any phone; no browser chrome is over
+ * it. Anything smaller is treated as not a keyboard.
+ */
+const KEYBOARD_MIN_PX = 150;
+
+interface Viewport {
+  /** How much of the bottom is covered by a keyboard. Zero when there is none. */
+  keyboard: number;
+  /** What is actually visible, in px. Null until measured. */
+  height: number | null;
+}
+
+function useViewport(): Viewport {
+  const [viewport, setViewport] = useState<Viewport>({ keyboard: 0, height: null });
 
   useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
+    const visual = window.visualViewport;
+    if (!visual) return;
 
     const measure = () => {
-      // What the layout thinks exists, minus what is actually visible.
-      const hidden = window.innerHeight - viewport.height - viewport.offsetTop;
-      setInset(Math.max(0, Math.round(hidden)));
+      const hidden = window.innerHeight - visual.height - visual.offsetTop;
+      setViewport({
+        keyboard: hidden >= KEYBOARD_MIN_PX ? Math.round(hidden) : 0,
+        height: Math.round(visual.height),
+      });
     };
 
     measure();
-    viewport.addEventListener('resize', measure);
-    viewport.addEventListener('scroll', measure);
+    visual.addEventListener('resize', measure);
+    visual.addEventListener('scroll', measure);
     return () => {
-      viewport.removeEventListener('resize', measure);
-      viewport.removeEventListener('scroll', measure);
+      visual.removeEventListener('resize', measure);
+      visual.removeEventListener('scroll', measure);
     };
   }, []);
 
-  return inset;
+  return viewport;
 }
 
 export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
@@ -62,7 +88,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
   // to read the paper docket cannot wipe what has been typed (notes §1.1).
   useFormGuard();
 
-  const keyboardInset = useKeyboardInset();
+  const { keyboard, height: visibleHeight } = useViewport();
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Escape closes; the page behind does not scroll while the sheet is up.
@@ -98,20 +124,29 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
 
       <div
         ref={panelRef}
-        className="sheet-in absolute inset-x-0 flex flex-col rounded-t-2xl bg-card shadow-[0_-2px_24px_rgba(18,56,75,0.18)]"
+        className="sheet-in absolute inset-x-0 flex flex-col bg-card shadow-[0_-2px_24px_rgba(18,56,75,0.18)]"
         style={{
           /*
-            The lift follows the keyboard rather than jumping with it.
-            visualViewport reports the new height in one step, so without a
-            transition the whole sheet teleports upward the instant a field is
-            focused — which is the part that reads as jarring. 250ms on the
-            same curve turns it into the sheet getting out of the way.
+            Sized to what is visible, not to the layout viewport.
+            `100dvh` does not shrink when the keyboard opens on iOS, so a sheet
+            capped against it and then lifted above the keyboard had its top
+            pushed off the screen — taking the business row with it. Measuring
+            visualViewport.height means the sheet is never taller than the
+            space it is in, so nothing can be cut off the top and the content
+            below it scrolls instead.
           */
-          transition: `bottom 250ms var(--ease-ios), max-height 250ms var(--ease-ios)`,
-          bottom: keyboardInset,
-          // Leave a strip of the page visible so it reads as a sheet over the
-          // ledger rather than a new screen.
-          maxHeight: `calc(100dvh - ${keyboardInset}px - 32px)`,
+          bottom: keyboard,
+          maxHeight: visibleHeight ? visibleHeight - 24 : 'calc(100dvh - 24px)',
+          // 16px, iOS's own sheet corner. The 4px of spec §9 is a radius for
+          // things sitting IN the page; this is the page's edge.
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          /*
+            The height changes when the keyboard arrives; the sheet does not
+            travel. Growing and shrinking from the top edge reads as the sheet
+            making room, where lifting the whole panel reads as it being shoved.
+          */
+          transition: `max-height 220ms var(--ease-ios), bottom 220ms var(--ease-ios)`,
         }}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">

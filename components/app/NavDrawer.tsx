@@ -10,6 +10,7 @@ import { useBusinesses } from '@/lib/queries/reference';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { NAV_ITEMS, activeSection, isBusinessActive } from '@/lib/nav';
+import { onlyUnpaid } from '@/lib/derive/select';
 import { scopeHref } from '@/lib/scope';
 
 /**
@@ -57,9 +58,16 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
    */
   const insideBusiness = businesses.some((business) => isBusinessActive(pathname, business.code));
 
+  /*
+   * Still outstanding, not still on screen.
+   *
+   * The unpaid query now carries this session's ticked-off invoices so their
+   * rows do not vanish under the person reading them. Counting the array as it
+   * arrives meant the menu went on saying 12 after two of them were paid.
+   */
   const counts = useMemo(() => {
     const perBusiness = new Map<string, number>();
-    for (const invoice of invoices) {
+    for (const invoice of onlyUnpaid(invoices)) {
       perBusiness.set(invoice.business_id, (perBusiness.get(invoice.business_id) ?? 0) + 1);
     }
     return perBusiness;

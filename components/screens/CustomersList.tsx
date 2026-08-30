@@ -65,23 +65,36 @@ export function CustomersList() {
         other direction.
       </p>
 
-      <form onSubmit={add} className="mb-3 flex gap-2">
-        <input
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-          placeholder="Add a customer"
-          aria-label="New customer name"
-          autoCapitalize="words"
-          className="touch min-w-0 flex-1 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
-        />
-        <button
-          type="submit"
-          disabled={newName.trim() === '' || createCustomer.isPending}
-          className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
-        >
-          Add
-        </button>
-      </form>
+      {/*
+        A named panel rather than a bare text field with an Add button.
+
+        The field was there from the start and the client twice reported there
+        was no way to add a customer — which means it was not there, in the only
+        sense that counts. A placeholder is not a label: it disappears the
+        moment you type, and on a screen you have never seen before an empty
+        box reads as search, especially with a real search box directly under
+        it.
+      */}
+      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+        <h2 className="mb-2 text-xs uppercase tracking-widest text-muted">Add a customer</h2>
+        <form onSubmit={add} className="flex gap-2">
+          <input
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="Their business name"
+            aria-label="New customer name"
+            autoCapitalize="words"
+            className="touch min-w-0 flex-1 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+          />
+          <button
+            type="submit"
+            disabled={newName.trim() === '' || createCustomer.isPending}
+            className="touch shrink-0 rounded-full bg-action px-5 text-sm font-medium text-action-text disabled:opacity-40"
+          >
+            {createCustomer.isPending ? 'Adding…' : '+ Add'}
+          </button>
+        </form>
+      </section>
 
       <div className="mb-3 flex items-center rounded-sm border border-hairline bg-card">
         <span aria-hidden className="pl-3 text-sm text-muted">

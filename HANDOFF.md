@@ -54,7 +54,7 @@ The home screen from his mockup is now in too — OVERDUE / NEXT 7 DAYS cards, a
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 446 tests
+npx vitest run       # 452 tests
 npx tsc --noEmit
 npx next build
 ```

@@ -107,7 +107,7 @@ export function CustomersList() {
         <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
           Couldn’t load customers. If this is the first time you’ve opened this screen, the
           customers table hasn’t been created yet — run{' '}
-          <span className="font-mono text-xs">db/migrations/008_customers.sql</span> in Supabase.
+          <span className="font-mono text-xs">CATCH_UP_004.sql</span> in Supabase.
         </p>
       ) : isLoading ? (
         <p className="text-sm text-muted">Loading…</p>

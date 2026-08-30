@@ -322,7 +322,7 @@ describe('before the migration has been run', () => {
 
     // An empty list and a missing table look identical from the component's
     // side, and only one of them is "no customers yet".
-    expect(screen.getByText(/008_customers\.sql/)).toBeInTheDocument();
+    expect(screen.getByText(/CATCH_UP_004\.sql/)).toBeInTheDocument();
     expect(screen.queryByText(/No customers yet/)).not.toBeInTheDocument();
     vi.doUnmock('@/lib/queries/customers');
   });

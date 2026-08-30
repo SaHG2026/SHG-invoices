@@ -30,7 +30,9 @@ from cold app open.** That target has been measured and met; the client's words
 were "it feels instantaneous". Every feature decision defers to it.
 
 - **Live:** https://shg-invoices.vercel.app
-- **Repo:** `SaHG2026/SHG-invoices`, branch `phase-1-foundation`
+- **Repo:** `SaHG2026/SHG-invoices`, branch `tidy-up-before-phase-7`
+  (everything through Phase 6 is on `phase-1-foundation`; the branch-per-phase
+  convention in `ARCHITECTURE.md` §14 was not followed until now)
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local` (gitignored, already populated)
 
@@ -39,13 +41,21 @@ hardening, offline write queue, error boundaries, a 200-row performance pass,
 and push notifications. The client said there were "more bits to tidy up"
 before starting it, so **ask before beginning Phase 7.**
 
+Those tidy-up bits are now underway on `tidy-up-before-phase-7` and are **not**
+Phase 7. Landed so far: the side menu, "SHG Invoices" branding with a logo slot
+per business, the customer list, and a Settings screen (`ARCHITECTURE.md` §20).
+Still to come, at the client's request: the home screen from his mockup —
+OVERDUE / NEXT 7 DAYS stat cards, a "Coming up" list with due pills, a
+full-width **+ New invoice**. It was deliberately held back so the drawer could
+be tested on its own; see §20.5 for the reasoning.
+
 ---
 
 ## 3. Running it
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 333 tests
+npx vitest run       # 395 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -161,6 +171,10 @@ with `within()`.
    the first dependency added purely for output. `ARCHITECTURE.md` §17.
 3. **`CATCH_UP_003.sql`** may still be unrun (accents as slot names). The app
    tolerates either, so it is not urgent.
+3b. **`CATCH_UP_004.sql` — the customers table. This one IS urgent**: it has
+   been sent but until it is run, the Customers screen cannot load. Unlike 003
+   the app cannot work around it, because the table genuinely is not there. The
+   screen says so by name rather than showing an empty list.
 4. **Rabindra's test account** goes inactive when he is done —
    `db/seed/002_profiles.sql`, statement commented out at the bottom.
 5. **Deli Delights receivables** — Phase 8, after a month of daily use. A second

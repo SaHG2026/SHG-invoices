@@ -1,3 +1,4 @@
+import { personPhoto } from '@/lib/logos';
 import type { Profile } from '@/lib/types';
 
 /**
@@ -49,6 +50,39 @@ interface PersonChipProps {
 
 export function PersonChip({ profile, size = 'sm' }: PersonChipProps) {
   const slot = slotOf(profile);
+  const photo = personPhoto(profile.display_name);
+
+  /*
+   * A photograph where there is one, initials where there is not.
+   *
+   * The chip's job is unchanged — spec §9 calls it "the app's only recurring
+   * colour-as-identity device", and it is still the same 24px square in the
+   * same place. A face is simply a faster read than two letters, and the
+   * accent tint stays underneath it as the background, so somebody whose photo
+   * has not loaded yet still sees the colour they already associate with that
+   * person rather than an empty hole.
+   *
+   * Initials remain the fallback rather than a placeholder silhouette: they
+   * carry the actual meaning, and a generic grey head carries none.
+   */
+  if (photo) {
+    return (
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img
+        src={photo}
+        /*
+          The name, not an empty alt. The initials it replaces were real text
+          and were read out; a decorative image would silently drop the only
+          thing on an invoice row saying who logged it. Where the name is
+          already announced — the header link carries its own aria-label — that
+          label wins and this is never reached.
+        */
+        alt={profile.display_name}
+        className={`shrink-0 rounded-sm object-cover ${size === 'lg' ? 'size-12' : 'size-6'}`}
+        style={{ backgroundColor: `var(--${slot}-bg)` }}
+      />
+    );
+  }
 
   return (
     <span

@@ -142,12 +142,25 @@ describe('the businesses under Invoices', () => {
     expect(screen.getByText('GroceryMate Hurstville')).toBeInTheDocument();
   });
 
-  it('shows a lettered tile until a logo is supplied', () => {
+  it('shows each business its own mark', () => {
     openDrawer();
-    const row = screen.getByText('GroceryMate Hurstville').closest('a')!;
-    // The code, which is already stamped into every internal ref — a label
-    // people have learnt, rather than a grey box.
-    expect(within(row).getByText('GMH')).toBeInTheDocument();
+
+    const markOf = (name: string) =>
+      screen.getByText(name).closest('a')!.querySelector('img')?.getAttribute('src') ?? null;
+
+    // One brand, two shops: the name beside it is what tells them apart.
+    expect(markOf('GroceryMate Hurstville')).toBe('/logos/grocery-mate.png');
+    expect(markOf('GroceryMate Parramatta')).toBe('/logos/grocery-mate.png');
+    expect(markOf('Majheri Restaurant')).toBe('/logos/majheri.png');
+  });
+
+  it('falls back to letters where there is no artwork', () => {
+    openDrawer();
+    const row = screen.getByText('Deli Delights').closest('a')!;
+    // Not a borrowed logo: three identical green circles out of four would
+    // make the menu less readable, not more.
+    expect(row.querySelector('img')).toBeNull();
+    expect(within(row).getByText('DD')).toBeInTheDocument();
   });
 });
 

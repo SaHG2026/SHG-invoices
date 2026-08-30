@@ -1,35 +1,81 @@
 /**
- * Where a business's logo lives, once there is one.
+ * Business marks and people's photographs.
  *
- * The four businesses will get their own marks. Until the files arrive the
- * menu shows a lettered tile in the same slot, so the layout is already the
- * shape it will be and dropping a logo in changes one row rather than the
- * design.
+ * Both are hand-edited tables rather than anything clever, and for the same
+ * reason as the month-name table in lib/date.ts: an explicit list is duller
+ * than runtime cleverness and it is right on every device.
  *
- * ---------------------------------------------------------------------------
- * Why a hand-edited table rather than probing for the file.
- *
- * The tempting version is an <img> pointed at `/logos/gmh.png` that falls back
- * to the tile when it 404s. That works, and it costs a failed request per
- * business every time the menu opens, plus a visible flash of the broken state
- * on a slow connection. This is the same reasoning as the month-name table in
- * lib/date.ts: an explicit list is duller than runtime cleverness and it is
- * right on every device.
- *
- * To add one: put the file in `public/logos/`, add its line below. That is the
- * whole procedure. Square artwork, at least 96px, transparent or white ground —
- * it renders as a 28px rounded tile beside the business name.
- * ---------------------------------------------------------------------------
+ * The tempting alternative for either is an <img> pointed at a conventional
+ * path that falls back when it 404s. That works, and it costs a failed request
+ * per person per screen, plus a visible flash of the broken state on a slow
+ * connection. A phone on shop wifi is exactly where that shows.
  */
 
-/** Keyed by `businesses.code`, upper-case. Empty until the artwork arrives. */
-export const BUSINESS_LOGOS: Readonly<Record<string, string>> = {
-  // GMH: '/logos/grocerymate-hurstville.png',
-  // GMP: '/logos/grocerymate-parramatta.png',
-  // MJR: '/logos/majheri.png',
-  // DDL: '/logos/deli-delights.png',
+/* -------------------------------------------------------------------------- *
+ * Businesses
+ * -------------------------------------------------------------------------- */
+
+export interface BusinessMarkSpec {
+  /** File under public/. Absent means fall back to the letters below. */
+  src?: string;
+  /**
+   * What to show when there is no artwork.
+   *
+   * Defaults to `businesses.code`, which is the three letters already stamped
+   * into every internal ref. Overridden where the client asked for something
+   * friendlier — Deli Delights reads better as DD than DDL.
+   */
+  label?: string;
+}
+
+/**
+ * Keyed by `businesses.code`, upper-case.
+ *
+ * Both GroceryMates carry the same mark: they are one brand in two locations,
+ * and the shop name beside it is what tells them apart. Deli Delights has no
+ * artwork of its own yet, so it gets letters rather than borrowing somebody
+ * else's mark — three identical green circles out of four would make the menu
+ * less readable, not more.
+ *
+ * To add one: put a square-ish file in `public/logos/`, add its line here.
+ */
+export const BUSINESS_MARKS: Readonly<Record<string, BusinessMarkSpec>> = {
+  GMH: { src: '/logos/grocery-mate.png' },
+  GMP: { src: '/logos/grocery-mate.png' },
+  MJR: { src: '/logos/majheri.png' },
+  DDL: { label: 'DD' },
 };
 
-export function businessLogo(code: string): string | null {
-  return BUSINESS_LOGOS[code.toUpperCase()] ?? null;
+export function businessMark(code: string): BusinessMarkSpec {
+  return BUSINESS_MARKS[code.toUpperCase()] ?? {};
+}
+
+/* -------------------------------------------------------------------------- *
+ * People
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Keyed by `profiles.display_name`, lower-cased.
+ *
+ * Deliberately not a `profiles.avatar_url` column. Four photographs that
+ * change roughly never do not need a migration, a round trip through the
+ * Supabase editor, and a nullable column on the table every attribution chip
+ * reads. `display_name` rather than `id` because a UUID in a hand-edited table
+ * is unreadable, and because this file is meant to be edited by hand.
+ *
+ * A name that is missing here falls back to initials, which is what every chip
+ * showed before — so a renamed profile degrades to the old behaviour rather
+ * than breaking.
+ *
+ * To add one: put a square file in `public/people/`, add its line here.
+ */
+export const PERSON_PHOTOS: Readonly<Record<string, string>> = {
+  mani: '/people/mani.jpg',
+  sujan: '/people/sujan.jpg',
+  // milan: '/people/milan.jpg',   <- photo not supplied yet
+  // rabindra: '/people/rabindra.jpg',
+};
+
+export function personPhoto(displayName: string): string | null {
+  return PERSON_PHOTOS[displayName.trim().toLowerCase()] ?? null;
 }

@@ -1108,3 +1108,80 @@ the New invoice bar are `position: fixed` and cover anything sharing a page
 with them. Fonts fall back to system faces; nothing else differs.
 
 Tests: 413, up from 395, under all three timezones.
+
+
+---
+
+## 22. Faces and marks
+
+§20.2 built the slot for a business logo and filled it with letters, and said
+adding artwork would be one line. It was. This is that line, plus the same
+treatment for people.
+
+### 22.1 One registry, hand-edited
+
+`lib/logos.ts` holds both tables. Neither probes for a file.
+
+The tempting version points an `<img>` at a conventional path and falls back
+when it 404s. That works, and it costs a failed request per person per screen
+plus a visible flash of the broken state on a slow connection — which a phone
+on shop wifi is exactly where you would see. Same reasoning as the month-name
+table in §3: an explicit list is duller and right on every device.
+
+**A file that is not registered simply does not appear.** Milan's photograph
+has not been supplied, so his line is commented out and his chip shows initials
+— the behaviour every chip had before this. Nothing degrades to a broken image,
+because nothing points at a file that is not there. `person-chip.test.tsx`
+asserts that every registered path resolves to a real file, since a typo there
+would put a broken-image icon in the header of every screen and no other test
+would notice.
+
+**[decision] People are keyed by `display_name`, not by a `profiles.avatar_url`
+column.** Four photographs that change roughly never do not justify a migration,
+a round trip through the Supabase editor, and a nullable column on the table
+every attribution chip reads. §15's reasoning against a speculative photo column
+applies to a real one too when a static file does the job. The key is the name
+rather than the id because a UUID in a hand-edited table is unreadable.
+
+### 22.2 What the chips do now
+
+`PersonChip` renders the photograph where there is one and initials where there
+is not. Spec §9's device is unchanged — still the same 24px square in the same
+place — and the person accent stays as the image's background colour, so a
+photo that has not loaded yet still shows the colour people already associate
+with that person rather than an empty hole.
+
+**`alt` is the person's name, not empty.** The initials it replaces were real
+text and were announced; on an invoice row the chip is the only thing saying
+who logged it. Where the name is already announced — the header link carries
+its own `aria-label` — that label wins and the alt is never reached.
+
+The photograph appears everywhere the chip does, not only on the profile icon:
+the header, the menu, the unlock screen, and every attribution chip in every
+list. One person looking different in different places is the drift §16 and
+`InvoiceRow` both exist to prevent.
+
+### 22.3 Which mark goes where
+
+| | |
+|---|---|
+| GMH, GMP | `grocery-mate.png` — one brand, two shops; the name beside it is what tells them apart |
+| MJR | `majheri.png`, cropped to the badge |
+| DDL | the letters **DD** |
+
+**[decision] Deli Delights gets letters, not a borrowed mark.** Three identical
+green circles out of four would make the menu less readable, not more, and the
+client's stated goal was that these be recognisable. When Deli Delights has its
+own artwork it is one line.
+
+**[decision] Marks are cropped to the artwork and not padded to square.**
+`BusinessMark` already uses `object-contain`, so CSS letterboxes a wide mark in
+the square slot. Baking the padding into the file would only make it bigger and
+fix the aspect ratio in the wrong place. Majheri is 96×44 as a result; the
+"NEPALESE DELICACY" line under the badge was cropped off because it is
+illegible at 28px and only makes the badge itself smaller.
+
+Everything is 96px on the long edge — three times the 28px it renders at, which
+covers a 3x phone screen — and every file is under 13KB.
+
+Tests: 427, up from 413, under all three timezones.

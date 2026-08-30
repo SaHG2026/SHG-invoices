@@ -1,19 +1,18 @@
-import { businessLogo } from '@/lib/logos';
+import { businessMark } from '@/lib/logos';
 import type { Business } from '@/lib/types';
 
 /**
- * A business's logo, or its code until there is one.
+ * A business's logo, or its letters until there is one.
  *
  * The sibling of PersonChip, and built on the same rule: identity is a fact
  * about the row, colour is a presentation decision, and hex values live only
- * in app/globals.css. So the tile is drawn from tokens and the code is the
- * thing that identifies it — the same three letters already stamped into every
+ * in app/globals.css. So the fallback tile is drawn from tokens and the letters
+ * are the thing that identifies it — the same code already stamped into every
  * internal ref, which makes it a label people have already learnt.
  *
- * Deliberately NOT one of the four person accents. Those mean "who did this",
- * and a business wearing one would quietly break the only colour-as-identity
- * device the app has (spec §9). This is the quiet neutral pair instead, which
- * also reads correctly as a placeholder: it does not look like a decision.
+ * The fallback is deliberately NOT one of the four person accents. Those mean
+ * "who did this", and a business wearing one would quietly break the only
+ * colour-as-identity device the app has (spec §9).
  */
 
 interface BusinessMarkProps {
@@ -23,20 +22,24 @@ interface BusinessMarkProps {
 }
 
 export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
-  const logo = businessLogo(business.code);
+  const mark = businessMark(business.code);
   const px = size === 'md' ? 28 : 24;
 
-  if (logo) {
+  if (mark.src) {
     return (
       /*
-        A plain <img>, not next/image. These are four small static files served
-        from the same origin with fixed dimensions — there is nothing for the
-        optimiser to do, and next/image would put a loader and a layout wrapper
-        between a 28px tile and the screen.
+        A plain <img>, not next/image. These are small static files served from
+        the same origin at a fixed size — there is nothing for the optimiser to
+        do, and next/image would put a loader and a layout wrapper between a
+        28px tile and the screen.
+
+        `alt` is empty on purpose: the business name is always rendered right
+        beside it, and a screen reader announcing "GroceryMate Hurstville logo,
+        GroceryMate Hurstville" is noise.
       */
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={logo}
+        src={mark.src}
         alt=""
         width={px}
         height={px}
@@ -45,6 +48,8 @@ export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
       />
     );
   }
+
+  const label = mark.label ?? business.code;
 
   return (
     <span
@@ -60,7 +65,7 @@ export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
         letterSpacing: '0.02em',
       }}
     >
-      {business.code}
+      {label}
     </span>
   );
 }

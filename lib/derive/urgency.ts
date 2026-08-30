@@ -7,7 +7,7 @@
  * itself, which is what keeps it testable at 09:00 and at 23:00.
  */
 
-import { compareDates, daysBetween, type DateStr } from '../date';
+import { compareDates, daysBetween, formatDay, formatWeekdayDay, type DateStr } from '../date';
 import { WEEK_HORIZON_DAYS } from '../constants';
 import type { InvoiceRow } from '../types';
 
@@ -47,6 +47,33 @@ export function formatDaysLate(dueDate: DateStr, today: DateStr): string | null 
   const late = daysLate(dueDate, today);
   if (late === 0) return null;
   return late === 1 ? '1 day late' : `${late} days late`;
+}
+
+/**
+ * The one-line label on a due pill: '4 days late', 'Due today', 'Mon 31',
+ * 'Fri 11 Sep'.
+ *
+ * One function rather than a ternary at each call site, because the four cases
+ * have to stay in step: the pill's colour comes from `urgencyOf` and its words
+ * come from here, and a row reading "Due today" in the overdue colour is the
+ * kind of small contradiction that makes people stop believing the screen.
+ *
+ * Both are derived from the same `today`, handed in, never worked out here.
+ */
+export function formatDueLabel(dueDate: DateStr, today: DateStr): string {
+  const urgency = urgencyOf(dueDate, today);
+
+  switch (urgency) {
+    case 'overdue':
+      // Never null in this branch: overdue means at least one day late.
+      return formatDaysLate(dueDate, today) ?? 'Overdue';
+    case 'today':
+      return 'Due today';
+    case 'week':
+      return formatWeekdayDay(dueDate);
+    case 'later':
+      return formatDay(dueDate);
+  }
 }
 
 export interface UrgencyBuckets<T> {

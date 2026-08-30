@@ -176,6 +176,20 @@ export function formatDayWithYear(d: DateStr): string {
   return `${formatDay(d)} ${d.slice(0, 4)}`;
 }
 
+/**
+ * 'Mon 31' — weekday and day, no month.
+ *
+ * Only ever used for a date inside the coming week, where the month is not in
+ * doubt and the weekday is the thing being read: "Monday" is what you plan a
+ * transfer around, "31 August" is not. Anything further out uses `formatDay`,
+ * which carries the month, because a bare 'Mon 31' two months ahead is a
+ * genuinely ambiguous date rather than a terse one.
+ */
+export function formatWeekdayDay(d: DateStr): string {
+  const at = new Date(toEpoch(d));
+  return `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()}`;
+}
+
 /** '11 Sep' — for tight columns where the weekday is already on the spine. */
 export function formatDayShort(d: DateStr): string {
   const at = new Date(toEpoch(d));

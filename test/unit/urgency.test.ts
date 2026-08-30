@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bucketByUrgency, formatDaysLate, urgencyOf } from '@/lib/derive/urgency';
+import {
+  bucketByUrgency,
+  formatDaysLate,
+  formatDueLabel,
+  urgencyOf,
+  type Urgency,
+} from '@/lib/derive/urgency';
 import { sydneyToday } from '@/lib/date';
 import { FIXTURE_TODAY, makeInvoice, makeInvoices } from '../fixtures/invoices';
 
@@ -97,5 +103,57 @@ describe('bucketByUrgency', () => {
     const snapshot = original.map((r) => r.id);
     bucketByUrgency(original, FIXTURE_TODAY);
     expect(original.map((r) => r.id)).toEqual(snapshot);
+  });
+});
+
+describe('the due pill label', () => {
+  const today = '2026-08-30';
+
+  it('counts the days when something is late', () => {
+    expect(formatDueLabel('2026-08-26', today)).toBe('4 days late');
+    expect(formatDueLabel('2026-08-29', today)).toBe('1 day late');
+  });
+
+  it('says due today, not "0 days late"', () => {
+    expect(formatDueLabel(today, today)).toBe('Due today');
+  });
+
+  it('gives the weekday for something inside the week', () => {
+    // The month is not in doubt this close, and the weekday is what you plan
+    // a transfer around.
+    expect(formatDueLabel('2026-08-31', today)).toBe('Mon 31');
+    expect(formatDueLabel('2026-09-06', today)).toBe('Sun 6');
+  });
+
+  it('carries the month once the date is far enough out to be ambiguous', () => {
+    expect(formatDueLabel('2026-09-11', today)).toBe('Fri 11 Sep');
+  });
+
+  it('never disagrees with the colour beside it', () => {
+    /*
+     * The pill's words come from here and its colour from urgencyOf. A row
+     * reading "Due today" in the overdue colour is the kind of small
+     * contradiction that makes people stop believing the screen.
+     */
+    const cases: Array<[string, Urgency]> = [
+      ['2026-08-20', 'overdue'],
+      ['2026-08-30', 'today'],
+      ['2026-09-02', 'week'],
+      ['2026-10-01', 'later'],
+    ];
+
+    for (const [due, expected] of cases) {
+      expect(urgencyOf(due, today)).toBe(expected);
+      const label = formatDueLabel(due, today);
+      expect(label).not.toBe('');
+      if (expected === 'overdue') expect(label).toMatch(/late$/);
+      if (expected === 'today') expect(label).toBe('Due today');
+    }
+  });
+
+  it('is stable wherever the machine is', () => {
+    // formatDay/formatWeekdayDay read a UTC-anchored date, so the weekday
+    // belongs to the calendar date and not to the reader's location.
+    expect(formatDueLabel('2026-08-31', today)).toBe('Mon 31');
   });
 });

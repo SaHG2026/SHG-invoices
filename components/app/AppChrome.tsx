@@ -31,9 +31,19 @@ interface AppChromeProps {
   children: React.ReactNode;
   /** Shown in the header when you are inside a business rather than at home. */
   back?: { href: Route; label: string };
+  /**
+   * How the `+` appears. `floating` is the 56px corner button every list
+   * screen uses; `bar` is a full-width button pinned across the bottom, for
+   * the dashboard, where adding an invoice is the primary action rather than
+   * one of several.
+   *
+   * Never both: two controls doing one thing, one of them overlapping the
+   * other, is worse than either.
+   */
+  add?: 'floating' | 'bar';
 }
 
-export function AppChrome({ children, back }: AppChromeProps) {
+export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) {
   const { data: profile } = useCurrentProfile();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -103,15 +113,38 @@ export function AppChrome({ children, back }: AppChromeProps) {
 
       <main className="mx-auto max-w-[560px] px-4 pb-28 pt-6">{children}</main>
 
-      <button
-        type="button"
-        onClick={() => setSheetOpen(true)}
-        aria-label="Add invoice"
-        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
-        style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
-      >
-        +
-      </button>
+      {add === 'floating' ? (
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          aria-label="Add invoice"
+          className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
+          style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
+        >
+          +
+        </button>
+      ) : (
+        /*
+          Pinned rather than sitting at the end of the page.
+          In the mockup it follows a list of four; on a real Monday it follows
+          a list of thirty, and a button that has scrolled out of sight is a
+          button that is not reachable — which is three seconds off the
+          fifteen-second target, on the one screen the app opens to.
+        */
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-edge bg-card px-4 pt-3"
+          style={{ paddingBottom: `calc(0.75rem + env(safe-area-inset-bottom, 0px))` }}
+        >
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="touch mx-auto flex w-full max-w-[528px] items-center justify-center gap-2 rounded-sm bg-action px-4 text-base font-medium text-action-text"
+          >
+            <span aria-hidden>+</span>
+            New invoice
+          </button>
+        </div>
+      )}
 
       {menuOpen ? <NavDrawer onClose={() => setMenuOpen(false)} /> : null}
 

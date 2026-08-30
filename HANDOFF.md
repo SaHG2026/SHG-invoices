@@ -44,10 +44,9 @@ before starting it, so **ask before beginning Phase 7.**
 Those tidy-up bits are now underway on `tidy-up-before-phase-7` and are **not**
 Phase 7. Landed so far: the side menu, "SHG Invoices" branding with a logo slot
 per business, the customer list, and a Settings screen (`ARCHITECTURE.md` §20).
-Still to come, at the client's request: the home screen from his mockup —
-OVERDUE / NEXT 7 DAYS stat cards, a "Coming up" list with due pills, a
-full-width **+ New invoice**. It was deliberately held back so the drawer could
-be tested on its own; see §20.5 for the reasoning.
+The home screen from his mockup is now in too — OVERDUE / NEXT 7 DAYS cards, a
+"Coming up" list with due pills, a full-width **+ New invoice** (`ARCHITECTURE.md`
+§21). That is the tidy-up complete; **ask before starting Phase 7 proper.**
 
 ---
 
@@ -55,7 +54,7 @@ be tested on its own; see §20.5 for the reasoning.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 395 tests
+npx vitest run       # 413 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -138,7 +137,15 @@ files.
 **Browser-pane screenshots render stale frames.** They will show a blank or
 half-painted page while the DOM is perfectly correct. Do not debug from them —
 measure with `javascript_tool` (`getBoundingClientRect`, `getComputedStyle`)
-and trust that instead.
+and trust that instead. This found a real bug: the dashboard's headline figure
+looked fine in a screenshot and was one character from overflowing its card
+(`ARCHITECTURE.md` §21.5).
+
+**The app cannot be opened without a session, so there is a way to look at it
+without one.** `test/preview-dashboard.test.tsx` renders the real components
+against the real fixture and writes out standalone HTML with the built
+stylesheet. Skipped unless `PREVIEW_OUT` is set — `ARCHITECTURE.md` §21.6 has
+the four commands.
 
 **`use(params)` never resumes in a bare test render.** This is why every
 dynamic route is a two-file pair: a thin `page.tsx` that awaits the params, and

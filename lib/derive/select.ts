@@ -11,6 +11,7 @@
  */
 
 import { compareDates, type DateStr } from '../date';
+import { bucketByUrgency } from './urgency';
 import { sumCents } from '../money';
 import type { Business, InvoiceRow } from '../types';
 
@@ -131,6 +132,42 @@ export function summarise(rows: ReadonlyArray<InvoiceRow>): OutstandingSummary {
     total_cents: sumCents(rows),
     invoice_count: rows.length,
     supplier_count: new Set(rows.map((row) => row.supplier_id)).size,
+  };
+}
+
+export interface UrgencySummary {
+  /** Already past due. Somebody is waiting on this money. */
+  overdue: OutstandingSummary;
+  /** Due from today through the next seven days, today included. */
+  next7: OutstandingSummary;
+}
+
+/**
+ * The two figures the dashboard leads with.
+ *
+ * Spec §1's second metric is that Mani opens this on Monday morning and knows
+ * within three seconds what is due this week and what is already late. Those
+ * are two different questions with two different answers, and a single
+ * "outstanding" total answers neither — it mixes money that is a problem now
+ * with money that is not yet anybody's problem.
+ *
+ * `next7` includes today deliberately. "Next 7 days" is read as a window
+ * starting now, and an invoice due this morning belongs in what leaves the
+ * account this week, not in a category of its own that the dashboard does not
+ * show. The Week screen still separates them, because there the sections are
+ * the point.
+ *
+ * Both are derived from the same array the list below them renders, so the
+ * cards and the list cannot disagree (notes §3).
+ */
+export function summariseUrgency(
+  rows: ReadonlyArray<InvoiceRow>,
+  today: DateStr,
+): UrgencySummary {
+  const buckets = bucketByUrgency(rows, today);
+  return {
+    overdue: summarise(buckets.overdue),
+    next7: summarise([...buckets.today, ...buckets.week]),
   };
 }
 

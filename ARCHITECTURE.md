@@ -991,3 +991,120 @@ this change**, by agreement. Two reasons, in order of weight:
    view in the mockup. Doing it the other way round builds the dashboard twice.
 
 Tests: 394, up from 333, still under all three timezones.
+
+---
+
+## 21. The home screen — the second half of the §20 tidy-up
+
+The dashboard rebuilt to the client's own mockup. §20.5 said why it was held
+back a step; this is it landing.
+
+### 21.1 Two figures, not one
+
+It used to lead with everything outstanding, then a list of links to each
+business. That answers "how much is there", which is not the question spec §1
+puts second: **Mani opens this on Monday morning and needs to know, within
+three seconds, what is already late and what leaves the account this week.**
+One combined total answers neither — it adds money that is a problem now to
+money that is not yet anybody's problem.
+
+So the headline is `Overdue` and `Next 7 days`, side by side, and the list
+beneath is the actual invoices in due order rather than a menu.
+
+**[decision] `next7` includes today.** "Next 7 days" is read as a window
+starting now, and an invoice due this morning belongs in what leaves the
+account this week. The Week screen still separates today from the rest,
+because there the sections are the point.
+
+**[decision] Only Overdue is coloured.** Two red cards side by side are two
+alarms, and an alarm that is always on stops being read.
+
+`summariseUrgency` is a pure function over the one unpaid array, built from
+`bucketByUrgency`, so the two cards cannot overlap, cannot lose an invoice
+between them, and cannot disagree with the list underneath. All three are
+asserted — the useful one being that the two figures plus Later equal the
+whole, since the cards sit next to each other and will be added up by eye.
+
+### 21.2 Coming up
+
+Payment runs as cards, capped at six, then a link saying how many there are in
+total. A summary that quietly stops is worse than one that hands over.
+
+Sorting happens **before** grouping. `groupIntoRuns` always returns runs in due
+order, which is right for the default and wrong for the other three sorts —
+sorting the invoices and ranking the groups by where their first invoice lands
+means "biggest amount" genuinely puts the biggest run first.
+
+Tapping goes where the invoice can be acted on: the record for a single
+invoice, that business's week for a run, where the whole run ticks in one
+transaction. **Deliberately no tick on the card.** The dashboard is what you
+read to decide what to do, and a one-tap irreversible-feeling control on a
+summary you are scrolling past is how the wrong thing gets ticked.
+
+### 21.3 The `+` becomes a bar
+
+`AppChrome` grew `add: 'floating' | 'bar'`. The dashboard is the only screen
+using `bar`; everything else keeps the 56px corner button, and no screen ever
+has both — two controls doing one job, one overlapping the other, is worse than
+either.
+
+**It is pinned, not placed at the end of the page.** In the mockup it follows a
+list of four; on a real Monday it follows a list of thirty, and a button that
+has scrolled out of sight is a button that is not reachable. That is three
+seconds off the fifteen-second target, on the screen the app opens to.
+
+### 21.4 Two things kept that the mockup does not show
+
+Both are signed-off behaviour, and dropping something during a visual pass is
+not a visual decision. Either can go in one line if the client says so.
+
+- **The greeting**, made small, and now the page's `h1`. §16 calls it "the one
+  place in the app allowed any [warmth]" and the Phase 4 gate names it. It is
+  the heading rather than a `<p>` above one because a screen whose first
+  heading is "Coming up" has no `h1` at all, which is a real problem for anyone
+  moving through the page by headings.
+- **The business rows, with their totals.** The side menu lists the businesses
+  with counts, and "what does Hurstville owe" is a different question from "how
+  many are outstanding there". The Phase 4 gate asks for a total per business.
+
+### 21.5 A bug found by measuring, not by looking
+
+The headline figure is set in the 28px display size, in a half-width card. On a
+360px phone — the width notes §4 says to test at — that card leaves about 132px
+for the number, which holds nine or ten characters. `$18,347.88` is ten.
+
+**The first six-figure overdue total would have run off the edge of the card.**
+Measured rather than guessed: `$118,347.88` came out at 153px inside a 147px
+box at 390px, and 360px is narrower still. The fixture's own group total is
+already $220,420, so this was not a distant hypothetical.
+
+The figure now sizes itself as `min(var(--text-h1), Ncqw)`, where N comes from
+the character count of the longer of the two totals — so both cards stay the
+same size as each other, the ordinary case is unchanged at 28px, and nothing
+overflows at any width. Verified at 360px up to `$12,345,678.90`.
+
+**The general point, which is §19's pattern again:** this was invisible in a
+screenshot and obvious in a `getBoundingClientRect`. `HANDOFF.md` §5 says not to
+debug from browser-pane screenshots and to measure instead. That advice found a
+real bug the first time it was followed.
+
+### 21.6 Looking at the app without a session
+
+`test/preview-dashboard.test.tsx` renders the real components against the real
+fixture and writes the markup out with the built stylesheet, so the screens can
+be looked at without signing in. Skipped unless `PREVIEW_OUT` is set:
+
+```
+npm run build
+cp .next/static/css/*.css /tmp/shg/app.css
+cp -r public/icons /tmp/shg/
+PREVIEW_OUT=/tmp/shg/dashboard.html PREVIEW_CSS=/tmp/shg/app.css \
+  npx vitest run test/preview-dashboard.test.tsx
+python -m http.server 8899 --directory /tmp/shg
+```
+
+It writes two pages — the dashboard and the menu open — because the drawer and
+the New invoice bar are `position: fixed` and cover anything sharing a page
+with them. Fonts fall back to system faces; nothing else differs.
+
+Tests: 413, up from 395, under all three timezones.

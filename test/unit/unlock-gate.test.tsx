@@ -70,6 +70,16 @@ beforeEach(() => {
   });
 });
 
+/*
+ * These three set or verify a real PIN, which is PBKDF2 at 150,000 iterations
+ * (lib/pin.ts) — deliberately slow, because that is what makes the hash worth
+ * having. Two of them do it twice. Against vitest's 5s default that passes on
+ * a quiet machine and fails on a busy one, and a suite that fails at random is
+ * one nobody trusts enough to act on. The work is bounded and known, so the
+ * timeout is raised to match it rather than the iterations lowered to fit.
+ */
+const SLOW_HASH_MS = 20_000;
+
 describe('setting a PIN for the first time', () => {
   it('asks twice, then lets you through', async () => {
     renderGate();
@@ -87,7 +97,7 @@ describe('setting a PIN for the first time', () => {
     // the setup interface because "needs a PIN" was never cleared.
     expect(await screen.findByTestId('app')).toBeInTheDocument();
     expect(pin.setPin).toHaveBeenCalledWith(profile.id, '123456');
-  });
+  }, SLOW_HASH_MS);
 
   it('rejects a second entry that does not match, and starts over', async () => {
     renderGate();
@@ -101,7 +111,7 @@ describe('setting a PIN for the first time', () => {
     expect(pin.setPin).not.toHaveBeenCalled();
     // Back to the first step, not stuck on the confirm step.
     expect(screen.getByText(/Choose a 6-digit PIN/)).toBeInTheDocument();
-  });
+  }, SLOW_HASH_MS);
 
   it('lets you through when you skip', async () => {
     renderGate();
@@ -124,7 +134,7 @@ describe('setting a PIN for the first time', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Couldn’t save the PIN/);
     // Still usable: back at step one rather than frozen.
     expect(screen.getByText(/Choose a 6-digit PIN/)).toBeInTheDocument();
-  });
+  }, SLOW_HASH_MS);
 });
 
 describe('unlocking with an existing PIN', () => {

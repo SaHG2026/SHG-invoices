@@ -54,7 +54,7 @@ The home screen from his mockup is now in too — OVERDUE / NEXT 7 DAYS cards, a
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 437 tests
+npx vitest run       # 446 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -178,9 +178,10 @@ with `within()`.
    the first dependency added purely for output. `ARCHITECTURE.md` §17.
 3. **`CATCH_UP_003.sql`** may still be unrun (accents as slot names). The app
    tolerates either, so it is not urgent.
-3c. **Mani's photograph.** Milan's and Sujan's are in `public/people/`; his was
-   never supplied, so his line in `lib/logos.ts` is commented out and his chip
-   falls back to initials. Drop a square file in and uncomment one line.
+3c. **Rabindra's photograph**, if his test account is staying. The other three
+   are in `public/people/`. Add a square file and one line in `lib/logos.ts`.
+   **Name it lower-case** — Windows does not care and Vercel's Linux
+   filesystem does; a test now stands over that.
    Deli Delights has no logo either — same deal, `ARCHITECTURE.md` §22.
 3b. **`CATCH_UP_004.sql` — the customers table. This one IS urgent**: it has
    been sent but until it is run, the Customers screen cannot load. Unlike 003

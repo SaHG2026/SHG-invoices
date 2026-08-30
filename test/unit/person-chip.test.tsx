@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { BUSINESS_MARKS, PERSON_PHOTOS, businessMark, personPhoto } from '@/lib/logos';
@@ -48,16 +48,29 @@ describe('a person with a photograph', () => {
 
 describe('a person without one', () => {
   it('falls back to initials rather than a broken image', () => {
-    const mani = PROFILES.find((p) => p.display_name === 'Mani')!;
-    expect(personPhoto('Mani')).toBeNull();
+    // Rabindra's test account has no photograph, and the fallback is what
+    // every chip did before photographs existed.
+    const rabindra = PROFILES.find((p) => p.display_name === 'Rabindra')!;
+    expect(personPhoto('Rabindra')).toBeNull();
 
-    const { container } = render(<PersonChip profile={mani} />);
+    const { container } = render(<PersonChip profile={rabindra} />);
     expect(container.querySelector('img')).toBeNull();
-    expect(screen.getByText(mani.initials)).toBeInTheDocument();
+    expect(screen.getByText(rabindra.initials)).toBeInTheDocument();
   });
 
   it('matches the name whatever its casing or padding', () => {
     expect(personPhoto('  MILAN ')).toBe('/people/milan.jpg');
+  });
+});
+
+describe('all three of the shop floor have a face', () => {
+  it.each(['Mani', 'Milan', 'Sujan'])('%s', (name) => {
+    const profile = PROFILES.find((p) => p.display_name === name)!;
+    render(<PersonChip profile={profile} />);
+    expect(screen.getByRole('img', { name })).toHaveAttribute(
+      'src',
+      `/people/${name.toLowerCase()}.jpg`,
+    );
   });
 });
 
@@ -100,6 +113,17 @@ describe('every registered file exists', () => {
   for (const path of [...new Set(paths)]) {
     it(`public${path} is really there`, () => {
       expect(existsSync(`public${path}`), `public${path} is missing`).toBe(true);
+    });
+
+    it(`public${path} is spelled the way the file is`, () => {
+      /*
+       * Windows does not care about case and Vercel's Linux filesystem does,
+       * so `Mani.jpg` referenced as `/people/mani.jpg` works perfectly here
+       * and 404s in production. existsSync above would not catch it.
+       */
+      const dir = `public${path}`.replace(/\/[^/]+$/, '');
+      const file = path.split('/').pop()!;
+      expect(readdirSync(dir), `${file} is not spelled that way on disk`).toContain(file);
     });
   }
 });

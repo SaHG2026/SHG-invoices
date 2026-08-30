@@ -76,6 +76,10 @@ export function invoiceHref(id: string): Route {
   return `/invoices/${id}` as Route;
 }
 
+export function historyHref(scope: Scope): Route {
+  return `/b/${scope}/history` as Route;
+}
+
 /**
  * Narrow the one client-side array to this scope.
  *

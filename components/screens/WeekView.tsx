@@ -15,7 +15,14 @@ import { formatCents } from '@/lib/money';
 import { summarise } from '@/lib/derive/select';
 import { groupIntoRuns } from '@/lib/derive/runs';
 import { bucketByUrgency, URGENCY_COLOUR, URGENCY_TINT, type Urgency } from '@/lib/derive/urgency';
-import { filterByScope, isKnownScope, pendingHref, scopeLabel, type Scope } from '@/lib/scope';
+import {
+  filterByScope,
+  historyHref,
+  isKnownScope,
+  pendingHref,
+  scopeLabel,
+  type Scope,
+} from '@/lib/scope';
 import { WEEK_HORIZON_DAYS } from '@/lib/constants';
 import type { InvoiceRow } from '@/lib/types';
 
@@ -89,15 +96,27 @@ export function WeekView({ scope }: { scope: Scope }) {
             </p>
           </header>
 
-          <Link
-            href={pendingHref(scope)}
-            className="mb-6 flex h-row items-center gap-3 rounded-sm border border-edge bg-card px-3 active:bg-pressed"
-          >
-            <span className="flex-1 text-sm text-ink">All pending, sorted and filtered</span>
-            <span aria-hidden className="text-xs text-muted">
-              &rsaquo;
-            </span>
-          </Link>
+          {/* The rest of what a scope offers. ARCHITECTURE §16. */}
+          <nav className="mb-6 overflow-hidden rounded-sm border border-edge bg-card">
+            {(
+              [
+                [pendingHref(scope), 'All pending, sorted and filtered'],
+                [historyHref(scope), 'History — what has been paid'],
+                ['/suppliers' as Route, 'Suppliers'],
+              ] as const
+            ).map(([href, label]) => (
+              <Link
+                key={label}
+                href={href}
+                className="flex h-row items-center gap-3 border-b border-hairline px-3 last:border-b-0 active:bg-pressed"
+              >
+                <span className="flex-1 text-sm text-ink">{label}</span>
+                <span aria-hidden className="text-xs text-muted">
+                  &rsaquo;
+                </span>
+              </Link>
+            ))}
+          </nav>
 
           {buckets && summary.invoice_count > 0
             ? (Object.keys(SECTION_LABEL) as Urgency[]).map((urgency) => {

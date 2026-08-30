@@ -1403,3 +1403,94 @@ It is now a titled panel, "Add a customer", with a labelled `+ Add` button. The
 changed, so this was never a broken page.
 
 Tests: 452, up from 446, under all three timezones.
+
+
+---
+
+## 25. Receivables, and the sheet that would not sit still
+
+### 25.1 The sheet, third attempt — two animations racing
+
+Reported twice, and the second report named it exactly: "springs with so much
+force and then bounces a couple times". Three movements, not one:
+
+1. the entrance slide,
+2. the height correcting itself after the first measurement landed,
+3. the height correcting itself again when the keyboard opened — because the
+   supplier field carried `autoFocus`, so the keyboard arrived *during* the
+   entrance.
+
+§24 fixed the measurement and left the race. Three changes:
+
+- **`autoFocus` is gone from the supplier field.** It existed to save a tap
+  against the fifteen-second target, and the comment defending it was right
+  about iOS suppressing programmatic focus outside a gesture. It was still
+  wrong overall: two animations racing is not a tuning problem, it is one
+  animation too many. It is also the only behaviour that is the same on both
+  platforms — Android resizes the layout viewport for a keyboard and iOS draws
+  it on top, so "open the keyboard mid-entrance" means two different things and
+  neither is calm. **This costs one tap; say if that is the wrong trade.**
+- **The viewport is measured in `useLayoutEffect`,** before the first paint, so
+  the sheet's first frame is already the right height. Measured after paint it
+  rendered at a fallback height and then transitioned to the real one.
+- **Height changes are only transitioned once the entrance has finished.**
+  While the panel is still travelling a resize is invisible, so it is applied
+  instantly; after it has landed it eases. `ENTRANCE_MS` must match the
+  `sheet-in` keyframe, which is why it is a named constant beside it.
+
+The panel duration came down from 320ms to 260ms with it.
+
+### 25.2 Money in — `sales_invoices`
+
+§17 put this in Phase 8, after a month of daily use, so it would be built from
+how the shops actually work rather than from a guess. The client asked for it
+now, having used the app: he wants to record an invoice sent to a customer with
+its number, dates and amount, and to see what is outstanding per customer. That
+is the guess resolved, which is what the deferral was for.
+
+**A second table, exactly as §17 said.** `sales_invoices`, its own
+`sales_status` enum, its own query keys, its own type, its own derive module.
+No function in the app takes both kinds. The client's condition — receivables
+must never move what the group owes — therefore holds by construction rather
+than by care, and `receivables.test.ts` asserts it from both directions,
+including that a sales invoice forced through `summarise` with a cast
+contributes zero rather than inflating the headline.
+
+**[decision] `outstanding` / `received`, never `unpaid` / `paid`.** You do not
+pay an invoice you issued. A shared word is how two directions end up sharing a
+code path, and a separate enum means a query cannot compare one kind to the
+other even by accident.
+
+**[decision] No receipts table yet.** §17 sketched `sales_invoices` *and*
+`receipts`, which is right when part-payments matter. Nobody has asked for a
+part-payment, so an invoice is outstanding or it is received, exactly like the
+payables side. Adding receipts later is additive; guessing at their shape now
+is the thing §17's deferral existed to avoid.
+
+**[decision] The audit trigger does not cover this table.** It is written
+against `invoices` and reads `internal_ref`. Attribution is still on every row
+— `created_by`, `received_by` — which is the part notes §2 insists on.
+Extending the trigger is a separate change with its own migration, and doing it
+badly would put a `security definer` function on a new table for no gain today.
+
+**[decision] The `+` asks which direction, and only inside Deli Delights.** It
+is the only business that sells. Everywhere else the answer is "a supplier
+invoice", and a question with one right answer is not a question — it is three
+extra taps a day on the app's most repeated action.
+
+### 25.3 Header
+
+The notification glyph was `&#9737;` — U+2609, "sun" — standing in for a bell.
+Drawn now, along with a home icon: on a deep screen the header shows a back
+link instead of the wordmark, so home used to be two taps through the menu.
+
+### 25.4 Not done
+
+**The green palette.** The client raised it and then said "maybe we try this
+here on lab once the above stuffs are taken care of", so it is deliberately not
+in this change. It is also the cheapest thing on the list: every colour in the
+app is a token in one `:root` block in `app/globals.css`, so a repaint is that
+block and nothing else. Worth doing as its own change, where it can be looked
+at and reverted in one commit.
+
+Tests: 464, up from 452, under all three timezones.

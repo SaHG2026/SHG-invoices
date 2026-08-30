@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useFormGuard } from '@/hooks/use-form-guard';
 
 /**
@@ -49,6 +49,9 @@ interface SheetProps {
  */
 const KEYBOARD_MIN_PX = 150;
 
+/** Must match the `sheet-in` animation in app/globals.css. */
+const ENTRANCE_MS = 260;
+
 interface Viewport {
   /** How much of the bottom is covered by a keyboard. Zero when there is none. */
   keyboard: number;
@@ -59,7 +62,15 @@ interface Viewport {
 function useViewport(): Viewport {
   const [viewport, setViewport] = useState<Viewport>({ keyboard: 0, height: null });
 
-  useEffect(() => {
+  /*
+   * useLayoutEffect, not useEffect: this runs before the browser paints.
+   *
+   * Measuring after the first paint meant the sheet rendered once at its
+   * fallback height and then transitioned to the real one — a second movement
+   * on top of the entrance, which is half of what was reported as bouncing.
+   * Measured before paint, the first frame is already the right size.
+   */
+  useLayoutEffect(() => {
     const visual = window.visualViewport;
     if (!visual) return;
 
@@ -84,12 +95,30 @@ function useViewport(): Viewport {
 }
 
 export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
+  /*
+   * Whether the entrance has finished.
+   *
+   * Height changes are transitioned once the sheet has arrived, and applied
+   * instantly while it is still on its way in — where they are invisible,
+   * because the panel is still travelling. Without this the entrance and a
+   * resize run at once and read as a spring.
+   */
+  const [settled, setSettled] = useState(false);
   // While this is mounted nothing refetches on focus, so backgrounding the app
   // to read the paper docket cannot wipe what has been typed (notes §1.1).
   useFormGuard();
 
   const { keyboard, height: visibleHeight } = useViewport();
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => setSettled(true), ENTRANCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setSettled(false);
+    };
+  }, [open]);
 
   // Escape closes; the page behind does not scroll while the sheet is up.
   useEffect(() => {
@@ -146,7 +175,9 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
             travel. Growing and shrinking from the top edge reads as the sheet
             making room, where lifting the whole panel reads as it being shoved.
           */
-          transition: `max-height 220ms var(--ease-ios), bottom 220ms var(--ease-ios)`,
+          transition: settled
+            ? `max-height 220ms var(--ease-ios), bottom 220ms var(--ease-ios)`
+            : undefined,
         }}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">

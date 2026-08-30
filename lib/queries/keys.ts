@@ -46,6 +46,15 @@ export const qk = {
     history: (filters: Record<string, unknown>) => ['invoices', 'history', filters] as const,
     forSupplier: (supplierId: string) => ['invoices', 'supplier', supplierId] as const,
   },
+  /**
+   * Invoices Deli Delights has sent. A separate key from `invoices`, not a
+   * filter on it — ARCHITECTURE §17. Nothing here feeds an owed total.
+   */
+  sales: {
+    all: ['sales'] as const,
+    outstanding: ['sales', 'outstanding'] as const,
+    forCustomer: (customerId: string) => ['sales', 'customer', customerId] as const,
+  },
   activity: {
     forInvoice: (id: string) => ['activity', 'invoice', id] as const,
     recent: ['activity', 'recent'] as const,

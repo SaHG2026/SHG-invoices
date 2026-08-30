@@ -5,7 +5,7 @@ import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoi
 import { filterCustomers, orderCustomers } from '@/lib/derive/customer-match';
 import { formatCents } from '@/lib/money';
 import { summarise } from '@/lib/derive/select';
-import type { Customer } from '@/lib/types';
+import type { Customer, SalesInvoiceRow } from '@/lib/types';
 
 /**
  * Customers. ARCHITECTURE §17.
@@ -50,6 +50,46 @@ const CUSTOMERS: Customer[] = [
 
 const invoices = makeInvoices(40);
 
+/** Two invoices Deli Delights has sent to Harris Farm, one of them late. */
+const SALES: SalesInvoiceRow[] = [
+  {
+    id: 'sv-1',
+    business_id: 'b-ddl',
+    customer_id: 'c-1',
+    invoice_number: 'DD-1001',
+    invoice_date: '2026-08-01',
+    due_date: '2026-08-15',
+    amount_cents: 120_000,
+    status: 'outstanding',
+    received_at: null,
+    received_by: null,
+    payment_ref: null,
+    void_reason: null,
+    created_by: 'p-mani',
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+    customer: { id: 'c-1', name: 'Harris Farm Markets' },
+  },
+  {
+    id: 'sv-2',
+    business_id: 'b-ddl',
+    customer_id: 'c-1',
+    invoice_number: 'DD-1002',
+    invoice_date: '2026-08-20',
+    due_date: '2026-09-30',
+    amount_cents: 80_000,
+    status: 'outstanding',
+    received_at: null,
+    received_by: null,
+    payment_ref: null,
+    void_reason: null,
+    created_by: 'p-mani',
+    created_at: '2026-08-20T00:00:00Z',
+    updated_at: '2026-08-20T00:00:00Z',
+    customer: { id: 'c-1', name: 'Harris Farm Markets' },
+  },
+];
+
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
@@ -83,6 +123,25 @@ vi.mock('@/lib/queries/invoices', () => ({
 
 vi.mock('@/lib/queries/detail', () => ({
   useRecentActivity: () => ({ data: [] }),
+}));
+
+/*
+ * The customer screens now read receivables, so this mock is load-bearing:
+ * without it the tree reaches a real query and there is no QueryClient in a
+ * bare render. HANDOFF §5 — a file that mocks only what it thinks it needs.
+ */
+vi.mock('@/lib/queries/sales', () => ({
+  useOutstandingSales: () => ({ data: SALES, isLoading: false }),
+  useCustomerSales: (id: string) => ({
+    data: SALES.filter((row) => row.customer_id === id),
+    isLoading: false,
+  }),
+  useCreateSalesInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMarkReceived: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({ received: [], missed: [] }),
+    isPending: false,
+  }),
+  useUnmarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/customers' }));
@@ -197,9 +256,18 @@ describe('the customer page', () => {
     expect(screen.getByText('dan@example.com')).toBeInTheDocument();
   });
 
-  it('says sales are not built yet rather than showing an empty panel', () => {
+  it('shows what this customer owes, and how much of it is late', () => {
     openDetail('c-1');
-    expect(screen.getByText(/aren’t built yet/)).toBeInTheDocument();
+    expect(screen.getByText('Owes us')).toBeInTheDocument();
+    // 120,000 + 80,000, and the older one is past due.
+    expect(screen.getByText(formatCents(200_000))).toBeInTheDocument();
+    expect(screen.getByText(/past due — worth a chase/)).toBeInTheDocument();
+  });
+
+  it('lists each outstanding invoice with a way to record it received', () => {
+    openDetail('c-1');
+    expect(screen.getByText('#DD-1001')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Received' })).toHaveLength(2);
   });
 
   it('saves an edit', async () => {
@@ -253,16 +321,42 @@ describe('the customer page', () => {
 });
 
 describe('the client’s condition: customers never move owed or pending', () => {
-  it('puts no money on the customer screens at all', () => {
-    // A dollar sign anywhere here is the first symptom of the two ledgers
-    // being joined up. There is nothing to show yet, so there is nothing to
-    // show — not a zero, which would read as "they owe nothing" rather than
-    // as "we do not track that here".
-    for (const open of [() => openList(), () => openDetail('c-1')]) {
-      const { container, unmount } = open();
-      expect(container.textContent ?? '').not.toMatch(/\$\s?\d/);
-      unmount();
+  /*
+   * This used to assert that no dollar sign appeared anywhere on a customer
+   * screen, which was the right test while a customer carried no money at all.
+   * They now carry receivables, so the proxy is gone and the actual invariant
+   * has to be asserted directly: money in and money out never meet.
+   */
+  it('keeps the two ledgers in separate arrays, with no row in both', () => {
+    const payableIds = new Set(invoices.map((row) => row.id));
+    for (const sale of SALES) {
+      expect(payableIds.has(sale.id)).toBe(false);
     }
+    // And the shapes differ, so one cannot be passed where the other is meant:
+    // a sales invoice has no supplier and a supplier invoice has no customer.
+    for (const sale of SALES) expect('supplier_id' in sale).toBe(false);
+    for (const invoice of invoices) expect('customer_id' in invoice).toBe(false);
+  });
+
+  it('leaves every payable figure untouched by what customers owe', () => {
+    // The dashboard's number, computed the only way it is ever computed.
+    const before = summarise(invoices);
+    expect(before.total_cents).toBe(
+      invoices.reduce((sum, row) => sum + row.amount_cents, 0),
+    );
+
+    // There is no call that could add a receivable to it: summarise takes the
+    // payables array, and SALES is not in it and cannot be put in it.
+    expect(summarise(invoices)).toEqual(before);
+  });
+
+  it('labels the customer money as owed TO us, never as owing', () => {
+    // The word is what stops somebody reading $200,000 on this screen as two
+    // hundred thousand dollars the group has to find.
+    openDetail('c-1');
+    expect(screen.getByText('Owes us')).toBeInTheDocument();
+    expect(screen.queryByText('Owing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
   });
 
   it('leaves a customer record with no field a total could pick up', () => {

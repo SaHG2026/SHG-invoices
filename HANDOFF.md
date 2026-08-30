@@ -54,7 +54,7 @@ The home screen from his mockup is now in too — OVERDUE / NEXT 7 DAYS cards, a
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 452 tests
+npx vitest run       # 464 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -183,6 +183,9 @@ with `within()`.
    **Name it lower-case** — Windows does not care and Vercel's Linux
    filesystem does; a test now stands over that.
    Deli Delights has no logo either — same deal, `ARCHITECTURE.md` §22.
+3a. **`CATCH_UP_005.sql` — sales invoices.** What customers owe. Until it is
+   run, recording an invoice to a customer fails and every receivable figure
+   reads zero. `ARCHITECTURE.md` §25.2.
 3b. **`CATCH_UP_004.sql` — the customers table. This one IS urgent**: it has
    been sent but until it is run, the Customers screen cannot load. Unlike 003
    the app cannot work around it, because the table genuinely is not there. The

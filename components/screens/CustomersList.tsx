@@ -8,6 +8,10 @@ import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useAllCustomers, useCreateCustomer } from '@/lib/queries/customers';
 import { filterCustomers, orderCustomers } from '@/lib/derive/customer-match';
+import { useOutstandingSales } from '@/lib/queries/sales';
+import { receivableByCustomer } from '@/lib/derive/receivables';
+import { useSydneyToday } from '@/hooks/use-sydney-today';
+import { formatCents } from '@/lib/money';
 
 /**
  * Customers. ARCHITECTURE §17 — the first screen of the second ledger.
@@ -29,7 +33,19 @@ export function CustomersList() {
   const toast = useToast();
   const { data: profile } = useCurrentProfile();
   const { data: customers = [], isLoading, isError } = useAllCustomers();
+  const { data: sales = [] } = useOutstandingSales();
   const createCustomer = useCreateCustomer();
+  const today = useSydneyToday();
+
+  /* What each customer still owes, from the one outstanding-sales array. */
+  const owed = useMemo(
+    () => (today ? receivableByCustomer(sales, today) : new Map()),
+    [sales, today],
+  );
+  const totalOwed = useMemo(
+    () => [...owed.values()].reduce((sum, entry) => sum + entry.total_cents, 0),
+    [owed],
+  );
 
   const [query, setQuery] = useState('');
   const [newName, setNewName] = useState('');
@@ -64,6 +80,18 @@ export function CustomersList() {
         Who Deli Delights sells to. Nothing here counts toward what the group owes — this is the
         other direction.
       </p>
+
+      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+        <p className="text-xs uppercase tracking-widest text-muted">Owed to us</p>
+        <p className="money mt-1 text-h1 text-ink" style={{ textAlign: 'left' }}>
+          {formatCents(totalOwed)}
+        </p>
+        <p className="mt-0.5 text-xs text-muted">
+          {owed.size === 0
+            ? 'Nothing outstanding.'
+            : `across ${owed.size} customer${owed.size === 1 ? '' : 's'}`}
+        </p>
+      </section>
 
       {/*
         A named panel rather than a bare text field with an Add button.
@@ -147,6 +175,21 @@ export function CustomersList() {
                     {customer.active ? '' : ' · deactivated'}
                   </span>
                 </span>
+                {owed.get(customer.id) ? (
+                  <span className="shrink-0 text-right">
+                    <span className="money block text-sm text-ink">
+                      {formatCents(owed.get(customer.id)!.total_cents)}
+                    </span>
+                    {owed.get(customer.id)!.overdue_count > 0 ? (
+                      <span
+                        className="block text-[11px]"
+                        style={{ color: 'var(--spine-overdue)' }}
+                      >
+                        {owed.get(customer.id)!.overdue_count} overdue
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
                 <span aria-hidden className="shrink-0 text-xs text-muted">
                   &rsaquo;
                 </span>

@@ -174,7 +174,7 @@
    * feel smooth is the deceleration, not the duration.
    */
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur-panel: 320ms;
+  --dur-panel: 260ms;
   --dur-fade: 180ms;
 }
 

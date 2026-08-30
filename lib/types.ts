@@ -118,6 +118,47 @@ export interface Invoice {
   updated_at: Timestamp;
 }
 
+/**
+ * An invoice Deli Delights has SENT. ARCHITECTURE §17.
+ *
+ * The mirror of Invoice, in the other direction, and deliberately its own type
+ * over its own table. Note the vocabulary: `received`, not `paid`. You do not
+ * pay an invoice you issued, and a shared word is how two directions end up
+ * sharing a code path.
+ *
+ * Nothing here is ever summed into what the group owes. That is not a rule
+ * anybody has to keep — every owed and pending figure in the app is derived
+ * from the `invoices` array, and these are not in it.
+ */
+export type SalesStatus = 'outstanding' | 'received' | 'void';
+
+export interface SalesInvoice {
+  id: string;
+  business_id: string;
+  customer_id: string;
+
+  /** Ours — we issued it. */
+  invoice_number: string | null;
+  invoice_date: DateStr;
+  due_date: DateStr;
+  amount_cents: number;
+
+  status: SalesStatus;
+  received_at: Timestamp | null;
+  received_by: string | null;
+  payment_ref: string | null;
+  void_reason: string | null;
+
+  created_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/** A sales invoice with its customer resolved, as the lists render it. */
+export interface SalesInvoiceRow extends SalesInvoice {
+  customer: Pick<Customer, 'id' | 'name'>;
+}
+
 /** An invoice with its supplier and business resolved, as the lists render it. */
 export interface InvoiceRow extends Invoice {
   supplier: Pick<Supplier, 'id' | 'name'>;

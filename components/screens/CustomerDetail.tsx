@@ -1,10 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
 import { useAllCustomers, useUpdateCustomer } from '@/lib/queries/customers';
+import { useCustomerSales, useMarkReceived, useUnmarkReceived } from '@/lib/queries/sales';
+import { summariseReceivable } from '@/lib/derive/receivables';
+import { useSydneyToday } from '@/hooks/use-sydney-today';
+import { formatCents } from '@/lib/money';
+import { formatDay, formatDayWithYear } from '@/lib/date';
+import { formatDueLabel, URGENCY_COLOUR, URGENCY_TINT, urgencyOf } from '@/lib/derive/urgency';
 import type { Customer } from '@/lib/types';
 
 /**
@@ -22,7 +28,18 @@ import type { Customer } from '@/lib/types';
 export function CustomerDetail({ id }: { id: string }) {
   const toast = useToast();
   const { data: customers = [], isLoading, isError } = useAllCustomers();
+  const { data: sales = [] } = useCustomerSales(id);
   const updateCustomer = useUpdateCustomer();
+  const markReceived = useMarkReceived();
+  const unmarkReceived = useUnmarkReceived();
+  const today = useSydneyToday();
+
+  const owed = useMemo(
+    () => (today ? summariseReceivable(sales, today) : null),
+    [sales, today],
+  );
+  const outstanding = sales.filter((row) => row.status === 'outstanding');
+  const settled = sales.filter((row) => row.status !== 'outstanding');
 
   const [editing, setEditing] = useState(false);
 
@@ -90,13 +107,124 @@ export function CustomerDetail({ id }: { id: string }) {
         )}
       </section>
 
-      <section className="rounded-sm border border-edge bg-card p-4">
-        <p className="text-xs uppercase tracking-widest text-muted">Sales</p>
-        <p className="mt-2 text-sm text-muted">
-          Sales invoices and receipts aren’t built yet, so there is nothing owed to show here.
-          When they arrive they will total separately from what the group owes suppliers — money
-          in and money out never mix.
+      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+        <p className="text-xs uppercase tracking-widest text-muted">Owes us</p>
+        <p className="money mt-1 text-total text-ink" style={{ textAlign: 'left' }}>
+          {formatCents(owed?.total_cents ?? 0)}
         </p>
+        <p className="mt-1 text-sm text-muted">
+          {!owed || owed.invoice_count === 0
+            ? 'Nothing outstanding.'
+            : `across ${owed.invoice_count} invoice${owed.invoice_count === 1 ? '' : 's'}${
+                owed.oldest_due ? ` · oldest due ${formatDayWithYear(owed.oldest_due)}` : ''
+              }`}
+        </p>
+        {owed && owed.overdue_count > 0 ? (
+          <p className="mt-1 text-sm" style={{ color: 'var(--spine-overdue)' }}>
+            {formatCents(owed.overdue_cents)} of it is past due — worth a chase.
+          </p>
+        ) : null}
+      </section>
+
+      {outstanding.length > 0 ? (
+        <section className="mb-4">
+          <h2 className="text-h2 mb-2 text-ink">Outstanding</h2>
+          <ul className="overflow-hidden rounded-sm border border-edge bg-card">
+            {outstanding.map((row) => {
+              const urgency = today ? urgencyOf(row.due_date, today) : 'later';
+              return (
+                <li
+                  key={row.id}
+                  className="flex h-row items-center gap-3 border-b border-hairline px-3 last:border-b-0"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-ink">
+                      {row.invoice_number ? `#${row.invoice_number}` : 'No invoice number'}
+                    </span>
+                    <span className="figure-date block truncate text-xs text-muted">
+                      Sent {formatDay(row.invoice_date)}
+                    </span>
+                  </span>
+                  {today ? (
+                    <span
+                      className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px]"
+                      style={{
+                        backgroundColor: URGENCY_TINT[urgency],
+                        color: URGENCY_COLOUR[urgency],
+                      }}
+                    >
+                      {formatDueLabel(row.due_date, today)}
+                    </span>
+                  ) : null}
+                  <span className="money shrink-0 text-sm text-ink">
+                    {formatCents(row.amount_cents)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const result = await markReceived.mutateAsync({ ids: [row.id] });
+                        toast.show(
+                          result.received.length === 0
+                            ? 'Already recorded by someone else.'
+                            : `Received ${formatCents(row.amount_cents)}.`,
+                          result.received.length === 0 ? 'queued' : 'done',
+                        );
+                      } catch {
+                        toast.show('Couldn’t record that. Try again.', 'problem');
+                      }
+                    }}
+                    className="touch shrink-0 rounded-full px-3 text-xs font-medium"
+                    style={{ backgroundColor: 'var(--paid-bg)', color: 'var(--paid)' }}
+                  >
+                    Received
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="rounded-sm border border-edge bg-card p-4">
+        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Received</p>
+        {settled.length === 0 ? (
+          <p className="text-sm text-muted">
+            Nothing received yet. Use the <strong>+</strong> button and choose “To a customer” to
+            record an invoice you have sent.
+          </p>
+        ) : (
+          <ul>
+            {settled.slice(0, 30).map((row) => (
+              <li
+                key={row.id}
+                className="flex items-center gap-3 border-b border-hairline py-2 last:border-b-0"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                  {row.invoice_number ? `#${row.invoice_number}` : 'No invoice number'}
+                </span>
+                <span className="money shrink-0 text-sm text-muted line-through">
+                  {formatCents(row.amount_cents)}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await unmarkReceived.mutateAsync(row.id);
+                      toast.show('Put back to outstanding.');
+                    } catch {
+                      toast.show('Couldn’t undo that.', 'problem');
+                    }
+                  }}
+                  className="touch shrink-0 rounded-full px-3 text-xs font-medium"
+                  style={{ backgroundColor: 'var(--action-bg)', color: 'var(--action)' }}
+                >
+                  Undo
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </AppChrome>
   );

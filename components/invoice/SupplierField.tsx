@@ -8,10 +8,22 @@ import type { Supplier } from '@/lib/types';
 /**
  * The supplier type-ahead. Spec §7.3.
  *
- * The field autofocuses when the sheet opens, but only because the tap that
- * opened the sheet is a real user gesture — notes §4: "iOS suppresses
- * programmatic keyboard opening outside a user gesture." Focusing later, from
- * an effect that runs after data loads, silently does nothing on a phone.
+ * ---------------------------------------------------------------------------
+ * It does NOT autofocus, and that is a reversal.
+ *
+ * It used to, to save a tap against the fifteen-second target. The cost turned
+ * out to be larger than the tap: the keyboard opened while the sheet was still
+ * sliding in, the viewport resized underneath it, and the sheet re-animated its
+ * own height mid-entrance. The client reported it twice — "springs with so much
+ * force and then bounces a couple times" — and both reports were right.
+ *
+ * Two animations racing is not a tuning problem, it is one animation too many.
+ * The sheet now opens as a single movement and the keyboard arrives when
+ * somebody asks for it. That is also the only behaviour that is the same on
+ * both platforms: Android resizes the layout viewport for a keyboard and iOS
+ * draws it on top, so "open the keyboard during the entrance" means two
+ * different things and neither of them is calm.
+ * ---------------------------------------------------------------------------
  *
  * ---------------------------------------------------------------------------
  * The list does NOT open on focus.
@@ -95,7 +107,6 @@ export function SupplierField({
           autoCorrect="off"
           autoCapitalize="words"
           spellCheck={false}
-          autoFocus
           placeholder="Start typing"
           value={typing || browsing ? query : (selected?.name ?? query)}
           onChange={(event) => {

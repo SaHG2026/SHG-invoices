@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
+import { AddSalesInvoiceSheet } from '@/components/invoice/AddSalesInvoiceSheet';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { ActivityBell } from './ActivityBell';
 import { NavDrawer } from './NavDrawer';
@@ -55,6 +56,21 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
    * animating between screens at all.
    */
   const pathname = usePathname();
+
+  /*
+   * Deli Delights is the only business with two directions, so it is the only
+   * place the `+` has to ask which one you mean. Everywhere else the answer is
+   * "a supplier invoice" and a question with one right answer is not a
+   * question — ARCHITECTURE §17.
+   */
+  const sellsAsWell = /^\/(b\/ddl|customers)(\/|$)/.test(pathname ?? '');
+  const [salesOpen, setSalesOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+
+  function pressedAdd() {
+    if (sellsAsWell) setAsking(true);
+    else setSheetOpen(true);
+  }
   const [sheetOpen, setSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -107,6 +123,20 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
 
           <span className="flex-1" />
 
+          {/*
+            Home, next to the bell. The logo is a link on paper but it is not
+            one here — on a deep screen the header shows a back link instead of
+            the wordmark, so the only way home was the menu. Two taps for the
+            screen the app opens to.
+          */}
+          <Link
+            href={'/' as Route}
+            aria-label="Home"
+            className="touch flex shrink-0 items-center justify-center px-1 text-muted"
+          >
+            <HomeGlyph />
+          </Link>
+
           <ActivityBell />
 
           {profile ? (
@@ -128,7 +158,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
       {add === 'floating' ? (
         <button
           type="button"
-          onClick={() => setSheetOpen(true)}
+          onClick={pressedAdd}
           aria-label="Add invoice"
           className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
           style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
@@ -149,7 +179,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         >
           <button
             type="button"
-            onClick={() => setSheetOpen(true)}
+            onClick={pressedAdd}
             className="touch mx-auto flex w-full max-w-[528px] items-center justify-center gap-2 rounded-full bg-action px-4 text-base font-medium text-action-text"
           >
             <span aria-hidden>+</span>
@@ -160,7 +190,71 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
 
       {menuOpen ? <NavDrawer onClose={() => setMenuOpen(false)} /> : null}
 
+      {/*
+        Which direction? Only asked inside Deli Delights and on the customer
+        screens. Two large targets rather than a dropdown: this is the first
+        thing between a person and entering an invoice, and it should cost one
+        tap and no reading.
+      */}
+      {asking ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label="What kind of invoice?"
+        >
+          <div
+            aria-hidden
+            onClick={() => setAsking(false)}
+            className="scrim-in absolute inset-0 bg-ink/40"
+          />
+          <div
+            className="sheet-in relative w-full bg-card p-4"
+            style={{
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              paddingBottom: `calc(1rem + env(safe-area-inset-bottom, 0px))`,
+            }}
+          >
+            <p className="mb-3 text-xs uppercase tracking-widest text-muted">New invoice</p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAsking(false);
+                setSheetOpen(true);
+              }}
+              className="touch mb-2 flex w-full flex-col items-start rounded-sm border border-edge px-4 py-3 text-left"
+            >
+              <span className="text-base font-medium text-ink">From a supplier</span>
+              <span className="text-xs text-muted">Money out — something we have to pay</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAsking(false);
+                setSalesOpen(true);
+              }}
+              className="touch mb-3 flex w-full flex-col items-start rounded-sm border border-edge px-4 py-3 text-left"
+            >
+              <span className="text-base font-medium text-ink">To a customer</span>
+              <span className="text-xs text-muted">Money in — something they owe us</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAsking(false)}
+              className="touch w-full rounded-full border border-hairline text-sm text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <AddInvoiceSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <AddSalesInvoiceSheet open={salesOpen} onClose={() => setSalesOpen(false)} />
     </div>
   );
 }
@@ -170,6 +264,19 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
  * real character and it renders at three different weights across iOS, Android
  * and desktop, sometimes as an emoji. This is the same three lines everywhere.
  */
+function HomeGlyph() {
+  return (
+    <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path
+        d="M2.7 7.2 9 2.4l6.3 4.8v7.2a.9.9 0 0 1-.9.9h-3.6v-4.5H6.2v4.5H3.6a.9.9 0 0 1-.9-.9V7.2Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function MenuGlyph() {
   return (
     <svg aria-hidden width="20" height="20" viewBox="0 0 20 20" fill="none">

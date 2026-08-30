@@ -33,6 +33,28 @@ function readSeen(): string | null {
   }
 }
 
+/**
+ * A bell, drawn.
+ *
+ * This was `&#9737;` — U+2609, "sun". It was standing in for a bell and looked
+ * like neither on most devices, which is the same reason the menu and chevron
+ * glyphs are drawn rather than typed: a character renders at whatever weight
+ * and baseline each platform decides.
+ */
+function BellGlyph() {
+  return (
+    <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path
+        d="M9 2.25a4.5 4.5 0 0 0-4.5 4.5c0 2.4-.6 3.9-1.2 4.8-.3.45.03 1.05.57 1.05h10.26c.54 0 .87-.6.57-1.05-.6-.9-1.2-2.4-1.2-4.8A4.5 4.5 0 0 0 9 2.25Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M7.2 14.4a1.9 1.9 0 0 0 3.6 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ActivityBell() {
   const { data: profile } = useCurrentProfile();
   const { data: people = [] } = useProfiles();
@@ -77,7 +99,7 @@ export function ActivityBell() {
         aria-label={unseen > 0 ? `Activity, ${unseen} new` : 'Activity'}
         className="touch relative flex items-center justify-center px-1 text-base text-muted"
       >
-        <span aria-hidden>&#9737;</span>
+        <BellGlyph />
         {unseen > 0 ? (
           <span
             aria-hidden

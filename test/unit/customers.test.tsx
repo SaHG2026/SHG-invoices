@@ -209,9 +209,12 @@ describe('the customer list', () => {
     expect(screen.getByText(/deactivated/)).toBeInTheDocument();
   });
 
-  it('says what this ledger is, and what it is not', () => {
+  it('says whose customers these are without explaining itself', () => {
+    // The preamble is gone at the client's request. What has to survive is the
+    // screen still being identifiable at a glance.
     openList();
-    expect(screen.getByText(/Nothing here counts toward what the group owes/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Customers' })).toBeInTheDocument();
+    expect(screen.getByText('Owed to us')).toBeInTheDocument();
   });
 
   it('adds a customer, and gives the name back if it fails', async () => {
@@ -261,7 +264,7 @@ describe('the customer page', () => {
     expect(screen.getByText('Owes us')).toBeInTheDocument();
     // 120,000 + 80,000, and the older one is past due.
     expect(screen.getByText(formatCents(200_000))).toBeInTheDocument();
-    expect(screen.getByText(/past due — worth a chase/)).toBeInTheDocument();
+    expect(screen.getByText(/past due/)).toBeInTheDocument();
   });
 
   it('lists each outstanding invoice with a way to record it received', () => {

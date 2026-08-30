@@ -75,11 +75,7 @@ export function CustomersList() {
 
   return (
     <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
-      <h1 className="text-h1 mb-1 text-ink">Customers</h1>
-      <p className="mb-4 text-sm text-muted">
-        Who Deli Delights sells to. Nothing here counts toward what the group owes — this is the
-        other direction.
-      </p>
+      <h1 className="text-h1 mb-4 text-ink">Customers</h1>
 
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
         <p className="text-xs uppercase tracking-widest text-muted">Owed to us</p>
@@ -146,8 +142,7 @@ export function CustomersList() {
           not wrong on screen, it is wrong about what happened.
         */
         <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
-          Couldn’t load customers. If this is the first time you’ve opened this screen, the
-          customers table hasn’t been created yet — run{' '}
+          Couldn’t load customers. Run{' '}
           <span className="font-mono text-xs">CATCH_UP_004.sql</span> in Supabase.
         </p>
       ) : isLoading ? (

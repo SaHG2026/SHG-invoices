@@ -8,7 +8,7 @@ import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile, useSignOut, useUpdateNotifyPreference } from '@/lib/queries/session';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
-import { PIN_LENGTH, SESSION_DAYS } from '@/lib/constants';
+import { PIN_LENGTH } from '@/lib/constants';
 
 /**
  * Settings.
@@ -19,6 +19,16 @@ import { PIN_LENGTH, SESSION_DAYS } from '@/lib/constants';
  * have a page, and the notification preference finally has somewhere to live:
  * ARCHITECTURE §8.1 gave every person the right to change it and nothing in
  * the app has ever offered them the switch.
+ *
+ * The switch covers new invoices and nothing else. Being told when a bill is
+ * PAID is Mani's alone, by the client's decision, and it is deliberately not a
+ * preference on this screen — ARCHITECTURE §26. Everyone still sees every
+ * payment in History and in the bell; this governs only what a phone
+ * interrupts you for.
+ *
+ * The copy is one line per control on purpose. It read like an explanation of
+ * itself, and a settings screen that argues its own case is one nobody
+ * finishes reading.
  *
  * What is deliberately not here: anything about anybody else. `role` is not a
  * permission (§8.1), there is no admin, and the only row a person can update
@@ -99,13 +109,7 @@ export function SettingsScreen() {
             onChange={(event) => void toggleNotify(event.target.checked)}
             className="mt-0.5 size-4 shrink-0"
           />
-          <span>
-            Tell me when somebody adds or pays an invoice
-            <span className="mt-1 block text-xs text-muted">
-              Never about your own — you already know. Everything shows in the bell either way;
-              this only decides whether your phone says so as well.
-            </span>
-          </span>
+          <span>Notify me when a new invoice is added</span>
         </label>
       </section>
 
@@ -116,20 +120,12 @@ export function SettingsScreen() {
           <p className="text-sm text-muted">Checking…</p>
         ) : !lock.supported ? (
           <p className="text-sm text-muted">
-            No PIN on this address. A PIN can only be stored securely over https, so it is skipped
-            here rather than replaced with something weaker that would still feel like a lock. Your
-            sign-in is real and the invoices are still protected.
+            No PIN on this address — it needs https. Your sign-in still applies.
           </p>
         ) : (
           <>
             <p className="text-sm text-ink">
-              {lock.set
-                ? `A ${PIN_LENGTH}-digit PIN unlocks this device.`
-                : `No PIN set on this device yet.`}
-            </p>
-            <p className="mt-1 text-xs text-muted">
-              The PIN is asked for every time the app opens. Your password is asked for about every{' '}
-              {SESSION_DAYS} days.
+              {lock.set ? `${PIN_LENGTH}-digit PIN set.` : 'No PIN on this device.'}
             </p>
             <button
               type="button"
@@ -156,10 +152,7 @@ export function SettingsScreen() {
         >
           {signOut.isPending ? 'Signing out…' : 'Sign out'}
         </button>
-        <p className="mt-1 text-xs text-muted">
-          Signing out clears the PIN on this device too, so the next person in has to know the
-          password.
-        </p>
+        <p className="mt-1 text-xs text-muted">Signing out clears the PIN on this device.</p>
       </section>
     </AppChrome>
   );

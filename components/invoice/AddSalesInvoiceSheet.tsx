@@ -144,10 +144,6 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         </button>
       }
     >
-      <p className="mb-4 text-sm text-muted">
-        Money coming in. This is kept separate from what the group owes suppliers.
-      </p>
-
       <div className="mb-4">
         <label className="mb-1 block text-xs uppercase tracking-widest text-muted" htmlFor="customer">
           Customer

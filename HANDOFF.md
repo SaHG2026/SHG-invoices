@@ -41,12 +41,23 @@ hardening, offline write queue, error boundaries, a 200-row performance pass,
 and push notifications. The client said there were "more bits to tidy up"
 before starting it, so **ask before beginning Phase 7.**
 
-Those tidy-up bits are now underway on `tidy-up-before-phase-7` and are **not**
-Phase 7. Landed so far: the side menu, "SHG Invoices" branding with a logo slot
-per business, the customer list, and a Settings screen (`ARCHITECTURE.md` §20).
-The home screen from his mockup is now in too — OVERDUE / NEXT 7 DAYS cards, a
-"Coming up" list with due pills, a full-width **+ New invoice** (`ARCHITECTURE.md`
-§21). That is the tidy-up complete; **ask before starting Phase 7 proper.**
+Those tidy-up bits are on `tidy-up-before-phase-7` and are **not** Phase 7.
+`ARCHITECTURE.md` §§20–26 have the reasoning; the short version:
+
+| | |
+|---|---|
+| §20 | Side menu, SHG Invoices branding, customers, Settings |
+| §21 | The home screen rebuilt to the client's mockup |
+| §22 | Photographs on the chips, logos on the businesses |
+| §23 | The tick that appeared to erase two invoices; motion; pill buttons |
+| §24 | Second round of phone feedback — the sheet, the menu counts, renames |
+| §25 | Sales invoices: what customers owe. The sheet's third and final fix |
+| §26 | Copy trimmed; only Mani is notified about payments |
+
+**Next, and agreed with the client: a green repaint**, then Phase 7. Every
+colour is a token in one `:root` block in `app/globals.css` — a repaint is that
+block and nothing else, which is why it is worth doing as its own commit.
+**Ask before starting Phase 7 proper.**
 
 ---
 
@@ -170,6 +181,10 @@ with `within()`.
 
 ## 6. What is still owed
 
+0. **Push must not name Mani.** Only he is notified when a bill is paid
+   (`ARCHITECTURE.md` §26), and the client asked for it explicitly. Implement it
+   as `profiles.notify_on_payment`, true for one row and outside the
+   `self_update` column grant — never as a branch on a display name.
 1. **Supplier payment terms.** Suppliers created from the add-invoice sheet
    have none and fall back to 14 days. The suppliers list counts them; the
    supplier page sets them. Worth prompting him to do a pass.

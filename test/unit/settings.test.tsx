@@ -85,7 +85,7 @@ describe('who you are', () => {
 });
 
 describe('the notification switch', () => {
-  const label = /Tell me when somebody adds or pays an invoice/;
+  const label = /Notify me when a new invoice is added/;
 
   it('renders the stored preference', () => {
     open();
@@ -111,26 +111,29 @@ describe('the notification switch', () => {
     expect(screen.getByLabelText(label)).toBeChecked();
   });
 
-  it('explains that the bell is unaffected either way', () => {
-    // §8.1: push is a nudge, the in-app feed is the channel that actually
-    // works. Turning the notification off must not read as turning the
-    // information off.
+  it('promises only what it delivers', () => {
+    /*
+     * The label used to say "adds or pays". Being told about a payment is
+     * Mani's alone now (ARCHITECTURE §26), so a switch claiming to cover it
+     * would be a promise the app does not keep for anybody else.
+     */
     open();
-    expect(screen.getByText(/Everything shows in the bell either way/)).toBeInTheDocument();
+    expect(screen.getByLabelText(label)).toBeInTheDocument();
+    expect(screen.queryByText(/pays an invoice/)).not.toBeInTheDocument();
   });
 });
 
 describe('the device lock', () => {
   it('offers to set a PIN when there is none on this device', async () => {
     open();
-    expect(await screen.findByText(/No PIN set on this device yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No PIN on this device/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set a PIN' })).toBeInTheDocument();
   });
 
   it('says a PIN is already set, and offers to change it', async () => {
     mocks.lock.set = true;
     open();
-    expect(await screen.findByText(/A 6-digit PIN unlocks this device/)).toBeInTheDocument();
+    expect(await screen.findByText(/6-digit PIN set/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change PIN' })).toBeInTheDocument();
   });
 
@@ -152,7 +155,7 @@ describe('the device lock', () => {
     // and a weaker hash that still felt like a lock would be worse than none.
     mocks.lock.supported = false;
     open();
-    expect(await screen.findByText(/only be stored securely over https/)).toBeInTheDocument();
+    expect(await screen.findByText(/it needs https/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /PIN/ })).not.toBeInTheDocument();
   });
 });
@@ -167,7 +170,7 @@ describe('signing out', () => {
   it('says that it clears the PIN too', () => {
     // It does, and somebody handing the phone over should know that.
     open();
-    expect(screen.getByText(/clears the PIN on this device too/)).toBeInTheDocument();
+    expect(screen.getByText(/clears the PIN on this device/)).toBeInTheDocument();
   });
 });
 

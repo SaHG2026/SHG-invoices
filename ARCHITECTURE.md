@@ -711,12 +711,18 @@ The rule generalises to: **tell the people who asked to be told, never about the
 | Event | Who hears about it |
 |---|---|
 | Invoice added | Anyone with notifications on, except whoever added it |
-| Invoice marked paid | Anyone with notifications on, except whoever ticked it |
+| Invoice marked paid | **Mani only** — revised, see §26 |
 | Everything else | Nobody — it is in the history, which is always readable |
 
-Currently that means Mani, who is notified when Milan, Sujan or Rabindra logs or pays something, and
-never when he does it himself. It falls out of `push_targets` (§8.1) plus an actor exclusion, so
-there is no per-person rule to maintain and no branch that names Mani.
+**The second row was revised by the client and is no longer symmetric with the
+first.** An invoice arriving is news to whoever is going to pay it; an invoice
+being paid is news to whoever is watching the money, which is one person. The
+rest of the team can see every payment in History and in the bell — this
+governs only what a phone interrupts somebody for.
+
+That breaks the generalisation this section was built on, so §26 sets out how
+it is to be implemented in Phase 7 **without a branch that names Mani** — the
+thing this paragraph originally existed to prevent.
 
 History is unconditional and independent of notifications: every payment always records when and by
 whom, and the audit trigger writes it regardless of anybody's settings.
@@ -768,24 +774,48 @@ Nothing about the current schema blocks it, and nothing needs adding now.
 ## 19. Where the build has got to
 
 Written for whoever picks this up next, including a later session of me.
-**Phases 1–6 are built, deployed and signed off by the client. Phase 7 is next.**
+**Kept current — §§20–26 are the changes made after the original six phases,
+and this section describes the app as it stands today.**
 
-Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`, branch
-`phase-1-foundation` · 333 tests, run under `TZ=UTC`, `Australia/Sydney` and
-`America/Los_Angeles` before every commit.
+Phases 1–6 built and signed off. Everything since is client-driven revision
+between Phase 6 and Phase 7: navigation, the home screen, the customer ledger.
+**Phase 7 — PWA, offline queue, error boundaries, push — has not been started,
+and the client asks to be consulted before it is.**
+
+Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`,
+branch `tidy-up-before-phase-7` · 464 tests, run under `TZ=UTC`,
+`Australia/Sydney` and `America/Los_Angeles` before every commit.
 
 ### What exists
 
 | Route | What it is |
 |---|---|
 | `/login` | Email and password. No sign-up route exists. |
-| `/` | Dashboard: greeting, group total, Overall plus four businesses ordered by who is most overdue. |
+| `/` | Dashboard (§21): greeting, Overdue and Next 7 days, Coming up, per-business totals, a full-width `+`. |
 | `/b/[scope]` | The Week for `all` or a business code — overdue, today, next 7 days, later, with payment runs. |
-| `/b/[scope]/pending` | Four sorts, search, overdue-only, supplier filter, sticky filtered total. |
+| `/b/[scope]/pending` | Three sorts (§24.6), search, overdue-only, supplier filter, sticky filtered total. |
 | `/b/[scope]/history` | Paid and voided, searchable, filtered by payer. |
 | `/invoices/[id]` | One invoice: facts, actions, and the merged notes/activity stream. |
 | `/suppliers`, `/suppliers/[id]` | List, add, edit, deactivate; terms, contact, six-month spend. |
+| `/customers`, `/customers/[id]` | §22, §25.2. Add and edit; what each owes; record an invoice sent and mark it received. |
+| `/settings` | §20.4. Who you are, the notification switch, the device PIN, sign out. |
 | `/specimen` | Design tokens, rendered from the test fixture. Delete when it stops being useful. |
+
+### The shape of it now, in one paragraph
+
+A side menu (§20.1) reaches everything from everywhere. Two ledgers that never
+touch: `invoices` is money out and every owed figure derives from it;
+`sales_invoices` is money in and every receivable figure derives from that. The
+`+` is global, pre-selects the business you are standing in, and asks which
+direction only inside Deli Delights — the one business with both. Invoices
+ticked off stay on screen, struck through, until the app is closed (§23).
+
+### Migrations applied by hand, in order
+
+`001`–`007` at the start, then `CATCH_UP_001`–`003` (accents), `CATCH_UP_004`
+(customers), `CATCH_UP_005` (sales invoices). `db/migrations/` is the source of
+truth for a fresh install; the `CATCH_UP` files are what was actually sent to
+the client to paste in.
 
 ### Deploying
 
@@ -1494,3 +1524,75 @@ block and nothing else. Worth doing as its own change, where it can be looked
 at and reverted in one commit.
 
 Tests: 464, up from 452, under all three timezones.
+
+
+---
+
+## 26. Copy, and who hears about a payment
+
+### 26.1 The writing was explaining itself
+
+> "Remove descriptive texts, it feels like hand holding."
+
+Fair, and worth naming precisely rather than just cutting. Almost every line
+removed was justifying a decision to the reader:
+
+| Removed | Why it was there | Why it went |
+|---|---|---|
+| "Never about your own — you already know. Everything shows in the bell either way…" | Explaining §8.1's design | Nobody reads a settings screen to learn its philosophy |
+| "Who Deli Delights sells to. Nothing here counts toward what the group owes…" | Reassuring about §17's two ledgers | The heading says Customers and the figure says "Owed to us" |
+| "Money out — something we have to pay" / "Money in — something they owe us" | Disambiguating the `+` | "From a supplier" and "To a customer" already do |
+| "The PIN is asked for every time the app opens. Your password about every 30 days." | Explaining §8's session model | True, and not a thing anybody needs at the moment they change a PIN |
+
+**The pattern in all four: they were written for somebody meeting the screen
+for the first time, and read by somebody using it for the fortieth.** Comments
+in this codebase carry the reasoning precisely so the interface does not have
+to. That is where these sentences belong, and where they now are.
+
+What deliberately stayed: anything that tells you what to *do* when something
+is wrong — "Run CATCH_UP_004.sql in Supabase" is not hand-holding, it is the
+only way to fix that screen. Those were shortened, not removed.
+
+### 26.2 Only Mani hears about a payment
+
+> "no one except Mani should get notification of bills being paid, even if they
+> enable this option. Although they can check in history and confirm"
+
+§16 had these two events symmetric — anyone who asked, minus the actor — and
+the client is right that they are not the same event. An invoice arriving is
+news to whoever will have to pay it. An invoice being *paid* is news to whoever
+is watching the money, which is one person.
+
+**Nothing changed in running code, because push does not exist yet.** Phase 7
+builds it. What changed is the copy, which was promising something the app will
+not do: the switch now says "Notify me when a new invoice is added", because
+that is all it will ever govern.
+
+**[decision] When Phase 7 arrives, this must not be `if (person.name ===
+'Mani')`.** §16's original paragraph exists precisely to prevent a branch that
+names somebody, and the client's rule does not require one. The mechanism:
+
+```
+profiles.notify_on_payment  boolean not null default false
+```
+
+- Set true for Mani, false for everybody else. **Not** in the `self_update`
+  column grant, so it is not a preference somebody can turn on for themselves —
+  which is what "even if they enable this option" asks for.
+- `push_targets` gains a second view, or a column, and the Edge Function picks
+  the right audience per event type.
+- If the client later wants Rabindra on it too, that is one `update` and no
+  deploy.
+
+The rule stays general — *tell the people marked for this event, never about
+their own actions* — and the fact that exactly one person is marked stays data.
+That is the same move as `role` in §8.1: a fact about a row, not a branch in the
+code.
+
+**Unchanged, and worth restating:** History is unconditional. Every payment
+records when and by whom regardless of anybody's notification settings, and the
+audit trigger writes it whether or not anyone is listening. Turning
+notifications off never turns information off — it only decides what a phone
+interrupts you for.
+
+Tests: 464, under all three timezones.

@@ -63,7 +63,7 @@ export function CustomerDetail({ id }: { id: string }) {
         <h1 className="text-h1 text-ink">{customer.name}</h1>
         {!customer.active ? (
           <p className="mt-1 text-sm text-muted">
-            Deactivated — hidden when choosing a customer, and every record kept.
+            Deactivated. Records kept.
           </p>
         ) : null}
       </header>
@@ -121,7 +121,7 @@ export function CustomerDetail({ id }: { id: string }) {
         </p>
         {owed && owed.overdue_count > 0 ? (
           <p className="mt-1 text-sm" style={{ color: 'var(--spine-overdue)' }}>
-            {formatCents(owed.overdue_cents)} of it is past due — worth a chase.
+            {formatCents(owed.overdue_cents)} past due.
           </p>
         ) : null}
       </section>
@@ -189,10 +189,7 @@ export function CustomerDetail({ id }: { id: string }) {
       <section className="rounded-sm border border-edge bg-card p-4">
         <p className="mb-2 text-xs uppercase tracking-widest text-muted">Received</p>
         {settled.length === 0 ? (
-          <p className="text-sm text-muted">
-            Nothing received yet. Use the <strong>+</strong> button and choose “To a customer” to
-            record an invoice you have sent.
-          </p>
+          <p className="text-sm text-muted">Nothing received yet.</p>
         ) : (
           <ul>
             {settled.slice(0, 30).map((row) => (

@@ -224,10 +224,9 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
                 setAsking(false);
                 setSheetOpen(true);
               }}
-              className="touch mb-2 flex w-full flex-col items-start rounded-sm border border-edge px-4 py-3 text-left"
+              className="touch mb-2 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
             >
               <span className="text-base font-medium text-ink">From a supplier</span>
-              <span className="text-xs text-muted">Money out — something we have to pay</span>
             </button>
 
             <button
@@ -236,10 +235,9 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
                 setAsking(false);
                 setSalesOpen(true);
               }}
-              className="touch mb-3 flex w-full flex-col items-start rounded-sm border border-edge px-4 py-3 text-left"
+              className="touch mb-3 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
             >
               <span className="text-base font-medium text-ink">To a customer</span>
-              <span className="text-xs text-muted">Money in — something they owe us</span>
             </button>
 
             <button

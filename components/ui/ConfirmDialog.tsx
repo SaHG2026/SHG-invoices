@@ -71,9 +71,9 @@ export function ConfirmDialog({
       <div aria-hidden onClick={onCancel} className="absolute inset-0 bg-ink/60" />
 
       <div className="row-in relative w-full max-w-[380px] overflow-hidden rounded-sm bg-card shadow-[0_6px_36px_rgba(18,56,75,0.35)]">
-        <div className="bg-gold px-4 py-3">
+        <div className="bg-today px-4 py-3">
           <h2
-            className="text-h2 text-ink"
+            className="text-h2 text-white"
             style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}
           >
             {title}
@@ -85,7 +85,7 @@ export function ConfirmDialog({
             {points.map((point, index) => (
               <li
                 key={index}
-                className="border-t border-hair py-3 text-base leading-snug text-ink first:border-t-0 first:pt-0"
+                className="border-t border-hairline py-3 text-base leading-snug text-ink first:border-t-0 first:pt-0"
               >
                 {point}
               </li>
@@ -98,14 +98,14 @@ export function ConfirmDialog({
             <button
               type="button"
               onClick={onConfirm}
-              className="touch flex-1 rounded-sm bg-ink px-3 text-base text-snow"
+              className="touch flex-1 rounded-sm bg-action px-3 text-base text-action-text"
             >
               {confirmLabel}
             </button>
             <button
               type="button"
               onClick={onCancel}
-              className="touch flex-1 rounded-sm border border-hair bg-card px-3 text-base text-ink"
+              className="touch flex-1 rounded-sm border border-hairline bg-card px-3 text-base text-ink"
             >
               {cancelLabel}
             </button>

@@ -106,7 +106,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
           maxHeight: `calc(100dvh - ${keyboardInset}px - 32px)`,
         }}
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-hair px-4 py-3">
+        <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
           <h2 className="text-h2 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
             {title}
           </h2>
@@ -114,7 +114,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="touch -mr-2 flex items-center justify-center px-2 text-h2 text-mute"
+            className="touch -mr-2 flex items-center justify-center px-2 text-h2 text-muted"
           >
             ✕
           </button>
@@ -125,7 +125,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
 
         {footer ? (
           <div
-            className="shrink-0 border-t border-hair bg-card px-4 pt-3"
+            className="shrink-0 border-t border-hairline bg-card px-4 pt-3"
             style={{ paddingBottom: `calc(0.75rem + env(safe-area-inset-bottom, 0px))` }}
           >
             {footer}

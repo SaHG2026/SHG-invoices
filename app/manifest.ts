@@ -15,7 +15,13 @@ import type { MetadataRoute } from 'next';
  * turns push on.
  */
 
-/** The icon artwork's own background. Also the splash and browser chrome. */
+/**
+ * The icon artwork's own background. Also the splash and browser chrome.
+ *
+ * The one hex outside app/globals.css, and unavoidably so: a web manifest is
+ * JSON served at build time, and JSON cannot read a CSS variable. It is kept
+ * in sync by hand with `--brand`. If the brand navy ever changes, both move.
+ */
 export const BRAND_NAVY = '#082F55';
 
 export default function manifest(): MetadataRoute.Manifest {

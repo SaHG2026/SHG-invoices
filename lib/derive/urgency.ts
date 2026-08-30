@@ -15,10 +15,18 @@ export type Urgency = 'overdue' | 'today' | 'week' | 'later';
 
 /** Spec §6, and the spine colours in §9. */
 export const URGENCY_COLOUR: Record<Urgency, string> = {
-  overdue: 'var(--color-brick)',
-  today: 'var(--color-gold)',
-  week: 'var(--color-slate)',
-  later: 'var(--color-hair)',
+  overdue: 'var(--spine-overdue)',
+  today: 'var(--spine-today)',
+  week: 'var(--spine-week)',
+  later: 'var(--spine-later)',
+};
+
+/** Tinted backgrounds, paired with the colour above as text. */
+export const URGENCY_TINT: Record<Urgency, string> = {
+  overdue: 'var(--spine-overdue-bg)',
+  today: 'var(--spine-today-bg)',
+  week: 'var(--spine-week-bg)',
+  later: 'var(--spine-later-bg)',
 };
 
 export function urgencyOf(dueDate: DateStr, today: DateStr): Urgency {

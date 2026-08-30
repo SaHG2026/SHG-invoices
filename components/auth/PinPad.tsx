@@ -111,8 +111,8 @@ export function PinPad({ onComplete, busy = false, resetToken = 0 }: PinPadProps
             key={i}
             className="size-3 rounded-sm border transition-colors duration-150"
             style={{
-              borderColor: 'var(--color-slate)',
-              backgroundColor: i < entry.length ? 'var(--color-gold)' : 'transparent',
+              borderColor: 'color-mix(in oklab, var(--card) 45%, transparent)',
+              backgroundColor: i < entry.length ? 'var(--card)' : 'transparent',
             }}
           />
         ))}
@@ -129,7 +129,7 @@ export function PinPad({ onComplete, busy = false, resetToken = 0 }: PinPadProps
               onClick={() => press(key)}
               disabled={busy}
               aria-label={key === '⌫' ? 'Delete' : key}
-              className="flex h-16 items-center justify-center rounded-sm border border-slate/40 text-h2 text-snow transition-colors active:bg-slate/30 disabled:opacity-40"
+              className="flex h-16 items-center justify-center rounded-sm border border-white/25 text-h2 text-white transition-colors active:bg-white/15 disabled:opacity-40"
               style={{ fontFamily: 'var(--font-mono)' }}
             >
               {key}

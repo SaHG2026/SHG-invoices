@@ -32,10 +32,15 @@ export function useToast(): ToastApi {
   return context;
 }
 
+/**
+  * Each tone carries its own text colour rather than inheriting one. A blind
+  * rename briefly left dark text on the navy action colour, which was
+  * unreadable — the pairing is part of the token, not an afterthought.
+  */
 const TONE_STYLE: Record<ToastTone, string> = {
-  done: 'bg-ink text-snow',
-  queued: 'bg-gold text-ink',
-  problem: 'bg-brick text-snow',
+  done: 'bg-ink text-white',
+  queued: 'bg-today text-white',
+  problem: 'bg-overdue text-white',
 };
 
 /** Long enough to read a reference number, short enough not to be in the way. */

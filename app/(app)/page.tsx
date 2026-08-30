@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useCurrentProfile, useSignOut } from '@/lib/queries/session';
+import { useCurrentProfile, useProfiles, useSignOut } from '@/lib/queries/session';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
+import { PersonChip } from '@/components/ui/PersonChip';
 import { greet } from '@/lib/greeting';
 import { formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
@@ -22,6 +23,7 @@ import { formatDaysLate, URGENCY_COLOUR, urgencyOf } from '@/lib/derive/urgency'
 export default function Dashboard() {
   const { data: profile } = useCurrentProfile();
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
+  const { data: people = [] } = useProfiles();
   const signOut = useSignOut();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -41,18 +43,18 @@ export default function Dashboard() {
   return (
     <main className="mx-auto min-h-dvh max-w-[560px] px-4 pb-28 pt-8">
       <header className="mb-8">
-        <p className="figure-date text-xs uppercase tracking-widest text-mute">
+        <p className="figure-date text-xs uppercase tracking-widest text-muted">
           {today ? formatDayWithYear(today) : ' '}
         </p>
         <h1 className="text-h1 text-ink">{now ? greet(profile.display_name) : ' '}</h1>
       </header>
 
-      <section className="mb-8 border-t border-hair pt-5">
-        <p className="text-xs uppercase tracking-widest text-mute">Owing</p>
+      <section className="mb-8 border-t border-hairline pt-5">
+        <p className="text-xs uppercase tracking-widest text-muted">Owing</p>
         <p className="money mt-1 text-total text-ink" style={{ textAlign: 'left' }}>
           {formatCents(summary.total_cents)}
         </p>
-        <p className="mt-1 text-sm text-mute">
+        <p className="mt-1 text-sm text-muted">
           {summary.invoice_count === 0
             ? 'Nothing outstanding.'
             : `across ${summary.invoice_count} invoice${summary.invoice_count === 1 ? '' : 's'} · ${summary.supplier_count} supplier${summary.supplier_count === 1 ? '' : 's'}`}
@@ -60,32 +62,38 @@ export default function Dashboard() {
       </section>
 
       <section className="mb-8">
-        <p className="mb-2 text-xs uppercase tracking-widest text-mute">Recently added</p>
+        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Recently added</p>
 
         {isLoading ? (
-          <p className="text-sm text-mute">Loading…</p>
+          <p className="text-sm text-muted">Loading…</p>
         ) : recent.length === 0 ? (
-          <p className="border-t border-hair pt-4 text-sm text-mute">
+          <p className="border-t border-hairline pt-4 text-sm text-muted">
             No invoices yet. Add one with the + button.
           </p>
         ) : (
-          <ul className="border-t border-hair bg-card">
+          <ul className="border-t border-hairline bg-card">
             {recent.map((invoice) => {
               const urgency = today ? urgencyOf(invoice.due_date, today) : 'later';
               const late = today ? formatDaysLate(invoice.due_date, today) : null;
+              const author = people.find((person) => person.id === invoice.created_by);
               return (
-                <li key={invoice.id} className="relative border-b border-hair last:border-b-0">
+                <li key={invoice.id} className="relative border-b border-hairline last:border-b-0">
                   <span
                     aria-hidden
                     className="absolute inset-y-0 left-0 w-[3px]"
                     style={{ backgroundColor: URGENCY_COLOUR[urgency] }}
                   />
                   <div className="flex h-row items-center gap-3 pl-4 pr-3">
+                    {/*
+                      Spec §9: the attribution chip is permanent and appears
+                      everywhere the invoice appears afterwards.
+                    */}
+                    {author ? <PersonChip profile={author} /> : <span className="size-6" />}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-ink">
                         {invoice.supplier.name}
                       </span>
-                      <span className="figure-date block truncate text-xs text-mute">
+                      <span className="figure-date block truncate text-xs text-muted">
                         {formatDay(invoice.due_date)}
                         {late ? ` · ${late}` : ''} · {invoice.business.code}
                         {invoice.internal_ref ? ` · ${invoice.internal_ref}` : ' · saving…'}
@@ -105,18 +113,18 @@ export default function Dashboard() {
       <section className="mb-8">
         <Link
           href="/specimen"
-          className="touch flex items-center rounded-sm border border-hair bg-card px-3 text-sm text-ink"
+          className="touch flex items-center rounded-sm border border-hairline bg-card px-3 text-sm text-ink"
         >
           Design tokens (Phase 1 review page)
         </Link>
       </section>
 
-      <footer className="border-t border-hair pt-4">
+      <footer className="border-t border-hairline pt-4">
         <button
           type="button"
           onClick={() => signOut.mutate()}
           disabled={signOut.isPending}
-          className="touch w-full rounded-sm border border-hair px-4 text-sm text-ink disabled:opacity-40"
+          className="touch w-full rounded-sm border border-hairline px-4 text-sm text-ink disabled:opacity-40"
         >
           {signOut.isPending ? 'Signing out…' : `Sign out (${profile.display_name})`}
         </button>
@@ -131,7 +139,7 @@ export default function Dashboard() {
         type="button"
         onClick={() => setSheetOpen(true)}
         aria-label="Add invoice"
-        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-gold text-h1 text-ink shadow-[0_2px_12px_rgba(18,56,75,0.24)]"
+        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(18,56,75,0.24)]"
         style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
       >
         +

@@ -173,7 +173,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                   <strong>{existing.invoice_number}</strong>, logged{' '}
                   <strong>{formatDayWithYear(existing.invoice_date)}</strong>.
                 </span>
-                <span className="mt-1 block text-sm text-mute">
+                <span className="mt-1 block text-sm text-muted">
                   <span className="money" style={{ textAlign: 'left' }}>
                     {formatCents(existing.amount_cents)}
                   </span>
@@ -251,7 +251,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
 
   const busy = checking || createInvoice.isPending;
   const fieldClass =
-    'touch w-full rounded-sm border bg-card px-3 text-base text-ink outline-none focus:border-slate';
+    'touch w-full rounded-sm border bg-card px-3 text-base text-ink outline-none focus:border-action';
 
   return (
     <>
@@ -264,7 +264,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => save()}
             disabled={busy}
-            className="touch w-full rounded-sm bg-gold px-4 text-base font-medium text-ink disabled:opacity-40"
+            className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
           >
             {busy ? 'Saving…' : 'Save invoice'}
           </button>
@@ -281,7 +281,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                 onClick={() => setBusinessId(business.id)}
                 aria-pressed={isChosen}
                 className={`touch rounded-sm border px-4 text-sm ${
-                  isChosen ? 'border-ink bg-ink text-snow' : 'border-hair bg-card text-ink'
+                  isChosen ? 'border-action bg-action text-action-text' : 'border-hairline bg-card text-ink'
                 }`}
               >
                 {business.code}
@@ -301,7 +301,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
 
         <div className="mb-4">
           <label
-            className="mb-1 block text-xs uppercase tracking-widest text-mute"
+            className="mb-1 block text-xs uppercase tracking-widest text-muted"
             htmlFor="invoice-number"
           >
             Invoice number
@@ -314,20 +314,20 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             placeholder="Optional"
             value={invoiceNumber}
             onChange={(event) => setInvoiceNumber(event.target.value)}
-            className={`${fieldClass} border-hair`}
+            className={`${fieldClass} border-hairline`}
           />
         </div>
 
         {/* Amount. type="text" with inputMode="decimal" — notes §4: type="number"
             brings spinners, changes value on scroll, and fights locale separators. */}
         <div className="mb-4">
-          <label className="mb-1 block text-xs uppercase tracking-widest text-mute" htmlFor="amount">
+          <label className="mb-1 block text-xs uppercase tracking-widest text-muted" htmlFor="amount">
             Amount
           </label>
           <div
-            className={`flex items-center rounded-sm border bg-card ${errors.amount ? 'border-brick' : 'border-hair'}`}
+            className={`flex items-center rounded-sm border bg-card ${errors.amount ? 'border-overdue' : 'border-hairline'}`}
           >
-            <span className="money pl-3 text-base text-mute" style={{ textAlign: 'left' }}>
+            <span className="money pl-3 text-base text-muted" style={{ textAlign: 'left' }}>
               $
             </span>
             <input
@@ -343,7 +343,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             />
           </div>
           {errors.amount ? (
-            <p role="alert" className="mt-1 text-sm text-brick">
+            <p role="alert" className="mt-1 text-sm text-overdue">
               {errors.amount}
             </p>
           ) : null}
@@ -359,7 +359,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           <div>
             <div className="mb-1 flex h-6 items-center">
               <label
-                className="text-xs uppercase tracking-widest text-mute"
+                className="text-xs uppercase tracking-widest text-muted"
                 htmlFor="invoice-date"
               >
                 Date
@@ -370,14 +370,14 @@ function SheetBody({ onClose }: { onClose: () => void }) {
               type="date"
               value={invoiceDate}
               onChange={(event) => setInvoiceDate(event.target.value)}
-              className={`figure-date ${fieldClass} border-hair`}
+              className={`figure-date ${fieldClass} border-hairline`}
             />
-            <p className="figure-date mt-1 text-xs text-mute">{formatDay(invoiceDate)}</p>
+            <p className="figure-date mt-1 text-xs text-muted">{formatDay(invoiceDate)}</p>
           </div>
 
           <div>
             <div className="mb-1 flex h-6 items-center justify-between gap-1">
-              <label className="text-xs uppercase tracking-widest text-mute" htmlFor="due-date">
+              <label className="text-xs uppercase tracking-widest text-muted" htmlFor="due-date">
                 Due
               </label>
               <div className="flex gap-1">
@@ -396,10 +396,10 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                       aria-label={`Due in ${days} days`}
                       className={`rounded-sm border px-2 py-0.5 text-xs ${
                         isChosen
-                          ? 'border-ink bg-ink text-snow'
+                          ? 'border-action bg-action text-action-text'
                           : isSupplierTerm
-                            ? 'border-slate bg-card text-slate'
-                            : 'border-hair bg-card text-mute'
+                            ? 'border-action bg-action-bg text-action'
+                            : 'border-hairline bg-card text-muted'
                       }`}
                     >
                       {days}d
@@ -413,9 +413,9 @@ function SheetBody({ onClose }: { onClose: () => void }) {
               type="date"
               value={dueDate}
               onChange={(event) => setExplicitDueDate(event.target.value)}
-              className={`figure-date ${fieldClass} ${errors.due_date ? 'border-brick' : 'border-hair'}`}
+              className={`figure-date ${fieldClass} ${errors.due_date ? 'border-overdue' : 'border-hairline'}`}
             />
-            <p className="figure-date mt-1 text-xs text-mute">{formatDay(dueDate)}</p>
+            <p className="figure-date mt-1 text-xs text-muted">{formatDay(dueDate)}</p>
           </div>
         </div>
       </Sheet>

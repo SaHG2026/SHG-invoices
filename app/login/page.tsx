@@ -48,21 +48,21 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col justify-center bg-ink px-6 py-12">
+    <main className="flex min-h-dvh flex-col justify-center bg-brand px-6 py-12">
       <div className="mx-auto w-full max-w-[360px]">
         <header className="mb-10">
           <h1
-            className="text-h1 text-snow"
+            className="text-h1 text-white"
             style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}
           >
             SHG
           </h1>
-          <p className="mt-1 text-sm text-hair/70">Sagarmatha Holdings Group</p>
+          <p className="mt-1 text-sm text-page/80">Sagarmatha Holdings Group</p>
         </header>
 
         <form onSubmit={onSubmit} noValidate>
           <label className="mb-4 block">
-            <span className="mb-1 block text-xs uppercase tracking-widest text-hair/70">Email</span>
+            <span className="mb-1 block text-xs uppercase tracking-widest text-page/80">Email</span>
             <input
               type="email"
               inputMode="email"
@@ -72,12 +72,12 @@ function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="touch w-full rounded-sm border border-slate/50 bg-ink px-3 text-base text-snow outline-none focus:border-gold"
+              className="touch w-full rounded-sm border border-action/40 bg-transparent px-3 text-base text-white outline-none focus:border-action"
             />
           </label>
 
           <label className="mb-6 block">
-            <span className="mb-1 block text-xs uppercase tracking-widest text-hair/70">
+            <span className="mb-1 block text-xs uppercase tracking-widest text-page/80">
               Password
             </span>
             <input
@@ -86,12 +86,12 @@ function LoginForm() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="touch w-full rounded-sm border border-slate/50 bg-ink px-3 text-base text-snow outline-none focus:border-gold"
+              className="touch w-full rounded-sm border border-action/40 bg-transparent px-3 text-base text-white outline-none focus:border-action"
             />
           </label>
 
           {error ? (
-            <p role="alert" className="mb-4 text-sm text-gold">
+            <p role="alert" className="mb-4 text-sm text-today-bg">
               {error}
             </p>
           ) : null}
@@ -99,13 +99,13 @@ function LoginForm() {
           <button
             type="submit"
             disabled={busy || email === '' || password === ''}
-            className="touch w-full rounded-sm bg-gold px-4 text-base font-medium text-ink disabled:opacity-40"
+            className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <p className="mt-8 text-xs text-hair/50">
+        <p className="mt-8 text-xs text-page/60">
           Accounts are created by hand. If you can&rsquo;t get in, ask Rabindra to reset it.
         </p>
       </div>

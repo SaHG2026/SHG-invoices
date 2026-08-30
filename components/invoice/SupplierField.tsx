@@ -80,12 +80,12 @@ export function SupplierField({
 
   return (
     <div className="mb-4">
-      <label className="mb-1 block text-xs uppercase tracking-widest text-mute" htmlFor="supplier">
+      <label className="mb-1 block text-xs uppercase tracking-widest text-muted" htmlFor="supplier">
         Supplier
       </label>
 
       <div
-        className={`flex items-center rounded-sm border bg-card ${error ? 'border-brick' : 'border-hair'}`}
+        className={`flex items-center rounded-sm border bg-card ${error ? 'border-overdue' : 'border-hairline'}`}
       >
         <input
           id="supplier"
@@ -114,7 +114,7 @@ export function SupplierField({
             setBrowsing((current) => !current);
             setTyping(false);
           }}
-          className="touch flex shrink-0 items-center justify-center px-3 text-mute"
+          className="touch flex shrink-0 items-center justify-center px-3 text-muted"
         >
           <span aria-hidden className="text-base">
             {browsing ? '⌃' : '⌄'}
@@ -123,15 +123,15 @@ export function SupplierField({
       </div>
 
       {error ? (
-        <p role="alert" className="mt-1 text-sm text-brick">
+        <p role="alert" className="mt-1 text-sm text-overdue">
           {error}
         </p>
       ) : null}
 
       {listOpen ? (
-        <ul className="mt-1 max-h-[40dvh] overflow-y-auto overscroll-contain border border-hair bg-card">
+        <ul className="mt-1 max-h-[40dvh] overflow-y-auto overscroll-contain border border-hairline bg-card">
           {matches.map((supplier) => (
-            <li key={supplier.id} className="border-b border-hair last:border-b-0">
+            <li key={supplier.id} className="border-b border-hairline last:border-b-0">
               <button
                 type="button"
                 // onMouseDown, not onClick: the input blurs first on a click and
@@ -140,11 +140,11 @@ export function SupplierField({
                   event.preventDefault();
                   choose(supplier);
                 }}
-                className="touch flex w-full items-center justify-between px-3 text-left text-base text-ink active:bg-snow"
+                className="touch flex w-full items-center justify-between px-3 text-left text-base text-ink active:bg-pressed"
               >
                 <span className="truncate">{supplier.name}</span>
                 {supplier.default_terms_days !== null ? (
-                  <span className="ml-3 shrink-0 text-xs text-mute">
+                  <span className="ml-3 shrink-0 text-xs text-muted">
                     {supplier.default_terms_days} days
                   </span>
                 ) : null}
@@ -153,7 +153,7 @@ export function SupplierField({
           ))}
 
           {matches.length === 0 && !offerCreate ? (
-            <li className="px-3 py-3 text-sm text-mute">
+            <li className="px-3 py-3 text-sm text-muted">
               {browsing
                 ? 'No suppliers yet. Type a name to add the first one.'
                 : 'No supplier matches that. Keep typing to add a new one.'}
@@ -161,7 +161,7 @@ export function SupplierField({
           ) : null}
 
           {offerCreate ? (
-            <li className="border-t border-hair">
+            <li className="border-t border-hairline">
               <button
                 type="button"
                 disabled={creating}
@@ -170,7 +170,7 @@ export function SupplierField({
                   onCreate(query.trim());
                   close();
                 }}
-                className="touch flex w-full items-center px-3 text-left text-base text-slate active:bg-snow disabled:opacity-50"
+                className="touch flex w-full items-center px-3 text-left text-base text-action active:bg-pressed disabled:opacity-50"
               >
                 {creating ? 'Adding…' : `Add “${query.trim()}” as a new supplier`}
               </button>

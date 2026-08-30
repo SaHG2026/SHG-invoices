@@ -22,7 +22,13 @@ export interface Profile {
   id: string;
   display_name: string;
   initials: string;
-  /** Hex, for the attribution chip. Mani gold, Milan slate, Sujan chilli, Rabindra ink. */
+  /**
+   * Which person-accent slot this profile uses: 'person-1' .. 'person-4'.
+   *
+   * A slot name, not a colour. Colours live only in app/globals.css — storing
+   * a hex here would put four of them outside the one file that is allowed to
+   * contain any, and a repaint would silently miss the chips.
+   */
   accent: string;
   role: ProfileRole;
   /**

@@ -1,22 +1,116 @@
 @import 'tailwindcss';
 
-/* ============================================================================
-   Sagarmatha Payments — design tokens
-   Single source of truth. Spec §9. There is no tailwind.config.js holding a
-   second copy of any value below.
-   ========================================================================= */
+/* ============================================================
+   SHG Payments — colour tokens
+   The ONLY file in the codebase containing hex values.
+   Every component references var(--token). Never hardcode a colour.
+   ============================================================ */
+
+:root {
+  /* ---- 0. Brand ----------------------------------------- */
+  /* The icon artwork's own navy. Used for the auth screens, the PWA splash
+     and the browser chrome, so the app matches the thing you tapped to open
+     it. Added to the supplied set — flagged rather than assumed. */
+  --brand: #082f55;
+
+  /* ---- 1. Surfaces & text ------------------------------- */
+  --page: #d2e3f4; /* app background */
+  --card: #ffffff; /* invoice cards, header, drawer */
+  --hairline: #e2e8f0; /* rules INSIDE white cards */
+  --hairline-hi: #b9cfe6; /* card edges against --page (needs more contrast) */
+  --text: #0f172a; /* primary text, all amounts */
+  --muted: #435165; /* secondary text, dates, counts */
+  --pressed: #eff5fb; /* row/button pressed state */
+
+  /* ---- 2. Due spine (urgency sequence) ------------------ */
+  /* Read as one ramp: hot -> warm -> cool -> inert.          */
+  --spine-overdue: #e20808; /* past due */
+  --spine-today: #8a6d00; /* due today */
+  --spine-week: #2e6ca6; /* due within 7 days */
+  --spine-later: #94a3b8; /* beyond 7 days */
+
+  /* Tinted pill backgrounds — pair each with its spine colour as text */
+  --spine-overdue-bg: #fde7e7;
+  --spine-today-bg: #fbf3d6;
+  --spine-week-bg: #e4eef8;
+  --spine-later-bg: #eef1f5;
+
+  /* ---- 3. Paid / cleared -------------------------------- */
+  /* Deliberately NOT the action colour. Used for the tick,
+     the paid chip, and the tick-off animation.               */
+  --paid: #15803d;
+  --paid-bg: #dcfae6;
+
+  /* ---- 4. Primary action -------------------------------- */
+  /* "New invoice", "Mark paid" confirm, primary buttons.
+     Contrast on white text: 8.6:1                            */
+  --action: #1b4f8f;
+  --action-text: #ffffff;
+  --action-hover: #163f73;
+  --action-bg: #e4eef8; /* tinted variant: links, selected drawer row */
+
+  /* ---- 5. Person accents -------------------------------- */
+  /* Four people. Distinct from the spine ramp, from --paid
+     and from --action. Initials carry the meaning; colour is
+     the helper — always render as tinted chip + dark accent
+     text, never as a solid block behind white text.          */
+  --person-1: #6d28d9; /* Rabindra */
+  --person-1-bg: #ede4fd;
+  --person-2: #be185d; /* Mani */
+  --person-2-bg: #fce3ee;
+  --person-3: #0e7490; /* Milan */
+  --person-3-bg: #dcf0f5;
+  --person-4: #92400e; /* Sujan */
+  --person-4-bg: #f8e8d8;
+}
+
+/* ============================================================
+   ALTERNATIVE — keep the bright green button
+   If you want #27B931 on the action button, replace the two
+   lines in section 4 with these. Dark text is required; white
+   text on this green fails contrast at 2.6:1.
+   Paid then shifts to teal so the two don't collide.
+   ------------------------------------------------------------
+   --action:      #27B931;
+   --action-text: #0F172A;   (6.5:1 — passes)
+   --paid:        #0F766E;
+   --paid-bg:     #D6F0EE;
+   ============================================================ */
+
+/* ============================================================
+   Tailwind mapping
+   A thin naming layer so utilities exist for the tokens above.
+   Deliberately separate: the block above can be replaced
+   wholesale from a design tool without touching anything here,
+   and nothing below invents a colour of its own.
+   ============================================================ */
 
 @theme {
-  /* ---- palette (derived from the SHG mark) ---------------------------- */
-  --color-ink: #12384b; /* deepest navy-teal — text, headers, unlock screen */
-  --color-slate: #2e7c93; /* mid teal — structure, links, "this week"      */
-  --color-gold: #c9a227; /* the figure — primary action, "due today"       */
-  --color-chilli: #4f8f2e; /* the chilli/leaf — paid, cleared, positive    */
-  --color-brick: #a6392b; /* overdue only — sparingly, never decoratively  */
-  --color-snow: #edf0f0; /* page background — cool mineral grey            */
-  --color-card: #ffffff;
-  --color-hair: #d3dbdc; /* 1px rules                                      */
-  --color-mute: #6b7c82; /* secondary text                                 */
+  --color-page: var(--page);
+  --color-card: var(--card);
+  --color-hairline: var(--hairline);
+  --color-edge: var(--hairline-hi);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-pressed: var(--pressed);
+  --color-brand: var(--brand);
+
+  --color-overdue: var(--spine-overdue);
+  --color-today: var(--spine-today);
+  --color-week: var(--spine-week);
+  --color-later: var(--spine-later);
+  --color-overdue-bg: var(--spine-overdue-bg);
+  --color-today-bg: var(--spine-today-bg);
+  --color-week-bg: var(--spine-week-bg);
+  --color-later-bg: var(--spine-later-bg);
+
+  --color-paid: var(--paid);
+  --color-paid-bg: var(--paid-bg);
+
+  --color-action: var(--action);
+  --color-action-text: var(--action-text);
+  --color-action-hover: var(--action-hover);
+  --color-action-bg: var(--action-bg);
 
   /* ---- type ----------------------------------------------------------- */
   /* Faces are loaded by next/font in app/layout.tsx and handed over as the
@@ -71,8 +165,8 @@
   }
 
   body {
-    background-color: var(--color-snow);
-    color: var(--color-ink);
+    background-color: var(--page);
+    color: var(--text);
     font-family: var(--font-body);
     font-size: var(--text-base);
     line-height: var(--text-base--line-height);
@@ -99,14 +193,14 @@
     letter-spacing: var(--tracking-display);
   }
 
-  /* Spec §9 quality floor: visible focus rings, slate, 2px offset. */
+  /* Spec §9 quality floor: visible focus rings, 2px offset. */
   :focus-visible {
-    outline: 2px solid var(--color-slate);
+    outline: 2px solid var(--action);
     outline-offset: 2px;
   }
 
   hr {
-    border-color: var(--color-hair);
+    border-color: var(--hairline);
   }
 }
 
@@ -153,11 +247,11 @@
   animation: row-in 120ms var(--ease-row) both;
 }
 
-/* Tick-off: the spine segment fills to chilli over 200ms, then the row
-   leaves. One satisfying moment, no confetti. */
+/* Tick-off: the spine segment fills to the paid colour over 200ms, then the
+   row leaves. One satisfying moment, no confetti. */
 @utility spine-clearing {
   transition: background-color 200ms var(--ease-row);
-  background-color: var(--color-chilli);
+  background-color: var(--paid);
 }
 
 @media (prefers-reduced-motion: reduce) {

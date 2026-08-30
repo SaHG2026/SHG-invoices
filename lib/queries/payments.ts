@@ -27,6 +27,8 @@ export interface MarkPaidInput {
   ids: string[];
   /** Bank reference or cheque number. Optional. */
   reference?: string;
+  /** Who is ticking, so the optimistic row can show their chip immediately. */
+  actorId?: string;
 }
 
 export interface MarkPaidResult {
@@ -62,16 +64,29 @@ export function useMarkPaid() {
       return { paid, missed: ids.filter((id) => !flipped.has(id)) };
     },
 
-    onMutate: async ({ ids }) => {
+    onMutate: async ({ ids, actorId }) => {
       // Notes §1.4: non-negotiable. Without it an in-flight fetch can land
       // after the optimistic update and bring the row back for a second.
       await queryClient.cancelQueries({ queryKey: qk.invoices.unpaid });
 
       const previous = queryClient.getQueryData<InvoiceRow[]>(qk.invoices.unpaid);
       const paying = new Set(ids);
+      const now = new Date().toISOString();
 
+      /*
+       * Marked paid in place rather than removed.
+       *
+       * A row that vanishes the instant it is tapped gives no confirmation
+       * that the right one went — and on a list of similar invoices from one
+       * supplier, that is exactly when confirmation matters. It is struck
+       * through and labelled instead, and the refetch takes it away.
+       */
       queryClient.setQueryData<InvoiceRow[]>(qk.invoices.unpaid, (current) =>
-        (current ?? []).filter((invoice) => !paying.has(invoice.id)),
+        (current ?? []).map((invoice) =>
+          paying.has(invoice.id)
+            ? { ...invoice, status: 'paid' as const, paid_at: now, paid_by: actorId ?? null }
+            : invoice,
+        ),
       );
 
       return { previous };
@@ -82,10 +97,12 @@ export function useMarkPaid() {
     },
 
     onSettled: (_data, _error, input) => {
-      queryClient.invalidateQueries({ queryKey: qk.invoices.unpaid });
+      // Every invoice list, not just the unpaid one. A supplier page and the
+      // history show the same invoice, and leaving them stale meant a tick
+      // appeared to do nothing.
+      queryClient.invalidateQueries({ queryKey: qk.invoices.all });
       queryClient.invalidateQueries({ queryKey: qk.activity.recent });
       for (const id of input.ids) {
-        queryClient.invalidateQueries({ queryKey: qk.invoices.detail(id) });
         queryClient.invalidateQueries({ queryKey: qk.activity.forInvoice(id) });
       }
     },
@@ -108,8 +125,7 @@ export function useUnmarkPaid() {
       return ((data ?? []) as Invoice[])[0] ?? null;
     },
     onSettled: (_data, _error, id) => {
-      queryClient.invalidateQueries({ queryKey: qk.invoices.unpaid });
-      queryClient.invalidateQueries({ queryKey: qk.invoices.detail(id) });
+      queryClient.invalidateQueries({ queryKey: qk.invoices.all });
       queryClient.invalidateQueries({ queryKey: qk.activity.forInvoice(id) });
       queryClient.invalidateQueries({ queryKey: qk.activity.recent });
     },
@@ -135,8 +151,7 @@ export function useVoidInvoice() {
       return ((data ?? []) as Invoice[])[0] ?? null;
     },
     onSettled: (_data, _error, { id }) => {
-      queryClient.invalidateQueries({ queryKey: qk.invoices.unpaid });
-      queryClient.invalidateQueries({ queryKey: qk.invoices.detail(id) });
+      queryClient.invalidateQueries({ queryKey: qk.invoices.all });
       queryClient.invalidateQueries({ queryKey: qk.activity.forInvoice(id) });
       queryClient.invalidateQueries({ queryKey: qk.activity.recent });
     },

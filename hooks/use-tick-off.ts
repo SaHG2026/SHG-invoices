@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import { useMarkPaid, useUnmarkPaid } from '@/lib/queries/payments';
+import { useCurrentProfile } from '@/lib/queries/session';
 import { formatCents } from '@/lib/money';
 import type { InvoiceRow } from '@/lib/types';
 
@@ -29,11 +30,15 @@ export function useTickOff() {
   const toast = useToast();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
+  const { data: profile } = useCurrentProfile();
 
   return useCallback(
     async (invoice: InvoiceRow) => {
       try {
-        const result = await markPaid.mutateAsync({ ids: [invoice.id] });
+        const result = await markPaid.mutateAsync({
+          ids: [invoice.id],
+          actorId: profile?.id,
+        });
 
         if (result.paid.length === 0) {
           // Somebody else ticked it while this list was on screen.
@@ -56,6 +61,6 @@ export function useTickOff() {
         toast.show('Couldn’t mark it paid — check your connection and try again.', 'problem');
       }
     },
-    [markPaid, unmarkPaid, toast],
+    [markPaid, unmarkPaid, toast, profile],
   );
 }

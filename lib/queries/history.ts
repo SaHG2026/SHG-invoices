@@ -58,7 +58,7 @@ export function useHistory(filters: HistoryFilters, suppliers: readonly Supplier
 /** Every invoice for one supplier, whatever its status. Spec §7.5. */
 export function useSupplierInvoices(supplierId: string) {
   return useQuery({
-    queryKey: ['supplier-invoices', supplierId] as const,
+    queryKey: qk.invoices.forSupplier(supplierId),
     queryFn: async (): Promise<InvoiceRow[]> => {
       const { data, error } = await supabase()
         .from('invoices')

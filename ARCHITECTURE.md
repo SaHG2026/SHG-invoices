@@ -761,3 +761,87 @@ has been used for a month means guessing at all of it, and spec §11's disciplin
 this case.
 
 Nothing about the current schema blocks it, and nothing needs adding now.
+
+
+---
+
+## 19. Where the build has got to
+
+Written for whoever picks this up next, including a later session of me.
+**Phases 1–6 are built, deployed and signed off by the client. Phase 7 is next.**
+
+Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`, branch
+`phase-1-foundation` · 333 tests, run under `TZ=UTC`, `Australia/Sydney` and
+`America/Los_Angeles` before every commit.
+
+### What exists
+
+| Route | What it is |
+|---|---|
+| `/login` | Email and password. No sign-up route exists. |
+| `/` | Dashboard: greeting, group total, Overall plus four businesses ordered by who is most overdue. |
+| `/b/[scope]` | The Week for `all` or a business code — overdue, today, next 7 days, later, with payment runs. |
+| `/b/[scope]/pending` | Four sorts, search, overdue-only, supplier filter, sticky filtered total. |
+| `/b/[scope]/history` | Paid and voided, searchable, filtered by payer. |
+| `/invoices/[id]` | One invoice: facts, actions, and the merged notes/activity stream. |
+| `/suppliers`, `/suppliers/[id]` | List, add, edit, deactivate; terms, contact, six-month spend. |
+| `/specimen` | Design tokens, rendered from the test fixture. Delete when it stops being useful. |
+
+### Deploying
+
+Vercel CLI, not GitHub — the client's Vercel account has no GitHub connection, and
+auto-deploy was never set up. Every release is three commands:
+
+```
+npx vercel deploy --prod --yes
+npx vercel alias set <the-new-deployment>.vercel.app shg-invoices.vercel.app
+```
+
+The alias step matters: without it the stable URL still points at the previous build.
+
+### Database
+
+Applied by hand through the Supabase SQL editor — the client runs the file, there is no
+migration CLI in the loop. `db/migrations/` is the source of truth; `db/CATCH_UP_*.sql` are
+the deltas already applied on top. **`CATCH_UP_003.sql` may still be outstanding** (accents
+as slot names); the app tolerates either.
+
+### Still owed to the client
+
+1. **Supplier payment terms.** Suppliers created from the add-invoice sheet have none. The
+   suppliers list counts them and the supplier page sets them. Worth a pass over the ones
+   created during Phases 3–6.
+2. **CSV export.** Deferred pending the bookkeeper's answer to "what do you do with the
+   file when you get it?" — see §17. CSV is an hour; a real `.xlsx` is half a day and the
+   first dependency added purely for output.
+3. **Deli Delights receivables.** Phase 8, after a month of daily use. See §17 for why it
+   is a second ledger and not a flag.
+4. **Rabindra's test account** goes inactive when it is no longer needed —
+   `db/seed/002_profiles.sql` has the statement, commented out.
+
+### Bugs already found and fixed, so they are not re-introduced
+
+Each of these shipped, was caught on a real phone, and now has a test standing over it.
+
+| What went wrong | Why | Where the test is |
+|---|---|---|
+| Dates rendered `Fri, 11 Sept` and differed between devices | Locale data is not stable across runtimes | `date.test.ts` |
+| References would collide at 100/business/day | `lpad` truncates rather than only padding | `db/verify_refs.sql`, 150 rows |
+| PIN confirmation silently skipped | Completion fired from a state effect, replayed by a parent re-render | `pinpad.test.tsx` |
+| Gate stuck on the setup screen | Three booleans describing eight states when four exist | `unlock-gate.test.tsx` |
+| App stopped locking after a sign-out | Two halves of one fact owned by two files | `pin-storage.test.ts` |
+| Terms counted from today, not the invoice date | Late-arriving invoices silently got extra days to pay | `invoice-form.test.ts` |
+| Opening an invoice inside a run collapsed the run | Run and child shared one expansion value | `mark-paid.test.tsx` |
+| Ticking appeared to do nothing, so people tapped again | Only the unpaid list was invalidated; the row vanished without saying what happened | `invoice-row.test.tsx` |
+
+The pattern worth carrying forward: **five of the eight were shape problems, not logic
+problems.** The fix each time was to make the broken state unrepresentable rather than to
+correct the branch that produced it.
+
+### How the client works
+
+Notes §7 is accurate and worth re-reading. He tests on a real phone, describes symptoms
+precisely, and is right about his own product more often than the spec is. Twice now he has
+asked for something the spec forbade and been correct both times — the row tick, and
+removing reference numbers from the UI. Lead with the uncomfortable part, say what changed
+and what to check, and stop at the end of each phase.

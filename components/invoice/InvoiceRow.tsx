@@ -58,13 +58,32 @@ export function InvoiceRow({
   const late = formatDaysLate(invoice.due_date, today);
   const author = people.find((person) => person.id === invoice.created_by);
 
+  /*
+   * Paid and void rows stay visible, struck through.
+   *
+   * A row that vanishes the instant it is tapped gives no confirmation that
+   * the right one went — and on a list of near-identical invoices from one
+   * supplier, that is exactly when confirmation matters most. The refetch
+   * removes it from the pending list a moment later; what is on screen in
+   * between says plainly what just happened, and who did it.
+   */
+  const settled = invoice.status !== 'unpaid';
+  const payer = people.find((person) => person.id === invoice.paid_by);
+
   return (
     <li className="relative border-b border-hairline last:border-b-0">
       {showSpine ? (
         <span
           aria-hidden
           className="absolute inset-y-0 left-0 w-[3px]"
-          style={{ backgroundColor: URGENCY_COLOUR[urgency] }}
+          style={{
+            backgroundColor:
+              invoice.status === 'paid'
+                ? 'var(--paid)'
+                : settled
+                  ? 'var(--spine-later)'
+                  : URGENCY_COLOUR[urgency],
+          }}
         />
       ) : null}
 
@@ -77,7 +96,7 @@ export function InvoiceRow({
           An earlier version hid it behind an expand, which cost a tap on the
           single most repeated action in the app.
         */}
-        {onMarkPaid ? (
+        {onMarkPaid && !settled ? (
           <button
             type="button"
             onClick={onMarkPaid}
@@ -109,14 +128,39 @@ export function InvoiceRow({
           {author ? <PersonChip profile={author} /> : <span className="size-6 shrink-0" />}
 
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-ink">
-              {showSupplier
-                ? invoice.supplier.name
-                : (invoice.invoice_number ?? 'No invoice number')}
+            <span className="flex items-center gap-2">
+              <span
+                className={`min-w-0 truncate text-sm text-ink ${settled ? 'line-through' : ''}`}
+              >
+                {showSupplier
+                  ? invoice.supplier.name
+                  : (invoice.invoice_number ?? 'No invoice number')}
+              </span>
+              {settled ? (
+                <span
+                  className="shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] uppercase tracking-widest"
+                  style={
+                    invoice.status === 'paid'
+                      ? { backgroundColor: 'var(--paid-bg)', color: 'var(--paid)' }
+                      : { backgroundColor: 'var(--spine-later-bg)', color: 'var(--muted)' }
+                  }
+                >
+                  {invoice.status === 'paid' ? 'Paid' : 'Void'}
+                </span>
+              ) : null}
             </span>
+
             <span className="figure-date block truncate text-xs text-muted">
-              {formatDay(invoice.due_date)}
-              {late ? ` · ${late}` : ''} · {invoice.business.code}
+              {invoice.status === 'paid' ? (
+                <>Paid{payer ? ` by ${payer.display_name}` : ''}</>
+              ) : (
+                <>
+                  {formatDay(invoice.due_date)}
+                  {late ? ` · ${late}` : ''}
+                </>
+              )}
+              {' · '}
+              {invoice.business.code}
               {showSupplier && invoice.invoice_number ? ` · ${invoice.invoice_number}` : ''}
               {invoice.internal_ref ? '' : ' · saving…'}
             </span>
@@ -124,7 +168,9 @@ export function InvoiceRow({
 
           {/* mr-2 pulls the figure off the chevron so the column reads as a
               column rather than as something crushed against the edge. */}
-          <span className="money mr-2 shrink-0 text-sm text-ink">
+          <span
+            className={`money mr-2 shrink-0 text-sm text-ink ${settled ? 'line-through' : ''}`}
+          >
             {formatCents(invoice.amount_cents)}
           </span>
           <span aria-hidden className="shrink-0 text-xs text-muted">

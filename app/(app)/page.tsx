@@ -7,7 +7,7 @@ import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { greet } from '@/lib/greeting';
-import { formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
+import { formatDateTime, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { summarise } from '@/lib/derive/select';
 import { formatDaysLate, URGENCY_COLOUR, urgencyOf } from '@/lib/derive/urgency';
@@ -20,12 +20,31 @@ import { formatDaysLate, URGENCY_COLOUR, urgencyOf } from '@/lib/derive/urgency'
  * sheet has somewhere to open from and something to land in, which is what
  * makes the fifteen-second run timeable on a real phone.
  */
+/** One line of the expanded invoice panel. */
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-1.5 last:border-b-0">
+      <dt className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</dt>
+      <dd className="figure-date min-w-0 truncate text-right text-sm text-ink">{children}</dd>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { data: profile } = useCurrentProfile();
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
   const { data: people = [] } = useProfiles();
   const signOut = useSignOut();
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  /*
+   * Which row is expanded — one at a time, by id rather than by index.
+   *
+   * By id because the list reorders: a new invoice arrives at the top, and an
+   * index would silently expand a different invoice underneath the person
+   * reading it.
+   */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // The greeting depends on the current time, which the server does not know.
   const [now, setNow] = useState<Date | null>(null);
@@ -76,6 +95,8 @@ export default function Dashboard() {
               const urgency = today ? urgencyOf(invoice.due_date, today) : 'later';
               const late = today ? formatDaysLate(invoice.due_date, today) : null;
               const author = people.find((person) => person.id === invoice.created_by);
+              const isOpen = expandedId === invoice.id;
+
               return (
                 <li key={invoice.id} className="relative border-b border-hairline last:border-b-0">
                   <span
@@ -83,7 +104,13 @@ export default function Dashboard() {
                     className="absolute inset-y-0 left-0 w-[3px]"
                     style={{ backgroundColor: URGENCY_COLOUR[urgency] }}
                   />
-                  <div className="flex h-row items-center gap-3 pl-4 pr-3">
+
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isOpen ? null : invoice.id)}
+                    aria-expanded={isOpen}
+                    className="flex h-row w-full items-center gap-3 pl-4 pr-3 text-left active:bg-pressed"
+                  >
                     {/*
                       Spec §9: the attribution chip is permanent and appears
                       everywhere the invoice appears afterwards.
@@ -102,7 +129,39 @@ export default function Dashboard() {
                     <span className="money shrink-0 text-sm text-ink">
                       {formatCents(invoice.amount_cents)}
                     </span>
-                  </div>
+                    <span aria-hidden className="shrink-0 text-xs text-muted">
+                      {isOpen ? '⌃' : '⌄'}
+                    </span>
+                  </button>
+
+                  {isOpen ? (
+                    <dl className="row-in border-t border-hairline bg-pressed px-4 py-3 pl-5">
+                      <Detail label="Amount">
+                        <span className="money" style={{ textAlign: 'left' }}>
+                          {formatCents(invoice.amount_cents)}
+                        </span>
+                      </Detail>
+                      <Detail label="Supplier">{invoice.supplier.name}</Detail>
+                      <Detail label="Business">{invoice.business.name}</Detail>
+                      <Detail label="Invoice date">{formatDayWithYear(invoice.invoice_date)}</Detail>
+                      <Detail label="Due">
+                        <span style={{ color: URGENCY_COLOUR[urgency] }}>
+                          {formatDayWithYear(invoice.due_date)}
+                          {late ? ` · ${late}` : ''}
+                        </span>
+                      </Detail>
+                      {invoice.invoice_number ? (
+                        <Detail label="Invoice number">{invoice.invoice_number}</Detail>
+                      ) : null}
+                      <Detail label="Reference">
+                        {invoice.internal_ref || 'assigned once it saves'}
+                      </Detail>
+                      <Detail label="Added">
+                        {author ? `${author.display_name} · ` : ''}
+                        {formatDateTime(invoice.created_at)}
+                      </Detail>
+                    </dl>
+                  ) : null}
                 </li>
               );
             })}

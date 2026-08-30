@@ -373,6 +373,35 @@ describe('everything on one screen', () => {
   });
 });
 
+describe('the Today button', () => {
+  it('snaps the invoice date back after it has been changed', () => {
+    open();
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: due(-9) } });
+    expect(screen.getByLabelText('Date')).toHaveValue(due(-9));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.getByLabelText('Date')).toHaveValue(TODAY);
+  });
+
+  it('marks itself chosen while the date is today', () => {
+    open();
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: due(-9) } });
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('carries the due date back with it, when the due date is a term', () => {
+    open();
+    pickSupplier('PFD Food Services'); // 7-day terms
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: due(-9) } });
+    expect(screen.getByLabelText('Due')).toHaveValue(due(-2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.getByLabelText('Due')).toHaveValue(due(7));
+  });
+});
+
 describe('the supplier list is not in the way', () => {
   it('stays shut until something is typed', () => {
     open();

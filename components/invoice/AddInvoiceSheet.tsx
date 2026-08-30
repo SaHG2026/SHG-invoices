@@ -39,6 +39,20 @@ import type { Invoice, Supplier } from '@/lib/types';
  * anywhere refetches on focus while this is open.
  */
 
+/**
+ * The small shortcut pills beside a field label — Today, and 7d/14d/30d.
+ *
+ * A real 44px height, not a compact pill with an invisible extended hit area.
+ * The clever version was tried first and measured 21px in the browser: the
+ * pseudo-element never picked up its inset, and a target that is only 44px in
+ * theory is 21px in the hand. Notes §4 puts the floor at 44px because "a 32px
+ * pill is a rage-inducing miss rate at arm's length", and a rule you cannot
+ * verify is not being followed.
+ *
+ * The heading line is taller for it. That is the correct trade.
+ */
+const SHORTCUT = 'touch inline-flex items-center rounded-sm border px-3 text-xs';
+
 interface AddInvoiceSheetProps {
   open: boolean;
   onClose: () => void;
@@ -357,13 +371,25 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="mb-1 flex h-6 items-center">
+            <div className="mb-1 flex items-center justify-between gap-1.5">
               <label
                 className="text-xs uppercase tracking-widest text-muted"
                 htmlFor="invoice-date"
               >
                 Date
               </label>
+              <button
+                type="button"
+                onClick={() => setInvoiceDate(today)}
+                aria-pressed={invoiceDate === today}
+                className={`${SHORTCUT} ${
+                  invoiceDate === today
+                    ? 'border-action bg-action text-action-text'
+                    : 'border-hairline bg-card text-muted'
+                }`}
+              >
+                Today
+              </button>
             </div>
             <input
               id="invoice-date"
@@ -376,7 +402,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <div className="mb-1 flex h-6 items-center justify-between gap-1">
+            <div className="mb-1 flex items-center justify-between gap-1.5">
               <label className="text-xs uppercase tracking-widest text-muted" htmlFor="due-date">
                 Due
               </label>
@@ -394,7 +420,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                       }}
                       aria-pressed={isChosen}
                       aria-label={`Due in ${days} days`}
-                      className={`rounded-sm border px-2 py-0.5 text-xs ${
+                      className={`${SHORTCUT} ${
                         isChosen
                           ? 'border-action bg-action text-action-text'
                           : isSupplierTerm

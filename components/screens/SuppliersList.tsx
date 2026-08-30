@@ -81,7 +81,7 @@ export function SuppliersList() {
   }
 
   return (
-    <AppChrome back={{ href: '/' as Route, label: 'Businesses' }}>
+    <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
       <h1 className="text-h1 mb-3 text-ink">Suppliers</h1>
 
       <form onSubmit={add} className="mb-3 flex gap-2">

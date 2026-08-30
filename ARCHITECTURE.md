@@ -845,3 +845,149 @@ precisely, and is right about his own product more often than the spec is. Twice
 asked for something the spec forbade and been correct both times — the row tick, and
 removing reference numbers from the UI. Lead with the uncomfortable part, say what changed
 and what to check, and stop at the end of each phase.
+
+---
+
+## 20. Navigation, branding and the customer list — after the Phase 6 review
+
+Added at the client's request, between Phase 6 and Phase 7. Three changes, one
+of which touches the schema.
+
+### 20.1 Navigation moves into a side menu
+
+§16 put the business choice in the URL and gave each screen a card of links to
+the rest of what a scope offers. That held while there were three destinations.
+There are now six, the card had been copy-pasted onto a second screen, and
+Customers made a seventh — which is the point at which "every screen carries
+its own list of links" starts producing destinations reachable from one screen
+and not another.
+
+So there is one drawer, in `AppChrome`, on every screen:
+
+```
+  Mani  ·  Sagarmatha Holdings
+  ─────────────────────────────
+  Invoices                    ▾      -> /            (the dashboard)
+      GroceryMate Hurstville  12     -> /b/gmh
+      GroceryMate Parramatta   9     -> /b/gmp
+      Majheri Restaurant       7     -> /b/mjr
+      Deli Delights            3     -> /b/ddl
+  Suppliers                          -> /suppliers
+  Customers                          -> /customers
+  Paid history                       -> /b/all/history
+  Settings                           -> /settings
+```
+
+**[decision] Invoices points at the dashboard, not at `/b/all`.** The dashboard
+is what the app opens to and where the greeting and the group total live; the
+businesses beneath it are the shortcut past it. Pointing the row at `/b/all`
+would have made the dashboard reachable only by the back arrow.
+
+**[decision] The counts are unpaid invoices, derived from the one client-side
+array** (§2), not a second query. A menu that said 12 beside a business whose
+page then showed 9 is notes §3's trust-destroying disagreement arriving from a
+new direction. Same array, same answer, by construction.
+
+**[decision] The menu is mounted only while it is open.** Partly so the queries
+behind the counts do not run on screens nobody has opened it from — but mainly
+because a permanently-mounted drawer puts every business name and every
+destination into the DOM of every screen, where a screen reader finds them
+mixed in with the page's own content and cannot tell which is which.
+
+`lib/nav.ts` holds the sections and the "which row am I on" rule as pure
+functions, tested at every URL the app has. Two things there are load-bearing
+and were both got wrong first:
+
+- **History is matched before Invoices.** Paid history lives at
+  `/b/all/history`, *inside* the invoice URL space. Checked in menu order,
+  every history page lights up Invoices instead. Nobody reports that; they just
+  stop trusting the highlight.
+- **Only the most specific row is `aria-current="page"`.** Inside a business,
+  both Invoices and that business stay visually highlighted — the child is
+  where you are, the parent is what it belongs to — but two elements announcing
+  themselves as "the page" is a contradiction read out loud. Caught by a test
+  that counted them, not by looking.
+
+The per-scope card survives on The Week with two entries — pending and history
+for *that* business. Those are scoped; Suppliers was not, and moved.
+
+### 20.2 Branding
+
+The header is the app tile plus **SHG Invoices**, replacing the bare `SHG`
+wordmark. `metadata.title` follows it.
+
+**Business logos have a slot, and the slot is filled by a lettered tile until
+artwork arrives.** `components/ui/BusinessMark.tsx` renders the code — GMH, GMP,
+MJR, DDL — in the neutral token pair, deliberately *not* one of the four person
+accents, which mean "who did this" and are the only colour-as-identity device
+the app has (spec §9).
+
+**[decision] `lib/logos.ts` is a hand-edited table, not a runtime probe.** The
+tempting version points an `<img>` at `/logos/gmh.png` and falls back on a 404.
+That costs a failed request per business every time the menu opens and shows a
+visible flash of the broken state on a slow connection. Same reasoning as the
+month-name table in §3: an explicit list is duller and right on every device.
+Adding a logo is one file and one line.
+
+**Uncomfortable part:** `manifest.short_name` went from `SHG Pay` to `SHG`, and
+`appleWebApp.title` with it, because both platforms truncate the home-screen
+label around eleven characters and `SHG Invoices` would have been eaten by an
+ellipsis. **An already-installed app keeps whatever label it was added with** —
+only a reinstall picks up the new one. Nothing else about the install changes.
+
+### 20.3 Customers — the first table of the §17 ledger
+
+§17 said Deli Delights' customer side is a second ledger and put it in Phase 8,
+after a month of daily use, so it is built from how the shops actually work
+rather than from a guess. That reasoning is unchanged and is why what landed
+here is the customer *record* and nothing else: `db/migrations/008_customers.sql`,
+a list, a detail page with contact fields and a deactivate switch.
+
+The client's condition was one sentence: **the number must not affect owed or
+pending.** It cannot, and not because anybody remembered to filter it out —
+**a customer row has no amount on it.** There is no column a total could pick
+up, no foreign key from anything in the payables ledger, and every owed and
+pending figure in the app is still derived solely from `useUnpaidInvoices`.
+That is the same move as §2 and §6: make the broken state unrepresentable
+rather than correct the branch that would produce it. `customers.test.tsx`
+asserts it from four directions, including "no dollar sign renders anywhere on
+either customer screen", so a later balance column added to make the page look
+more useful fails a test instead of quietly moving the headline number.
+
+`sales_invoices` and `receipts` remain Phase 8, with their own totals. Nothing
+here presumes their shape.
+
+**Needs running before this ships:** `db/migrations/008_customers.sql`, in the
+Supabase SQL editor. Until it is, `/customers` shows an error rather than an
+empty list — the table genuinely is not there.
+
+### 20.4 Settings
+
+The menu needed somewhere to send Settings, and the three things hiding behind
+a tap on the header chip — who you are, the design tokens, signing out — were
+already a settings screen wearing a dropdown. The chip is now a link to it.
+
+It also closes a gap that has been open since §8.1: `notify_on_new_invoice` is
+the one field a person may change about themselves, enforced by an RLS policy
+(which row) plus a column grant (which field), and **no screen had ever offered
+them the switch.** Now one does.
+
+Changing the PIN calls `clearAllLockState()` and then a full navigation, never
+`clearPin()` alone. The PIN and the "already unlocked" flag are two halves of
+one fact; the last time they had two owners, signing back in walked straight
+past the lock (§19's bug table, `pin-storage.test.ts`).
+
+### 20.5 What is next, and what this deliberately left alone
+
+The home screen in the client's mockup — OVERDUE / NEXT 7 DAYS stat cards, a
+"Coming up" list with due pills, a full-width **+ New invoice** — is **not in
+this change**, by agreement. Two reasons, in order of weight:
+
+1. The drawer changes the header on every screen; the home screen redesign
+   changes the one screen Mani reads every morning. Landing both together means
+   that when something is off on his phone, nobody knows which one did it.
+2. The drawer is what *makes* the redesign possible. Once navigation lives in
+   the menu, the dashboard is free to stop being a list of links and become the
+   view in the mockup. Doing it the other way round builds the dashboard twice.
+
+Tests: 394, up from 333, still under all three timezones.

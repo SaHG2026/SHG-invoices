@@ -26,8 +26,13 @@ export const BRAND_NAVY = '#082F55';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Sagarmatha Payments',
-    short_name: 'SHG Pay',
+    // The name people call it. `short_name` is the home-screen label, kept to
+    // three characters because both iOS and Android truncate it — and a
+    // truncated label is worse than a short one. Changing either only shows up
+    // on a device that reinstalls the app; an existing home-screen icon keeps
+    // whatever it was added with.
+    name: 'SHG Invoices',
+    short_name: 'SHG',
     description: 'Supplier invoices and payments for Sagarmatha Holdings Group',
     start_url: '/',
     display: 'standalone',

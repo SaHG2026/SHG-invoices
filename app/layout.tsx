@@ -35,10 +35,12 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SHG Payments',
+  title: 'SHG Invoices',
   description: 'Sagarmatha Holdings Group — supplier invoices and payments',
   // iOS ignores the manifest's icons for the home screen and uses this one.
-  appleWebApp: { capable: true, title: 'SHG Pay', statusBarStyle: 'black-translucent' },
+  // The title here is the home-screen label, which iOS truncates around
+  // eleven characters — so 'SHG', not 'SHG Invoices' half-eaten by an ellipsis.
+  appleWebApp: { capable: true, title: 'SHG', statusBarStyle: 'black-translucent' },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },

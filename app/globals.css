@@ -247,6 +247,23 @@
   animation: row-in 120ms var(--ease-row) both;
 }
 
+/* The side menu arrives from the edge it lives on. Same 120ms and same easing
+   as a list row — one motion vocabulary, not two. */
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility drawer-in {
+  animation: drawer-in 120ms var(--ease-row) both;
+}
+
 /* Tick-off: the spine segment fills to the paid colour over 200ms, then the
    row leaves. One satisfying moment, no confetti. */
 @utility spine-clearing {

@@ -66,7 +66,7 @@ export function WeekView({ scope }: { scope: Scope }) {
   const known = businesses.length === 0 || isKnownScope(scope, businesses);
 
   return (
-    <AppChrome back={{ href: '/' as Route, label: 'Businesses' }}>
+    <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
       {!known ? (
         <section className="rounded-sm border border-edge bg-card p-4">
           <h1 className="text-h2 text-ink">No such business</h1>
@@ -96,13 +96,17 @@ export function WeekView({ scope }: { scope: Scope }) {
             </p>
           </header>
 
-          {/* The rest of what a scope offers. ARCHITECTURE §16. */}
+          {/*
+            The two views of THIS scope. Suppliers used to sit here too and has
+            moved to the side menu: it is the same screen from everywhere, so a
+            copy of the link on each business was one list maintained twice.
+            These two are not — each is scoped to the business you are in.
+          */}
           <nav className="mb-6 overflow-hidden rounded-sm border border-edge bg-card">
             {(
               [
                 [pendingHref(scope), 'All pending, sorted and filtered'],
                 [historyHref(scope), 'History — what has been paid'],
-                ['/suppliers' as Route, 'Suppliers'],
               ] as const
             ).map(([href, label]) => (
               <Link

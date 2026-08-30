@@ -61,6 +61,43 @@ export function useProfiles() {
   });
 }
 
+/**
+ * The one field a person may change about themselves.
+ *
+ * ARCHITECTURE §8.1: two mechanisms in migration 007 enforce that, because
+ * they do different jobs — the `self_update` RLS policy decides which ROW you
+ * may touch (yours), and `grant update (notify_on_new_invoice)` decides which
+ * FIELD you may set. RLS cannot restrict columns, so without the grant a
+ * person could rename themselves or promote themselves to owner.
+ *
+ * Which means the failure mode worth handling here is a permission error, not
+ * a validation one: if this ever starts failing, the grant has been lost, and
+ * saying so plainly beats a silent no-op that leaves the switch looking set.
+ */
+export function useUpdateNotifyPreference() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, notify }: { id: string; notify: boolean }): Promise<Profile> => {
+      const { data, error } = await supabase()
+        .from('profiles')
+        .update({ notify_on_new_invoice: notify })
+        .eq('id', id)
+        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active')
+        .single();
+
+      if (error) throw error;
+      return data as Profile;
+    },
+    onSuccess: (profile) => {
+      queryClient.setQueryData<Profile | null>(qk.profiles.me, profile);
+      queryClient.setQueryData<Profile[]>(qk.profiles.all, (current) =>
+        (current ?? []).map((existing) => (existing.id === profile.id ? profile : existing)),
+      );
+    },
+  });
+}
+
 export function useSignOut() {
   const queryClient = useQueryClient();
 

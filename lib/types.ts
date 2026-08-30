@@ -71,6 +71,30 @@ export interface Supplier {
   active: boolean;
 }
 
+/**
+ * Somebody Deli Delights sells to. ARCHITECTURE §17.
+ *
+ * The mirror of Supplier, and deliberately a separate table rather than a
+ * direction flag on the same one. §17 gives the reasoning in full; the short
+ * version is that "what leaves the account this week" is the screen the whole
+ * design is built around, and a direction flag would put a condition inside
+ * every answer it gives.
+ *
+ * Note what is NOT here: an amount, a balance, or anything owing. This record
+ * carries who a customer is and nothing about money, which is what makes it
+ * impossible for a customer to show up in an owed or pending total. Sales
+ * invoices and receipts are their own tables, in their own phase.
+ */
+export interface Customer {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  notes: string | null;
+  active: boolean;
+}
+
 export interface Invoice {
   id: string;
   business_id: string;

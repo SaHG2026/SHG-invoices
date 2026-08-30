@@ -16,6 +16,14 @@ export const qk = {
   suppliers: {
     all: ['suppliers'] as const,
   },
+  /**
+   * Deli Delights' customers. A separate key from suppliers, not a filter on
+   * one shared key — ARCHITECTURE §17. Nothing here ever feeds a total.
+   */
+  customers: {
+    all: ['customers'] as const,
+    withInactive: ['customers', 'all-including-inactive'] as const,
+  },
   invoices: {
     /**
      * The prefix every invoice list shares.

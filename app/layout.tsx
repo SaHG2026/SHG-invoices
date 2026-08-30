@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import { Providers } from './providers';
+import { BRAND_NAVY } from './manifest';
 import './globals.css';
 
 /**
@@ -36,10 +37,22 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: 'SHG Payments',
   description: 'Sagarmatha Holdings Group — supplier invoices and payments',
+  // iOS ignores the manifest's icons for the home screen and uses this one.
+  appleWebApp: { capable: true, title: 'SHG Pay', statusBarStyle: 'black-translucent' },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/icon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: [{ url: '/icons/icon-180.png', sizes: '180x180', type: 'image/png' }],
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#12384B',
+  // Matches the icon artwork's own navy, so the splash screen and the browser
+  // chrome are the same colour as the thing you tapped to get here.
+  themeColor: BRAND_NAVY,
   width: 'device-width',
   initialScale: 1,
   // The add-invoice sheet has to survive the on-screen keyboard (notes §4),

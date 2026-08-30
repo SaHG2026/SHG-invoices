@@ -50,7 +50,15 @@ export function groupIntoRuns(rows: ReadonlyArray<InvoiceRow>): PaymentRun[] {
     run.invoices.sort(
       (a, b) => compareDates(a.invoice_date, b.invoice_date) || a.internal_ref.localeCompare(b.internal_ref),
     );
-    run.total_cents = sumCents(run.invoices);
+    /*
+     * What is still owed on this run, not what it was worth.
+     *
+     * A run keeps invoices ticked off during this session so it does not
+     * collapse under the person reading it (lib/recently-paid.ts). Summing
+     * them all would leave the run's figure unchanged after a payment, which
+     * is money on screen that has already gone.
+     */
+    run.total_cents = sumCents(run.invoices.filter((invoice) => invoice.status === 'unpaid'));
   }
 
   runs.sort(

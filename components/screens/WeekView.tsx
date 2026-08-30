@@ -48,7 +48,7 @@ export function WeekView({ scope }: { scope: Scope }) {
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
-  const tickOff = useTickOff();
+  const { tickOff, undo } = useTickOff();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paying, setPaying] = useState<InvoiceRow[]>([]);
@@ -107,6 +107,16 @@ export function WeekView({ scope }: { scope: Scope }) {
               [
                 [pendingHref(scope), 'All pending, sorted and filtered'],
                 [historyHref(scope), 'History — what has been paid'],
+                /*
+                  Customers, only here.
+                  It is in the side menu too, but Deli Delights is the only
+                  business that sells, so this is where somebody goes looking
+                  for it — ARCHITECTURE §17. Showing it under the other three
+                  would imply they have customers as well.
+                */
+                ...(scope === 'ddl'
+                  ? ([['/customers' as Route, 'Customers — who we sell to']] as const)
+                  : []),
               ] as const
             ).map(([href, label]) => (
               <Link
@@ -142,7 +152,11 @@ export function WeekView({ scope }: { scope: Scope }) {
                         {urgency === 'today' && today ? ` · ${formatDay(today)}` : ''}
                       </span>
                       <span className="money text-sm text-ink">
-                        {formatCents(rows.reduce((sum, row) => sum + row.amount_cents, 0))}
+                        {formatCents(
+                          rows
+                            .filter((row) => row.status === 'unpaid')
+                            .reduce((sum, row) => sum + row.amount_cents, 0),
+                        )}
                       </span>
                     </div>
 
@@ -155,6 +169,7 @@ export function WeekView({ scope }: { scope: Scope }) {
                           people={people}
                           expandedId={expandedId}
                           onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
+                          onUndo={(id) => void undo(id)}
                           onMarkPaid={(chosen) => {
                             // One invoice ticks immediately with an undo; a
                             // whole run goes through the sheet, where the

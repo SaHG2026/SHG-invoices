@@ -70,9 +70,9 @@ export function businessMark(code: string): BusinessMarkSpec {
  * To add one: put a square file in `public/people/`, add its line here.
  */
 export const PERSON_PHOTOS: Readonly<Record<string, string>> = {
-  mani: '/people/mani.jpg',
+  milan: '/people/milan.jpg',
   sujan: '/people/sujan.jpg',
-  // milan: '/people/milan.jpg',   <- photo not supplied yet
+  // mani: '/people/mani.jpg',       <- drop the file in and uncomment
   // rabindra: '/people/rabindra.jpg',
 };
 

@@ -81,7 +81,7 @@ export function MarkPaidSheet({ open, invoices, onClose, onPaid }: MarkPaidSheet
           type="button"
           onClick={confirm}
           disabled={markPaid.isPending}
-          className="touch w-full rounded-sm px-4 text-base font-medium disabled:opacity-40"
+          className="touch w-full rounded-full px-4 text-base font-medium disabled:opacity-40"
           style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
         >
           {markPaid.isPending ? 'Marking…' : 'Mark paid'}

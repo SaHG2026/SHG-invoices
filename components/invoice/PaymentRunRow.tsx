@@ -30,6 +30,8 @@ interface PaymentRunRowProps {
   onToggle: (id: string) => void;
   /** Ticks every invoice in the run — one transfer, one call (notes §1.6). */
   onMarkPaid: (invoices: PaymentRun['invoices']) => void;
+  /** Puts back one invoice ticked off during this session. */
+  onUndo: (id: string) => void;
 }
 
 export function PaymentRunRow({
@@ -39,6 +41,7 @@ export function PaymentRunRow({
   expandedId,
   onToggle,
   onMarkPaid,
+  onUndo,
 }: PaymentRunRowProps) {
   const single = run.invoices[0];
   if (run.invoices.length === 1 && single) {
@@ -50,6 +53,7 @@ export function PaymentRunRow({
         expanded={expandedId === single.id}
         onToggle={() => onToggle(single.id)}
         onMarkPaid={() => onMarkPaid([single])}
+        onUndo={() => onUndo(single.id)}
       />
     );
   }
@@ -67,6 +71,17 @@ export function PaymentRunRow({
    */
   const childOpen = run.invoices.some((invoice) => invoice.id === expandedId);
   const expanded = expandedId === run.key || childOpen;
+
+  /*
+   * What is still outstanding in this run.
+   *
+   * A run keeps invoices ticked off during this session so it does not
+   * collapse under the person reading it, which means "Mark all 3 paid" would
+   * otherwise offer to re-pay one that is already done. The RPC ignores them
+   * — its WHERE clause includes status = 'unpaid' — but offering it at all is
+   * the interface lying about what the button does.
+   */
+  const owed = run.invoices.filter((invoice) => invoice.status === 'unpaid');
 
   return (
     <li className="relative border-b border-hairline last:border-b-0">
@@ -86,7 +101,9 @@ export function PaymentRunRow({
           <span className="block truncate text-sm text-ink">{run.supplier.name}</span>
           <span className="figure-date block truncate text-xs text-muted">
             {formatDay(run.due_date)}
-            {late ? ` · ${late}` : ''} · {run.invoices.length} invoices
+            {late ? ` · ${late}` : ''} · {owed.length === run.invoices.length
+              ? `${run.invoices.length} invoices`
+              : `${owed.length} of ${run.invoices.length} left`}
           </span>
         </span>
 
@@ -104,14 +121,21 @@ export function PaymentRunRow({
             so it lives one level further in.
           */}
           <div className="px-3 pt-3">
-            <button
-              type="button"
-              onClick={() => onMarkPaid(run.invoices)}
-              className="touch w-full rounded-sm px-3 text-sm font-medium"
-              style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
-            >
-              Mark all {run.invoices.length} paid · {formatCents(run.total_cents)}
-            </button>
+            {owed.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => onMarkPaid(owed)}
+                className="touch w-full rounded-full px-3 text-sm font-medium transition-opacity duration-150 active:opacity-80"
+                style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
+              >
+                Mark {owed.length === 1 ? 'the last one' : `all ${owed.length}`} paid ·{' '}
+                {formatCents(run.total_cents)}
+              </button>
+            ) : (
+              <p className="pb-1 text-center text-sm text-muted">
+                All {run.invoices.length} paid. Tap a tick to put one back.
+              </p>
+            )}
           </div>
 
           <ul>
@@ -124,6 +148,7 @@ export function PaymentRunRow({
                 expanded={expandedId === invoice.id}
                 onToggle={() => onToggle(invoice.id)}
                 onMarkPaid={() => onMarkPaid([invoice])}
+                onUndo={() => onUndo(invoice.id)}
                 showSpine={false}
                 showSupplier={false}
               />

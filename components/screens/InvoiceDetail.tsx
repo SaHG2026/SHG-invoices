@@ -206,7 +206,7 @@ export function InvoiceDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={() => setPayOpen(true)}
-              className="touch flex-1 rounded-sm px-4 text-base font-medium"
+              className="touch flex-1 rounded-full px-4 text-base font-medium"
               style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
             >
               Mark paid
@@ -263,7 +263,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <button
             type="submit"
             disabled={noteText.trim() === '' || addNote.isPending}
-            className="touch shrink-0 rounded-sm bg-action px-4 text-sm text-action-text disabled:opacity-40"
+            className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
           >
             Add
           </button>

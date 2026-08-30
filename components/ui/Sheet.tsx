@@ -94,12 +94,20 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
         confusing to hear, and a test caught exactly that collision.
         Keyboard users have Escape, handled above.
       */}
-      <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/40" />
+      <div aria-hidden onClick={onClose} className="scrim-in absolute inset-0 bg-ink/40" />
 
       <div
         ref={panelRef}
-        className="absolute inset-x-0 flex flex-col rounded-t-sm bg-card shadow-[0_-2px_24px_rgba(18,56,75,0.18)]"
+        className="sheet-in absolute inset-x-0 flex flex-col rounded-t-2xl bg-card shadow-[0_-2px_24px_rgba(18,56,75,0.18)]"
         style={{
+          /*
+            The lift follows the keyboard rather than jumping with it.
+            visualViewport reports the new height in one step, so without a
+            transition the whole sheet teleports upward the instant a field is
+            focused — which is the part that reads as jarring. 250ms on the
+            same curve turns it into the sheet getting out of the way.
+          */
+          transition: `bottom 250ms var(--ease-ios), max-height 250ms var(--ease-ios)`,
           bottom: keyboardInset,
           // Leave a strip of the page visible so it reads as a sheet over the
           // ledger rather than a new screen.
@@ -114,7 +122,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="touch -mr-2 flex items-center justify-center px-2 text-h2 text-muted"
+            className="touch -mr-2 flex items-center justify-center rounded-full px-2 text-h2 text-muted"
           >
             ✕
           </button>

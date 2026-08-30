@@ -99,7 +99,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={busy || email === '' || password === ''}
-            className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
+            className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>

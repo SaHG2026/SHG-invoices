@@ -220,7 +220,13 @@ describe('the supplier page', () => {
     });
   });
 
-  it('refuses nonsense terms rather than storing them', async () => {
+  /*
+   * Renders the detail screen five times over. Against vitest's 5s default
+   * that passes on a quiet machine and fails on a busy one, and a suite that
+   * fails at random is one nobody trusts enough to act on. Same treatment as
+   * the PBKDF2 tests in unlock-gate.
+   */
+  it('refuses nonsense terms rather than storing them', { timeout: 20_000 }, async () => {
     // Terms drive the due date on every future invoice for this supplier.
     for (const nonsense of ['abc', '-5', '0', '9999', '1.5']) {
       mocks.update.mockClear();

@@ -37,7 +37,7 @@ export function PendingList({ scope }: { scope: Scope }) {
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
-  const tickOff = useTickOff();
+  const { tickOff, undo } = useTickOff();
 
   const [sort, setSort] = useState<SortKey>('due');
   const [overdueOnly, setOverdueOnly] = useState(false);
@@ -112,7 +112,7 @@ export function PendingList({ scope }: { scope: Scope }) {
             type="button"
             onClick={() => setSort(option.key)}
             aria-pressed={sort === option.key}
-            className={`touch rounded-sm border px-3 text-sm ${
+            className={`touch rounded-full border px-3 text-sm ${
               sort === option.key
                 ? 'border-action bg-action text-action-text'
                 : 'border-hairline bg-card text-ink'
@@ -128,7 +128,7 @@ export function PendingList({ scope }: { scope: Scope }) {
           type="button"
           onClick={() => setOverdueOnly((on) => !on)}
           aria-pressed={overdueOnly}
-          className="touch rounded-sm border px-3 text-sm"
+          className="touch rounded-full border px-3 text-sm"
           style={
             overdueOnly
               ? {
@@ -184,6 +184,7 @@ export function PendingList({ scope }: { scope: Scope }) {
                 setExpandedId((current) => (current === invoice.id ? null : invoice.id))
               }
               onMarkPaid={() => void tickOff(invoice)}
+              onUndo={() => void undo(invoice.id)}
             />
           ))}
         </ul>

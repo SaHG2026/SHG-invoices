@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Sheet } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
+import { BusinessMark } from '@/components/ui/BusinessMark';
 import { useToast } from '@/components/ui/Toast';
 import { useBusinesses, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
 import { findDuplicates, useCreateInvoice } from '@/lib/queries/invoices';
@@ -51,7 +52,7 @@ import type { Invoice, Supplier } from '@/lib/types';
  *
  * The heading line is taller for it. That is the correct trade.
  */
-const SHORTCUT = 'touch inline-flex items-center rounded-sm border px-3 text-xs';
+const SHORTCUT = 'touch inline-flex items-center rounded-full border px-3 text-xs';
 
 interface AddInvoiceSheetProps {
   open: boolean;
@@ -278,7 +279,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => save()}
             disabled={busy}
-            className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
+            className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
           >
             {busy ? 'Saving…' : 'Save invoice'}
           </button>
@@ -294,10 +295,11 @@ function SheetBody({ onClose }: { onClose: () => void }) {
                 type="button"
                 onClick={() => setBusinessId(business.id)}
                 aria-pressed={isChosen}
-                className={`touch rounded-sm border px-4 text-sm ${
+                className={`touch flex items-center gap-2 rounded-full border pl-2 pr-4 text-sm transition-colors duration-150 ${
                   isChosen ? 'border-action bg-action text-action-text' : 'border-hairline bg-card text-ink'
                 }`}
               >
+                <BusinessMark business={business} size="sm" />
                 {business.code}
               </button>
             );

@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import { useMarkPaid, useUnmarkPaid } from '@/lib/queries/payments';
+import { forgetPaid, rememberPaid } from '@/lib/recently-paid';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { formatCents } from '@/lib/money';
 import type { InvoiceRow } from '@/lib/types';
@@ -32,7 +33,24 @@ export function useTickOff() {
   const unmarkPaid = useUnmarkPaid();
   const { data: profile } = useCurrentProfile();
 
-  return useCallback(
+  /**
+   * Put one back. Shared by the toast and by the Undo on the row itself, so
+   * the two cannot drift into doing different things.
+   */
+  const undo = useCallback(
+    async (id: string) => {
+      try {
+        await unmarkPaid.mutateAsync(id);
+        forgetPaid(id);
+        toast.show('Put back to unpaid.');
+      } catch {
+        toast.show('Couldn’t undo that — open the invoice and try there.', 'problem');
+      }
+    },
+    [unmarkPaid, toast],
+  );
+
+  const tickOff = useCallback(
     async (invoice: InvoiceRow) => {
       try {
         const result = await markPaid.mutateAsync({
@@ -46,21 +64,32 @@ export function useTickOff() {
           return;
         }
 
+        /*
+         * Kept on screen, struck through, until the app is closed.
+         *
+         * The row used to leave on the next refetch. Inside a payment run that
+         * dropped the run to a single invoice, which stops rendering as a
+         * group — so both children vanished and only one had been paid. See
+         * lib/recently-paid.ts.
+         *
+         * Remembered only after the database confirms, and only the rows it
+         * actually flipped, so a row never sits there struck through on the
+         * strength of a call that failed.
+         */
+        rememberPaid(
+          result.paid.map((row) => ({ ...invoice, ...row } as InvoiceRow)),
+        );
+
         toast.show(`Marked paid · ${formatCents(invoice.amount_cents)}`, 'done', {
           label: 'Undo',
-          onAct: async () => {
-            try {
-              await unmarkPaid.mutateAsync(invoice.id);
-              toast.show('Put back to unpaid.');
-            } catch {
-              toast.show('Couldn’t undo that — open the invoice and try there.', 'problem');
-            }
-          },
+          onAct: () => undo(invoice.id),
         });
       } catch {
         toast.show('Couldn’t mark it paid — check your connection and try again.', 'problem');
       }
     },
-    [markPaid, unmarkPaid, toast, profile],
+    [markPaid, undo, toast, profile],
   );
+
+  return { tickOff, undo };
 }

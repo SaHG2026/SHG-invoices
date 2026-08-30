@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
+import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
 import { PersonChip } from '@/components/ui/PersonChip';
@@ -45,6 +46,15 @@ interface AppChromeProps {
 
 export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) {
   const { data: profile } = useCurrentProfile();
+  /*
+   * Keyed on the path so the animation replays on every navigation.
+   *
+   * Without the key React reuses the same <main> across routes and the
+   * animation, having already run once, never runs again — the content simply
+   * swaps. Which is exactly the "jerky" the client described: nothing was
+   * animating between screens at all.
+   */
+  const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -111,14 +121,16 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         </div>
       </header>
 
-      <main className="mx-auto max-w-[560px] px-4 pb-28 pt-6">{children}</main>
+      <main key={pathname} className="screen-in mx-auto max-w-[560px] px-4 pb-28 pt-6">
+        {children}
+      </main>
 
       {add === 'floating' ? (
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
           aria-label="Add invoice"
-          className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
+          className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
           style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
         >
           +
@@ -138,7 +150,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
           <button
             type="button"
             onClick={() => setSheetOpen(true)}
-            className="touch mx-auto flex w-full max-w-[528px] items-center justify-center gap-2 rounded-sm bg-action px-4 text-base font-medium text-action-text"
+            className="touch mx-auto flex w-full max-w-[528px] items-center justify-center gap-2 rounded-full bg-action px-4 text-base font-medium text-action-text"
           >
             <span aria-hidden>+</span>
             New invoice

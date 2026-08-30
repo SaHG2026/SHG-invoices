@@ -98,7 +98,7 @@ export function ConfirmDialog({
             <button
               type="button"
               onClick={onConfirm}
-              className="touch flex-1 rounded-sm bg-action px-3 text-base text-action-text"
+              className="touch flex-1 rounded-full bg-action px-3 text-base text-action-text"
             >
               {confirmLabel}
             </button>

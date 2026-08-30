@@ -82,7 +82,7 @@ export function HistoryList({ scope }: { scope: Scope }) {
           type="button"
           onClick={() => setPaidBy(null)}
           aria-pressed={paidBy === null}
-          className={`touch rounded-sm border px-3 text-sm ${
+          className={`touch rounded-full border px-3 text-sm ${
             paidBy === null
               ? 'border-action bg-action text-action-text'
               : 'border-hairline bg-card text-ink'
@@ -97,7 +97,7 @@ export function HistoryList({ scope }: { scope: Scope }) {
             type="button"
             onClick={() => setPaidBy(paidBy === person.id ? null : person.id)}
             aria-pressed={paidBy === person.id}
-            className={`touch flex items-center gap-2 rounded-sm border px-3 text-sm ${
+            className={`touch flex items-center gap-2 rounded-full border px-3 text-sm ${
               paidBy === person.id
                 ? 'border-action bg-action text-action-text'
                 : 'border-hairline bg-card text-ink'

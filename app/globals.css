@@ -147,12 +147,35 @@
   --radius-xl: 4px;
   --radius-2xl: 4px;
 
+  /*
+   * Buttons are the exception, at the client's request: pill, not square.
+   *
+   * Spec §9 says "border radius 4px" and every radius above still resolves to
+   * it, so cards, rows and inputs cannot drift. This is one named value used
+   * deliberately on controls, which is a different thing from `rounded-lg`
+   * being available everywhere and quietly spreading.
+   *
+   * It reads correctly too: 4px surfaces are things you look at, pills are
+   * things you press.
+   */
+  --radius-full: 999px;
+
   --spacing-row: 56px; /* dense list row — mirrors ROW_HEIGHT_PX  */
   --spacing-touch: 44px; /* minimum touch target — mirrors MIN_TOUCH_PX */
   --spacing-spine: 3px; /* the due spine rule */
 
   /* ---- motion ---------------------------------------------------------- */
   --ease-row: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /*
+   * The curve iOS uses for sheets and pushes: leaves fast, arrives slowly,
+   * settles without a bounce. The client asked for "the normal transition on
+   * apple devices", and this is the shape of it — most of what makes those
+   * feel smooth is the deceleration, not the duration.
+   */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-panel: 320ms;
+  --dur-fade: 180ms;
 }
 
 /* ============================================================================
@@ -247,12 +270,66 @@
   animation: row-in 120ms var(--ease-row) both;
 }
 
-/* The side menu arrives from the edge it lives on. Same 120ms and same easing
-   as a list row — one motion vocabulary, not two. */
+/* ============================================================================
+   Panels — the side menu and the bottom sheet.
+
+   These were a 120ms fade with a 2px nudge, which is right for a list row
+   appearing and wrong for a whole surface arriving: at that distance and
+   duration the eye reads a jump rather than a movement. They now travel their
+   own full width or height on the iOS curve, which is what makes a panel feel
+   attached to the thumb that opened it.
+   ========================================================================= */
+
 @keyframes drawer-in {
   from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility drawer-in {
+  animation: drawer-in var(--dur-panel) var(--ease-ios) both;
+  will-change: transform;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility sheet-in {
+  animation: sheet-in var(--dur-panel) var(--ease-ios) both;
+  will-change: transform;
+}
+
+/* The scrim behind either. Fades rather than appearing, so the page dims
+   into the background instead of being switched off. */
+@keyframes scrim-in {
+  from {
     opacity: 0;
-    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility scrim-in {
+  animation: scrim-in var(--dur-panel) var(--ease-ios) both;
+}
+
+/* A screen arriving. Deliberately only a fade and 4px: a full slide between
+   routes on every tap becomes tiring on a screen somebody uses forty times a
+   day, and it delays the thing they came to read. */
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -260,8 +337,8 @@
   }
 }
 
-@utility drawer-in {
-  animation: drawer-in 120ms var(--ease-row) both;
+@utility screen-in {
+  animation: screen-in var(--dur-fade) var(--ease-ios) both;
 }
 
 /* Tick-off: the spine segment fills to the paid colour over 200ms, then the
@@ -269,6 +346,28 @@
 @utility spine-clearing {
   transition: background-color 200ms var(--ease-row);
   background-color: var(--paid);
+}
+
+/* Every pressable thing eases into and out of its pressed state. Without this
+   `active:bg-pressed` is an instant flip, which is most of what reads as
+   "jerky" — the app was not animating a tap at all, it was toggling it. */
+@layer base {
+  a,
+  button,
+  [role='button'] {
+    transition:
+      background-color 140ms var(--ease-ios),
+      opacity 140ms var(--ease-ios),
+      border-color 140ms var(--ease-ios),
+      transform 140ms var(--ease-ios);
+  }
+
+  /* Touch feedback that survives the 300ms the OS takes to decide it was a
+     tap and not a scroll. */
+  button:active,
+  [role='button']:active {
+    transform: scale(0.985);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

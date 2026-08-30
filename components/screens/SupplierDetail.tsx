@@ -56,7 +56,7 @@ function Sparkline({ spend }: { spend: MonthSpend[] }) {
 export function SupplierDetail({ id }: { id: string }) {
   const toast = useToast();
   const today = useSydneyToday();
-  const tickOff = useTickOff();
+  const { tickOff, undo } = useTickOff();
   const { data: people = [] } = useProfiles();
   const { data: active = [] } = useSuppliers();
   const { data: all = [] } = useAllSuppliers();
@@ -178,6 +178,7 @@ export function SupplierDetail({ id }: { id: string }) {
                   setExpandedId((current) => (current === invoice.id ? null : invoice.id))
                 }
                 onMarkPaid={() => void tickOff(invoice)}
+                onUndo={() => void undo(invoice.id)}
               />
             ))}
           </ul>
@@ -337,7 +338,7 @@ function SupplierForm({
       <button
         type="submit"
         disabled={busy || name.trim() === ''}
-        className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
+        className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
       >
         {busy ? 'Saving…' : 'Save supplier'}
       </button>

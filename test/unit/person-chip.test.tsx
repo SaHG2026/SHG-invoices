@@ -21,20 +21,20 @@ import { BUSINESSES, PROFILES } from '../fixtures/invoices';
 
 describe('a person with a photograph', () => {
   it('shows the photograph instead of initials', () => {
-    const mani = PROFILES.find((p) => p.display_name === 'Mani')!;
-    render(<PersonChip profile={mani} />);
+    const milan = PROFILES.find((p) => p.display_name === 'Milan')!;
+    render(<PersonChip profile={milan} />);
 
-    const image = screen.getByRole('img', { name: 'Mani' });
-    expect(image).toHaveAttribute('src', '/people/mani.jpg');
-    expect(screen.queryByText(mani.initials)).not.toBeInTheDocument();
+    const image = screen.getByRole('img', { name: 'Milan' });
+    expect(image).toHaveAttribute('src', '/people/milan.jpg');
+    expect(screen.queryByText(milan.initials)).not.toBeInTheDocument();
   });
 
   it('keeps the person accent behind it', () => {
     // So a photo that has not loaded yet still shows the colour people
     // already associate with that person, rather than an empty hole.
-    const mani = PROFILES.find((p) => p.display_name === 'Mani')!;
-    const { container } = render(<PersonChip profile={mani} />);
-    expect(container.querySelector('img')!.getAttribute('style')).toContain('--person-2-bg');
+    const milan = PROFILES.find((p) => p.display_name === 'Milan')!;
+    const { container } = render(<PersonChip profile={milan} />);
+    expect(container.querySelector('img')!.getAttribute('style')).toContain('--person-3-bg');
   });
 
   it('is announced by name, not left decorative', () => {
@@ -48,16 +48,16 @@ describe('a person with a photograph', () => {
 
 describe('a person without one', () => {
   it('falls back to initials rather than a broken image', () => {
-    const milan = PROFILES.find((p) => p.display_name === 'Milan')!;
-    expect(personPhoto('Milan')).toBeNull();
+    const mani = PROFILES.find((p) => p.display_name === 'Mani')!;
+    expect(personPhoto('Mani')).toBeNull();
 
-    const { container } = render(<PersonChip profile={milan} />);
+    const { container } = render(<PersonChip profile={mani} />);
     expect(container.querySelector('img')).toBeNull();
-    expect(screen.getByText(milan.initials)).toBeInTheDocument();
+    expect(screen.getByText(mani.initials)).toBeInTheDocument();
   });
 
   it('matches the name whatever its casing or padding', () => {
-    expect(personPhoto('  MANI ')).toBe('/people/mani.jpg');
+    expect(personPhoto('  MILAN ')).toBe('/people/milan.jpg');
   });
 });
 

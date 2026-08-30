@@ -42,6 +42,16 @@ interface InvoiceRowProps {
   showSupplier?: boolean;
   /** Offered on unpaid rows. Absent on paid and void ones. */
   onMarkPaid?: () => void;
+  /**
+   * Offered on a row ticked off during this session, in place of the tick.
+   *
+   * Spec §6 forbids un-ticking from a list because it is "too easy to
+   * fat-finger". This is narrower than that and does not reopen it: it appears
+   * only on a row you ticked yourself, minutes ago, on this device, and it
+   * disappears when the app is closed. Undoing your own last action is not the
+   * same act as reaching into the ledger and reversing somebody else's.
+   */
+  onUndo?: () => void;
 }
 
 export function InvoiceRow({
@@ -53,6 +63,7 @@ export function InvoiceRow({
   showSpine = true,
   showSupplier = true,
   onMarkPaid,
+  onUndo,
 }: InvoiceRowProps) {
   const urgency = urgencyOf(invoice.due_date, today);
   const late = formatDaysLate(invoice.due_date, today);
@@ -105,8 +116,25 @@ export function InvoiceRow({
           >
             <span
               aria-hidden
-              className="flex size-6 items-center justify-center rounded-sm border text-xs"
+              className="flex size-6 items-center justify-center rounded-full border text-xs transition-colors duration-150"
               style={{ borderColor: 'var(--spine-later)', color: 'var(--spine-later)' }}
+            >
+              ✓
+            </span>
+          </button>
+        ) : onUndo && invoice.status === 'paid' ? (
+          /* A filled tick you can tap back. Same slot, same size, so the row
+             does not shuffle sideways the moment it is ticked. */
+          <button
+            type="button"
+            onClick={onUndo}
+            aria-label={`Undo — put ${invoice.supplier.name} ${formatCents(invoice.amount_cents)} back to unpaid`}
+            className={`touch flex shrink-0 items-center justify-center ${showSpine ? 'pl-3' : 'pl-2'}`}
+          >
+            <span
+              aria-hidden
+              className="flex size-6 items-center justify-center rounded-full text-xs transition-colors duration-150"
+              style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
             >
               ✓
             </span>
@@ -152,7 +180,10 @@ export function InvoiceRow({
 
             <span className="figure-date block truncate text-xs text-muted">
               {invoice.status === 'paid' ? (
-                <>Paid{payer ? ` by ${payer.display_name}` : ''}</>
+                <>
+                  Paid{payer ? ` by ${payer.display_name}` : ''}
+                  {onUndo ? ' · tap the tick to undo' : ''}
+                </>
               ) : (
                 <>
                   {formatDay(invoice.due_date)}

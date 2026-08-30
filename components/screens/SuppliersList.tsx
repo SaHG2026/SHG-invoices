@@ -96,7 +96,7 @@ export function SuppliersList() {
         <button
           type="submit"
           disabled={newName.trim() === '' || createSupplier.isPending}
-          className="touch shrink-0 rounded-sm bg-action px-4 text-sm text-action-text disabled:opacity-40"
+          className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
         >
           Add
         </button>

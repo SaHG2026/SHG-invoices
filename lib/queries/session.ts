@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/browser';
 import { clearAllLockState } from '@/lib/pin';
+import { clearRecentlyPaid } from '@/lib/recently-paid';
 import { qk } from './keys';
 import type { Profile } from '@/lib/types';
 
@@ -107,6 +108,9 @@ export function useSignOut() {
       // "already unlocked" flag. Missing that last one meant signing back in
       // walked straight past the PIN screen.
       clearAllLockState();
+      // The struck-through rows belong to a session, and this is the end of
+      // one. Leaving them would show the next person what the last one paid.
+      clearRecentlyPaid();
       const { error } = await supabase().auth.signOut();
       if (error) throw error;
     },

@@ -210,7 +210,7 @@ export default function Dashboard() {
                   setSortOpen(false);
                 }}
                 aria-pressed={sort === option.key}
-                className="touch rounded-sm border px-3 text-sm"
+                className="touch rounded-full border px-3 text-sm"
                 style={
                   sort === option.key
                     ? {

@@ -93,7 +93,7 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
         button below announces the same thing, and two elements with one name
         is confusing to hear. Same reasoning as components/ui/Sheet.tsx.
       */}
-      <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/40" />
+      <div aria-hidden onClick={onClose} className="scrim-in absolute inset-0 bg-ink/40" />
 
       <div
         ref={panelRef}
@@ -123,7 +123,7 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="touch -mr-2 -mt-2 flex shrink-0 items-center justify-center px-2 text-h2 text-muted"
+            className="touch -mr-2 -mt-2 flex shrink-0 items-center justify-center rounded-full px-2 text-h2 text-muted"
           >
             ✕
           </button>

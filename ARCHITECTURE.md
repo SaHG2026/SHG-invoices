@@ -1185,3 +1185,117 @@ Everything is 96px on the long edge — three times the 28px it renders at, whic
 covers a 3x phone screen — and every file is under 13KB.
 
 Tests: 427, up from 413, under all three timezones.
+
+
+---
+
+## 23. The tick that erased two invoices, and a motion pass
+
+### 23.1 The bug — a ninth for §19's table
+
+**Reported as:** "if there is two pending ones with same invoice number,
+ticking one off is erasing both."
+
+**The database was never wrong.** `mark_invoices_paid` is `where id = any(p_ids)`
+and the client sends one id. Every layer between them keys on `invoice.id`.
+Nothing was ever paid that should not have been.
+
+**What actually happened.** Two invoices from one supplier sharing a due date
+collapse into a payment run (spec §6). Tick one, the refetch drops it, and the
+run falls to a single invoice — at which point `PaymentRunRow` stops rendering
+an expanded group and returns a plain `InvoiceRow` instead. The remaining
+invoice is re-drawn somewhere else in the list under a different shape. So both
+child rows leave the screen at once, one of them for no reason the person can
+see.
+
+**Which makes it the sixth of nine that was a shape problem, not a logic one.**
+The row was not wrong about the data; it was wrong about what had happened. And
+the fix is not a correction to a branch — it is removing the moment where a
+list re-draws itself out from under the person who just tapped it.
+
+### 23.2 The fix, which the client had already asked for
+
+> "once paid, its eloping immediately, keep the strikethrough until the session
+> is over. and have an undo toggle too."
+
+`lib/recently-paid.ts` holds the invoices ticked off this session, in memory,
+and `useUnpaidInvoices` folds them back into what the server returns. The run
+stays a run of two with one struck through. Nothing moves that you did not move.
+
+**In memory, not localStorage.** "Until the session is over" is the ask, and a
+struck-through row surviving a reload would be a paid invoice sitting in a list
+of unpaid ones with no way to explain itself. Sign-out clears it, alongside the
+device lock — the next person should not see what the last one paid.
+
+**Remembered only after the database confirms, and only the rows it actually
+flipped.** `mark_invoices_paid` returns exactly what it changed, so a row never
+sits there struck through on the strength of a call that failed.
+
+**[decision] The paid rows now live in the array every total is computed from,
+so every total says out loud that it excludes them.** `onlyUnpaid` in
+`lib/derive/select.ts` is called by all three summaries; `groupIntoRuns` sums a
+run's unpaid invoices only; the week's section totals filter. That is a real
+new risk — notes §3's disagreement between a total and its list, arriving from
+a new direction — so `recently-paid.test.ts` asserts the invariant directly:
+adding a paid row to the array leaves every figure identical.
+
+**Undo on the row itself**, not only in the toast, which is gone in five
+seconds. Spec §6 forbids un-ticking from a list as "too easy to fat-finger",
+and this does not reopen that: it appears only on a row *you* ticked, minutes
+ago, on this device, and it is gone when the app closes. Undoing your own last
+action is a different act from reaching into the ledger and reversing somebody
+else's. Both the toast and the row call one `undo`, so they cannot drift.
+
+**"Mark all N paid" now offers only what is still owed.** The RPC would ignore
+the rest — its WHERE clause has `status = 'unpaid'` — but offering it is the
+interface lying about what the button does.
+
+### 23.3 Motion
+
+The client asked for "the normal transition on apple devices", and the honest
+diagnosis was that **the app was not animating most of this at all.** The
+drawer had a 120ms fade and a 2px nudge, which is right for a list row and
+wrong for a whole surface: at that distance the eye reads a jump. Route changes
+had nothing. A tap toggled `active:bg-pressed` with no transition, so every
+press was a step function.
+
+One vocabulary, in `app/globals.css`:
+
+| | |
+|---|---|
+| `--ease-ios` | `cubic-bezier(0.32, 0.72, 0, 1)` — leaves fast, arrives slowly, no bounce. Most of what makes those feel smooth is the deceleration, not the duration. |
+| `--dur-panel` 320ms | Drawer and sheet, each travelling its own full width or height |
+| `--dur-fade` 180ms | A screen arriving |
+| 140ms | Every press state |
+
+**[decision] Screens fade 4px rather than sliding.** A full push on every tap
+becomes tiring on something used forty times a day, and it delays the thing you
+opened the screen to read. The `<main>` is keyed on the pathname, because
+without the key React reuses the element across routes and an animation that
+has already run never runs again.
+
+**The add-invoice sheet.** `visualViewport` reports the keyboard's arrival in
+one step, so the sheet teleported upward the instant a field was focused. The
+lift is now a 250ms transition on the same curve — the sheet gets out of the
+way rather than jumping. The sheet itself slides up from the bottom instead of
+appearing.
+
+### 23.4 Pills
+
+**[decision] `--radius-full: 999px`, on buttons only.** Spec §9 says 4px and
+every other radius token still resolves to it, so cards, rows and inputs cannot
+drift — this is one named value used deliberately on controls, which is a
+different thing from `rounded-lg` being available everywhere and quietly
+spreading. It also reads correctly: 4px surfaces are things you look at, pills
+are things you press.
+
+### 23.5 Smaller things in the same pass
+
+- **Customers is reachable from Deli Delights**, where somebody actually goes
+  looking for it. Only there — showing it under the other three would imply
+  they have customers too (§17). It stays in the side menu as well.
+- **Business logos in the add-invoice picker**, in front of each code.
+- **The photograph labelled Mani was Milan.** Corrected; Mani's chip is back to
+  initials until his own file arrives.
+
+Tests: 437, up from 427, under all three timezones.

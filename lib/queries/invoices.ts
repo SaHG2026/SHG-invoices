@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/browser';
 import { pushRecentSupplierId } from '@/lib/recents';
 import { DUPE_LOOKBACK_DAYS, UNPAID_STALE_MS } from '@/lib/constants';
+import { useMemo } from 'react';
+import { mergeRecentlyPaid, useRecentlyPaid } from '@/lib/recently-paid';
 import { qk } from './keys';
 import type { Business, Invoice, InvoiceRow, Supplier } from '@/lib/types';
 import type { InvoiceWrite } from '@/lib/invoice-form';
@@ -22,7 +24,7 @@ const ROW_SELECT =
  * it sits under (notes §3).
  */
 export function useUnpaidInvoices() {
-  return useQuery({
+  const query = useQuery({
     queryKey: qk.invoices.unpaid,
     queryFn: async (): Promise<InvoiceRow[]> => {
       const { data, error } = await supabase()
@@ -37,6 +39,23 @@ export function useUnpaidInvoices() {
     // Notes §1.4: never 0 on a list that receives optimistic updates.
     staleTime: UNPAID_STALE_MS,
   });
+
+  /*
+   * Invoices ticked off during this session are folded back in, so a row does
+   * not disappear out from under the person who just tapped it — and so a
+   * payment run does not silently collapse and take its siblings off screen
+   * with it. lib/recently-paid.ts has the full account of that bug.
+   *
+   * They arrive carrying `status: 'paid'`, and every summary calls
+   * `onlyUnpaid` (lib/derive/select.ts), so none of them can reach a total.
+   */
+  const remembered = useRecentlyPaid();
+  const data = useMemo(
+    () => mergeRecentlyPaid(query.data ?? [], remembered),
+    [query.data, remembered],
+  );
+
+  return { ...query, data };
 }
 
 export interface CreateInvoiceInput {

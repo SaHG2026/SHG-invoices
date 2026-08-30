@@ -215,7 +215,7 @@ function CustomerForm({
       <button
         type="submit"
         disabled={busy || name.trim() === ''}
-        className="touch w-full rounded-sm bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
+        className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
       >
         {busy ? 'Saving…' : 'Save customer'}
       </button>

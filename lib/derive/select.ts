@@ -117,6 +117,23 @@ export function searchInvoices(rows: ReadonlyArray<InvoiceRow>, query: string): 
   });
 }
 
+/**
+ * Only what is genuinely still owed.
+ *
+ * Invoices ticked off during this session stay on screen, struck through,
+ * until the app is closed (lib/recently-paid.ts). They are in the same array
+ * as everything else, so every figure has to say out loud that it does not
+ * count them — otherwise the headline would keep including money that has
+ * already left the account, which is notes §3's trust-destroying disagreement
+ * with the list right under it.
+ *
+ * One function, called by every summary below, rather than a `.filter` at each
+ * site that somebody later adds a fifth summary without.
+ */
+export function onlyUnpaid(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
+  return rows.filter((row) => row.status === 'unpaid');
+}
+
 export interface OutstandingSummary {
   total_cents: number;
   invoice_count: number;
@@ -128,10 +145,11 @@ export interface OutstandingSummary {
  * Derived from the same array the sections below it render.
  */
 export function summarise(rows: ReadonlyArray<InvoiceRow>): OutstandingSummary {
+  const owed = onlyUnpaid(rows);
   return {
-    total_cents: sumCents(rows),
-    invoice_count: rows.length,
-    supplier_count: new Set(rows.map((row) => row.supplier_id)).size,
+    total_cents: sumCents(owed),
+    invoice_count: owed.length,
+    supplier_count: new Set(owed.map((row) => row.supplier_id)).size,
   };
 }
 
@@ -164,6 +182,8 @@ export function summariseUrgency(
   rows: ReadonlyArray<InvoiceRow>,
   today: DateStr,
 ): UrgencySummary {
+  // summarise filters to unpaid itself; bucketing keeps paid rows so they stay
+  // in the section they were ticked off in.
   const buckets = bucketByUrgency(rows, today);
   return {
     overdue: summarise(buckets.overdue),
@@ -196,7 +216,7 @@ export function summariseByBusiness(
 ): BusinessSummary[] {
   return businesses
     .map((business) => {
-      const mine = rows.filter((row) => row.business_id === business.id);
+      const mine = onlyUnpaid(rows).filter((row) => row.business_id === business.id);
       const overdue = mine.filter((row) => compareDates(row.due_date, today) < 0);
       return {
         business,

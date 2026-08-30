@@ -23,7 +23,7 @@ const invoices = makeInvoices(60).map((invoice, i) => ({
   created_by: PROFILES[i % PROFILES.length]!.id,
 }));
 
-const mocks = vi.hoisted(() => ({ markPaid: vi.fn() }));
+const mocks = vi.hoisted(() => ({ markPaid: vi.fn(), unmark: vi.fn() }));
 
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
@@ -45,7 +45,7 @@ vi.mock('@/lib/queries/reference', () => ({
 
 vi.mock('@/lib/queries/payments', () => ({
   useMarkPaid: () => ({ mutateAsync: mocks.markPaid, isPending: false }),
-  useUnmarkPaid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUnmarkPaid: () => ({ mutateAsync: mocks.unmark, isPending: false }),
   useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -75,6 +75,18 @@ function confirmInSheet() {
   return within(screen.getByRole('dialog')).getByRole('button', { name: 'Mark paid' });
 }
 
+/**
+ * The tick on the first invoice inside an opened run.
+ *
+ * Selected by position rather than by label: every invoice in a run shares a
+ * supplier, so the accessible names collide by design. Runs are ordered by
+ * invoice date, so index 0 is `run.invoices[0]`.
+ */
+function tickFirstChild(item: HTMLElement) {
+  const ticks = within(item).getAllByRole('button', { name: /^Mark .* paid$/ });
+  fireEvent.click(ticks[0]!);
+}
+
 function expandRun(run: (typeof runs)[number]) {
   const button = screen
     .getAllByRole('button', { expanded: false })
@@ -87,6 +99,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mocks.markPaid.mockResolvedValue({ paid: [], missed: [] });
+  mocks.unmark.mockResolvedValue({});
 });
 
 describe('a whole payment run — notes §1.6', () => {
@@ -138,21 +151,41 @@ describe('a whole payment run — notes §1.6', () => {
 
   it('can still pay one invoice out of a run', async () => {
     const run = runs[0]!;
+    const one = run.invoices[0]!;
+    mocks.markPaid.mockResolvedValue({ paid: [{ id: one.id }], missed: [] });
+
     open();
     const runButton = expandRun(run);
 
-    // Open one child. The run must stay open — an earlier version collapsed
-    // it here, which made the invoice you had just tapped disappear.
-    const item = runButton.closest('li')!;
-    const child = within(item).getAllByRole('button', { expanded: false })[0]!;
-    fireEvent.click(child);
-    expect(child).toHaveAttribute('aria-expanded', 'true');
-
-    fireEvent.click(within(item).getAllByRole('button', { name: 'Mark paid' })[0]!);
-    fireEvent.click(confirmInSheet());
+    // A single tick goes straight through — no sheet. See the tick-off note.
+    tickFirstChild(runButton.closest('li')!);
 
     await waitFor(() => expect(mocks.markPaid).toHaveBeenCalled());
-    expect(mocks.markPaid.mock.calls[0]![0].ids).toHaveLength(1);
+    expect(mocks.markPaid.mock.calls[0]![0].ids).toEqual([one.id]);
+  });
+
+  it('offers Undo rather than asking first — one tick, one tap back', async () => {
+    const run = runs[0]!;
+    const one = run.invoices[0]!;
+    mocks.markPaid.mockResolvedValue({ paid: [{ id: one.id }], missed: [] });
+
+    open();
+    tickFirstChild(expandRun(run).closest('li')!);
+
+    expect(await screen.findByText(/Marked paid/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
+
+  it('undo puts it back', async () => {
+    const run = runs[0]!;
+    const one = run.invoices[0]!;
+    mocks.markPaid.mockResolvedValue({ paid: [{ id: one.id }], missed: [] });
+
+    open();
+    tickFirstChild(expandRun(run).closest('li')!);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(mocks.unmark).toHaveBeenCalledWith(one.id));
   });
 });
 
@@ -203,15 +236,26 @@ describe('when it fails', () => {
   });
 });
 
-describe('the tick is never one careless tap away — spec §6', () => {
-  it('is not on the collapsed row', () => {
+describe('how much ceremony each action gets', () => {
+  /**
+   * One invoice ticks immediately and offers Undo. A whole run asks first.
+   *
+   * A dialog on every single tick is a tax paid on the ninety-nine correct
+   * ones to catch the one mistake, and this is the most repeated action in the
+   * app. A run is different: more money at once, and a bank reference worth
+   * capturing while it is in front of you.
+   */
+  it('puts a tick on every unpaid row, so it costs one tap', () => {
     open();
-    // Nothing offers to take money until a row has been deliberately opened.
-    expect(screen.queryByRole('button', { name: 'Mark paid' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Mark .* paid$/ }).length).toBeGreaterThan(0);
+  });
+
+  it('does not offer a whole run until it has been opened', () => {
+    open();
     expect(screen.queryByRole('button', { name: /Mark all/ })).not.toBeInTheDocument();
   });
 
-  it('confirms with a sheet rather than paying on the first tap', () => {
+  it('confirms a run with a sheet rather than paying on the first tap', () => {
     const run = runs[0]!;
     open();
     expandRun(run);

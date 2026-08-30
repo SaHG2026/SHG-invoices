@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterInvoices, sortInvoices, summarise } from '@/lib/derive/select';
+import { filterInvoices, searchInvoices, sortInvoices, summarise } from '@/lib/derive/select';
 import { groupIntoRuns, runInvoiceIds } from '@/lib/derive/runs';
 import { sumCents } from '@/lib/money';
 import { BUSINESSES, FIXTURE_TODAY, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
@@ -148,5 +148,74 @@ describe('summarise', () => {
     expect(summary.invoice_count).toBe(200);
     expect(summary.supplier_count).toBeLessThanOrEqual(SUPPLIERS.length);
     expect(summary.supplier_count).toBeGreaterThan(1);
+  });
+});
+
+describe('searchInvoices', () => {
+  /**
+   * Somebody looking for an invoice half-remembers it. The search has to work
+   * from a fragment of a supplier name and a fragment of a number, typed
+   * together, in either order.
+   */
+  it('finds by supplier name, however partial', () => {
+    for (const query of ['bidfood', 'Bidfood', 'bid', 'food']) {
+      const found = searchInvoices(rows, query);
+      expect(found.length).toBeGreaterThan(0);
+      for (const row of found) {
+        expect(row.supplier.name.toLowerCase()).toContain(query.toLowerCase());
+      }
+    }
+  });
+
+  it('finds by invoice number', () => {
+    const withNumber = rows.find((row) => row.invoice_number !== null)!;
+    const found = searchInvoices(rows, withNumber.invoice_number!);
+    expect(found.map((row) => row.id)).toContain(withNumber.id);
+  });
+
+  it('finds by the internal reference, though it is no longer displayed', () => {
+    // It is the only guaranteed-unique handle, so it stays searchable — for
+    // finding an invoice from a bank statement or an older note.
+    const target = rows[5]!;
+    expect(searchInvoices(rows, target.internal_ref).map((row) => row.id)).toContain(target.id);
+  });
+
+  it('needs every word to match, not the whole phrase', () => {
+    const target = rows.find((row) => row.invoice_number !== null)!;
+    const query = `${target.supplier.name.slice(0, 3)} ${target.invoice_number}`;
+
+    const found = searchInvoices(rows, query);
+    expect(found.map((row) => row.id)).toContain(target.id);
+    // Words in either order find the same thing.
+    const reversed = searchInvoices(rows, query.split(' ').reverse().join(' '));
+    expect(reversed.map((row) => row.id)).toEqual(found.map((row) => row.id));
+  });
+
+  it('finds by business code', () => {
+    const found = searchInvoices(rows, 'gmh');
+    expect(found.length).toBeGreaterThan(0);
+    for (const row of found) expect(row.business.code).toBe('GMH');
+  });
+
+  it('returns everything for an empty or blank query', () => {
+    for (const query of ['', '   ', '\t']) {
+      expect(searchInvoices(rows, query)).toHaveLength(rows.length);
+    }
+  });
+
+  it('returns nothing for a query that matches nothing', () => {
+    expect(searchInvoices(rows, 'zzzzzzzz')).toHaveLength(0);
+  });
+
+  it('does not mutate the array it was given', () => {
+    const snapshot = rows.map((row) => row.id);
+    searchInvoices(rows, 'bid');
+    expect(rows.map((row) => row.id)).toEqual(snapshot);
+  });
+
+  it('survives an invoice with no number', () => {
+    const withoutNumber = rows.filter((row) => row.invoice_number === null);
+    expect(withoutNumber.length).toBeGreaterThan(0);
+    expect(() => searchInvoices(withoutNumber, 'anything')).not.toThrow();
   });
 });

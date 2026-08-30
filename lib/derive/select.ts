@@ -85,6 +85,37 @@ export function sortInvoices(rows: ReadonlyArray<InvoiceRow>, key: SortKey): Inv
   return sorted;
 }
 
+/**
+ * Search by supplier name or invoice number.
+ *
+ * Matches loosely on purpose: somebody looking for an invoice half-remembers
+ * it. "bid 11" should find Bidfood's invoice 1123, so every whitespace-
+ * separated word has to appear somewhere, rather than the whole phrase
+ * matching one field.
+ *
+ * The internal reference is searched too, even though it is no longer shown.
+ * It is the only guaranteed-unique handle an invoice has, so it stays useful
+ * for finding one from a bank statement or an older note.
+ */
+export function searchInvoices(rows: ReadonlyArray<InvoiceRow>, query: string): InvoiceRow[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...rows];
+
+  return rows.filter((row) => {
+    const haystack = [
+      row.supplier.name,
+      row.invoice_number ?? '',
+      row.internal_ref,
+      row.business.code,
+      row.business.name,
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
 export interface OutstandingSummary {
   total_cents: number;
   invoice_count: number;

@@ -14,14 +14,20 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 export type ToastTone = 'done' | 'queued' | 'problem';
 
+interface ToastAction {
+  label: string;
+  onAct: () => void;
+}
+
 interface Toast {
   id: number;
   tone: ToastTone;
   message: string;
+  action?: ToastAction;
 }
 
 interface ToastApi {
-  show: (message: string, tone?: ToastTone) => void;
+  show: (message: string, tone?: ToastTone, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -43,19 +49,38 @@ const TONE_STYLE: Record<ToastTone, string> = {
   problem: 'bg-overdue text-white',
 };
 
-/** Long enough to read a reference number, short enough not to be in the way. */
+/**
+ * Long enough to read a figure and reach for Undo, short enough not to be in
+ * the way. An action that can only be undone for four seconds is not much of
+ * an undo, so anything offering one gets longer.
+ */
 const VISIBLE_MS = 4000;
+const VISIBLE_WITH_ACTION_MS = 8000;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const show = useCallback((message: string, tone: ToastTone = 'done') => {
-    setToasts((current) => [...current, { id: Date.now() + Math.random(), tone, message }]);
+  const show = useCallback(
+    (message: string, tone: ToastTone = 'done', action?: ToastAction) => {
+      setToasts((current) => [
+        ...current,
+        { id: Date.now() + Math.random(), tone, message, ...(action ? { action } : {}) },
+      ]);
+    },
+    [],
+  );
+
+  const dismiss = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
   useEffect(() => {
-    if (toasts.length === 0) return;
-    const timer = setTimeout(() => setToasts((current) => current.slice(1)), VISIBLE_MS);
+    const first = toasts[0];
+    if (!first) return;
+    const timer = setTimeout(
+      () => setToasts((current) => current.slice(1)),
+      first.action ? VISIBLE_WITH_ACTION_MS : VISIBLE_MS,
+    );
     return () => clearTimeout(timer);
   }, [toasts]);
 
@@ -72,12 +97,24 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
       >
         {toasts.map((toast) => (
-          <p
+          <div
             key={toast.id}
-            className={`row-in mx-4 max-w-[calc(100%-2rem)] rounded-sm px-4 py-3 text-sm ${TONE_STYLE[toast.tone]}`}
+            className={`row-in pointer-events-auto mx-4 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-sm px-4 py-3 text-sm ${TONE_STYLE[toast.tone]}`}
           >
-            {toast.message}
-          </p>
+            <span className="min-w-0">{toast.message}</span>
+            {toast.action ? (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.action!.onAct();
+                  dismiss(toast.id);
+                }}
+                className="shrink-0 font-medium underline"
+              >
+                {toast.action.label}
+              </button>
+            ) : null}
+          </div>
         ))}
       </div>
     </ToastContext.Provider>

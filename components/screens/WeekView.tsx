@@ -9,6 +9,7 @@ import { useProfiles } from '@/lib/queries/session';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { PaymentRunRow } from '@/components/invoice/PaymentRunRow';
 import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
+import { useTickOff } from '@/hooks/use-tick-off';
 import { formatDay } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { summarise } from '@/lib/derive/select';
@@ -40,6 +41,7 @@ export function WeekView({ scope }: { scope: Scope }) {
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
+  const tickOff = useTickOff();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paying, setPaying] = useState<InvoiceRow[]>([]);
@@ -130,7 +132,13 @@ export function WeekView({ scope }: { scope: Scope }) {
                           people={people}
                           expandedId={expandedId}
                           onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
-                          onMarkPaid={setPaying}
+                          onMarkPaid={(chosen) => {
+                            // One invoice ticks immediately with an undo; a
+                            // whole run goes through the sheet, where the
+                            // bank reference is worth capturing.
+                            if (chosen.length === 1) void tickOff(chosen[0]!);
+                            else setPaying(chosen);
+                          }}
                         />
                       ))}
                     </ul>

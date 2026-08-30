@@ -7,9 +7,17 @@ import { useProfiles } from '@/lib/queries/session';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { InvoiceRow } from '@/components/invoice/InvoiceRow';
 import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
+import { useTickOff } from '@/hooks/use-tick-off';
 import type { InvoiceRow as Invoice } from '@/lib/types';
 import { formatCents } from '@/lib/money';
-import { filterInvoices, SORT_OPTIONS, sortInvoices, summarise, type SortKey } from '@/lib/derive/select';
+import {
+  filterInvoices,
+  searchInvoices,
+  SORT_OPTIONS,
+  sortInvoices,
+  summarise,
+  type SortKey,
+} from '@/lib/derive/select';
 import { filterByScope, scopeHref, scopeLabel, type Scope } from '@/lib/scope';
 
 /**
@@ -29,11 +37,13 @@ export function PendingList({ scope }: { scope: Scope }) {
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
+  const tickOff = useTickOff();
 
   const [sort, setSort] = useState<SortKey>('due');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [paying, setPaying] = useState<Invoice[]>([]);
 
   /*
@@ -44,9 +54,10 @@ export function PendingList({ scope }: { scope: Scope }) {
   const visible = useMemo(() => {
     if (!today) return [];
     const scoped = filterByScope(invoices, scope, businesses);
-    const filtered = filterInvoices(scoped, { supplierId, overdueOnly, today });
+    const found = searchInvoices(scoped, query);
+    const filtered = filterInvoices(found, { supplierId, overdueOnly, today });
     return sortInvoices(filtered, sort);
-  }, [invoices, scope, businesses, supplierId, overdueOnly, sort, today]);
+  }, [invoices, scope, businesses, query, supplierId, overdueOnly, sort, today]);
 
   const summary = useMemo(() => summarise(visible), [visible]);
 
@@ -62,7 +73,36 @@ export function PendingList({ scope }: { scope: Scope }) {
 
   return (
     <AppChrome back={{ href: scopeHref(scope), label: scopeLabel(scope, businesses) }}>
-      <h1 className="text-h1 mb-4 text-ink">Pending</h1>
+      <h1 className="text-h1 mb-3 text-ink">Pending</h1>
+
+      {/*
+        Search. Every word has to appear somewhere across the supplier, the
+        invoice number and the business — so "bid 11" finds Bidfood's 1123,
+        which is how somebody half-remembers an invoice.
+      */}
+      <div className="mb-3 flex items-center rounded-sm border border-hairline bg-card">
+        <span aria-hidden className="pl-3 text-sm text-muted">
+          &#9906;
+        </span>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Supplier or invoice number"
+          aria-label="Search invoices"
+          className="touch min-w-0 flex-1 bg-transparent px-2 text-base text-ink outline-none"
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            aria-label="Clear search"
+            className="touch shrink-0 px-3 text-sm text-muted"
+          >
+            &times;
+          </button>
+        ) : null}
+      </div>
 
       {/* Sort. A row of pills, not a dropdown buried in a menu — spec §7.4. */}
       <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label="Sort by">
@@ -125,9 +165,11 @@ export function PendingList({ scope }: { scope: Scope }) {
         <p className="text-sm text-muted">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
-          {overdueOnly || supplierId
-            ? 'Nothing matches those filters. Clear one to see more.'
-            : 'No invoices outstanding here. Add one with the + button.'}
+          {query
+            ? `Nothing matches “${query}”.`
+            : overdueOnly || supplierId
+              ? 'Nothing matches those filters. Clear one to see more.'
+              : 'No invoices outstanding here. Add one with the + button.'}
         </p>
       ) : (
         <ul className="overflow-hidden rounded-sm border border-edge bg-card">
@@ -141,7 +183,7 @@ export function PendingList({ scope }: { scope: Scope }) {
               onToggle={() =>
                 setExpandedId((current) => (current === invoice.id ? null : invoice.id))
               }
-              onMarkPaid={() => setPaying([invoice])}
+              onMarkPaid={() => void tickOff(invoice)}
             />
           ))}
         </ul>
@@ -158,7 +200,7 @@ export function PendingList({ scope }: { scope: Scope }) {
         <div className="mx-auto flex max-w-[560px] items-center gap-3 px-4 py-3 pr-20">
           <span className="min-w-0 flex-1 text-xs uppercase tracking-widest text-muted">
             {summary.invoice_count} invoice{summary.invoice_count === 1 ? '' : 's'}
-            {overdueOnly || supplierId ? ' · filtered' : ''}
+            {overdueOnly || supplierId || query ? ' · filtered' : ''}
           </span>
           <span className="money shrink-0 text-h2 text-ink">
             {formatCents(summary.total_cents)}

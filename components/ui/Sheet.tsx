@@ -153,7 +153,7 @@ export function Sheet({ open, title, onClose, children, footer }: SheetProps) {
 
       <div
         ref={panelRef}
-        className="sheet-in absolute inset-x-0 flex flex-col bg-card shadow-[0_-2px_24px_rgba(18,56,75,0.18)]"
+        className="sheet-in absolute inset-x-0 flex flex-col bg-card shadow-(--shadow-sheet)"
         style={{
           /*
             Sized to what is visible, not to the layout viewport.

@@ -8,61 +8,98 @@
 
 :root {
   /* ---- 0. Brand ----------------------------------------- */
-  /* The icon artwork's own navy. Used for the auth screens, the PWA splash
-     and the browser chrome, so the app matches the thing you tapped to open
-     it. Added to the supplied set — flagged rather than assumed. */
-  --brand: #082f55;
+  /* Grocery Mate's own green, deepened.
+     The mark itself is #039147; at that value white text on it is 4.08:1,
+     which fails AA, so the action tone is darkened to #046A38 (6.72:1) and
+     the raw green is kept only where nothing sits on top of it. Measured,
+     not judged — the whole point of this file being the only one with hexes
+     in it is that these numbers can be checked. */
+  --brand: #04351e; /* auth screens, PWA splash, browser chrome */
+  --brand-mark: #039147; /* the logo's own green, for artwork only */
 
   /* ---- 1. Surfaces & text ------------------------------- */
-  --page: #d2e3f4; /* app background */
+  --page: #dcece1; /* app background */
   --card: #ffffff; /* invoice cards, header, drawer */
-  --hairline: #e2e8f0; /* rules INSIDE white cards */
-  --hairline-hi: #b9cfe6; /* card edges against --page (needs more contrast) */
-  --text: #0f172a; /* primary text, all amounts */
-  --muted: #435165; /* secondary text, dates, counts */
-  --pressed: #eff5fb; /* row/button pressed state */
+  --hairline: #e3ebe5; /* rules INSIDE white cards */
+  --hairline-hi: #b6cfc0; /* card edges against --page (needs more contrast) */
+  --text: #0f172a; /* primary text, all amounts — 14.6:1 on --page */
+  --muted: #3f5147; /* secondary text, dates, counts — 6.9:1 on --page */
+  --pressed: #eef6f0; /* row/button pressed state */
 
   /* ---- 2. Due spine (urgency sequence) ------------------ */
-  /* Read as one ramp: hot -> warm -> cool -> inert.          */
+  /* Read as one ramp: hot -> warm -> cool -> inert.
+     DELIBERATELY UNCHANGED by the repaint. This ramp is semantic, not brand:
+     it is the one thing on screen that has to be read correctly at a glance
+     on a bad phone in bad light, and its contrast is already verified. The
+     week blue in fact separates BETTER now that the action colour is green
+     rather than navy. */
   --spine-overdue: #e20808; /* past due */
   --spine-today: #8a6d00; /* due today */
   --spine-week: #2e6ca6; /* due within 7 days */
-  --spine-later: #94a3b8; /* beyond 7 days */
+  --spine-later: #8d9a92; /* beyond 7 days — nudged to the green grey */
 
   /* Tinted pill backgrounds — pair each with its spine colour as text */
   --spine-overdue-bg: #fde7e7;
   --spine-today-bg: #fbf3d6;
   --spine-week-bg: #e4eef8;
-  --spine-later-bg: #eef1f5;
+  --spine-later-bg: #eef2ef;
 
   /* ---- 3. Paid / cleared -------------------------------- */
-  /* Deliberately NOT the action colour. Used for the tick,
-     the paid chip, and the tick-off animation.               */
-  --paid: #15803d;
-  --paid-bg: #dcfae6;
+  /* Still deliberately NOT the action colour, and that constraint is what
+     moved it. Green was fine while the action tone was navy; with a green
+     action, a green "Mark all paid" button and a green "Save invoice" button
+     are the same button. Teal is the alternative this file already named
+     for exactly this case — see the block below. */
+  --paid: #0f766e;
+  --paid-bg: #d6f0ee;
 
   /* ---- 4. Primary action -------------------------------- */
   /* "New invoice", "Mark paid" confirm, primary buttons.
-     Contrast on white text: 8.6:1                            */
-  --action: #1b4f8f;
+     Contrast on white text: 6.72:1                           */
+  --action: #046a38;
   --action-text: #ffffff;
-  --action-hover: #163f73;
-  --action-bg: #e4eef8; /* tinted variant: links, selected drawer row */
+  --action-hover: #03552c;
+  --action-bg: #e2f2e8; /* tinted variant: links, selected drawer row */
 
   /* ---- 5. Person accents -------------------------------- */
   /* Four people. Distinct from the spine ramp, from --paid
      and from --action. Initials carry the meaning; colour is
      the helper — always render as tinted chip + dark accent
-     text, never as a solid block behind white text.          */
+     text, never as a solid block behind white text.
+     Milan moved off teal, which is now what "paid" means. */
   --person-1: #6d28d9; /* Rabindra */
   --person-1-bg: #ede4fd;
   --person-2: #be185d; /* Mani */
   --person-2-bg: #fce3ee;
-  --person-3: #0e7490; /* Milan */
-  --person-3-bg: #dcf0f5;
+  --person-3: #3538cd; /* Milan */
+  --person-3-bg: #e2e3fb;
   --person-4: #92400e; /* Sujan */
   --person-4-bg: #f8e8d8;
+
+  /* ---- 6. Shadows --------------------------------------- */
+  /* Tokens rather than rgba() sprinkled through components, which is where
+     they were — three navy shadows that a repaint would have missed, in a
+     codebase whose one palette rule is that colour lives here. */
+  --shadow-lift: 0 2px 12px rgba(4, 53, 30, 0.26); /* the floating + */
+  --shadow-sheet: 0 -2px 24px rgba(4, 53, 30, 0.16); /* the bottom sheet */
+  --shadow-dialog: 0 6px 36px rgba(4, 53, 30, 0.3); /* the confirm dialog */
 }
+
+/* ============================================================
+   THE PREVIOUS PALETTE — paste this block over the one above
+   to put the navy back. Kept verbatim so the repaint is one
+   commit to revert and one block to compare against.
+   ------------------------------------------------------------
+   --brand: #082F55;
+   --page: #d2e3f4;   --card: #ffffff;
+   --hairline: #e2e8f0;  --hairline-hi: #b9cfe6;
+   --text: #0f172a;   --muted: #435165;   --pressed: #eff5fb;
+   --spine-later: #94a3b8;  --spine-later-bg: #eef1f5;
+   --paid: #15803d;   --paid-bg: #dcfae6;
+   --action: #1b4f8f; --action-hover: #163f73; --action-bg: #e4eef8;
+   --person-3: #0e7490;  --person-3-bg: #dcf0f5;
+   ============================================================ */
+
 
 /* ============================================================
    ALTERNATIVE — keep the bright green button
@@ -94,6 +131,7 @@
   --color-muted: var(--muted);
   --color-pressed: var(--pressed);
   --color-brand: var(--brand);
+  --color-brand-mark: var(--brand-mark);
 
   --color-overdue: var(--spine-overdue);
   --color-today: var(--spine-today);
@@ -176,6 +214,7 @@
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
   --dur-panel: 260ms;
   --dur-fade: 180ms;
+  --dur-screen: 260ms;
 }
 
 /* ============================================================================
@@ -323,9 +362,27 @@
   animation: scrim-in var(--dur-panel) var(--ease-ios) both;
 }
 
-/* A screen arriving. Deliberately only a fade and 4px: a full slide between
-   routes on every tap becomes tiring on a screen somebody uses forty times a
-   day, and it delays the thing they came to read. */
+/* ----------------------------------------------------------------------------
+   A screen arriving.
+
+   This was a 4px fade for everything, on the reasoning that a full slide on
+   every tap becomes tiring. Half right: the tiring part is sliding when
+   nothing moved in the hierarchy. A screen you pushed INTO should arrive from
+   the right and leave to the right, because that is the direction you went,
+   and matching it is most of what makes a transition read as navigation
+   rather than as a redraw.
+
+   So there are three, chosen by lib/nav.ts from the change in URL depth:
+   deeper pushes in from the right, shallower pops back from the left, and
+   sideways — between two screens at the same level — keeps the plain fade,
+   because a slide there would imply a hierarchy that is not there.
+
+   Distance is 24px rather than a full screen width. A phone renders the new
+   screen over the old one rather than carrying both, so a full-width travel
+   shows an empty edge; 24px on a long decelerating curve reads as the same
+   gesture without it.
+   ------------------------------------------------------------------------- */
+
 @keyframes screen-in {
   from {
     opacity: 0;
@@ -339,6 +396,36 @@
 
 @utility screen-in {
   animation: screen-in var(--dur-fade) var(--ease-ios) both;
+}
+
+@keyframes screen-push {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility screen-push {
+  animation: screen-push var(--dur-screen) var(--ease-ios) both;
+}
+
+@keyframes screen-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility screen-pop {
+  animation: screen-pop var(--dur-screen) var(--ease-ios) both;
 }
 
 /* Tick-off: the spine segment fills to the paid colour over 200ms, then the

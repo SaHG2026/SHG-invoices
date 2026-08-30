@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
 import { AddSalesInvoiceSheet } from '@/components/invoice/AddSalesInvoiceSheet';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { ActivityBell } from './ActivityBell';
 import { NavDrawer } from './NavDrawer';
 import { useCurrentProfile } from '@/lib/queries/session';
+import { navDirection } from '@/lib/nav';
 
 /**
  * The shell every signed-in screen sits inside.
@@ -56,6 +57,19 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
    * animating between screens at all.
    */
   const pathname = usePathname();
+
+  /*
+   * Which way this navigation went, so the screen arrives from the side you
+   * came from. The previous path is a ref rather than state: it must not
+   * itself cause a render, and it is read during the render that follows the
+   * change — which is exactly the render whose animation depends on it.
+   */
+  const previousPath = useRef<string | null>(null);
+  const direction = navDirection(previousPath.current, pathname ?? '/');
+  previousPath.current = pathname ?? '/';
+
+  const screenMotion =
+    direction === 'forward' ? 'screen-push' : direction === 'back' ? 'screen-pop' : 'screen-in';
 
   /*
    * Deli Delights is the only business with two directions, so it is the only
@@ -151,7 +165,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         </div>
       </header>
 
-      <main key={pathname} className="screen-in mx-auto max-w-[560px] px-4 pb-28 pt-6">
+      <main key={pathname} className={`${screenMotion} mx-auto max-w-[560px] px-4 pb-28 pt-6`}>
         {children}
       </main>
 
@@ -160,7 +174,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
           type="button"
           onClick={pressedAdd}
           aria-label="Add invoice"
-          className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(8,47,85,0.28)]"
+          className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-action text-h1 text-action-text shadow-(--shadow-lift)"
           style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
         >
           +

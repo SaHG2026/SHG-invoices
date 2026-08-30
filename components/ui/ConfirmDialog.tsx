@@ -70,7 +70,7 @@ export function ConfirmDialog({
       */}
       <div aria-hidden onClick={onCancel} className="absolute inset-0 bg-ink/60" />
 
-      <div className="row-in relative w-full max-w-[380px] overflow-hidden rounded-sm bg-card shadow-[0_6px_36px_rgba(18,56,75,0.35)]">
+      <div className="row-in relative w-full max-w-[380px] overflow-hidden rounded-sm bg-card shadow-(--shadow-dialog)">
         <div className="bg-today px-4 py-3">
           <h2
             className="text-h2 text-white"

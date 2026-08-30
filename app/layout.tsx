@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import { Providers } from './providers';
-import { BRAND_NAVY } from './manifest';
+import { BRAND_GREEN } from './manifest';
 import './globals.css';
 
 /**
@@ -52,9 +52,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Matches the icon artwork's own navy, so the splash screen and the browser
-  // chrome are the same colour as the thing you tapped to get here.
-  themeColor: BRAND_NAVY,
+  // The app's deep green, so the splash screen and the browser chrome are the
+  // same colour as the thing you tapped to get here.
+  themeColor: BRAND_GREEN,
   width: 'device-width',
   initialScale: 1,
   // The add-invoice sheet has to survive the on-screen keyboard (notes §4),

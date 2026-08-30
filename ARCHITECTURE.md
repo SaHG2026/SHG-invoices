@@ -774,7 +774,7 @@ Nothing about the current schema blocks it, and nothing needs adding now.
 ## 19. Where the build has got to
 
 Written for whoever picks this up next, including a later session of me.
-**Kept current — §§20–26 are the changes made after the original six phases,
+**Kept current — §§20–27 are the changes made after the original six phases,
 and this section describes the app as it stands today.**
 
 Phases 1–6 built and signed off. Everything since is client-driven revision
@@ -783,7 +783,7 @@ between Phase 6 and Phase 7: navigation, the home screen, the customer ledger.
 and the client asks to be consulted before it is.**
 
 Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`,
-branch `tidy-up-before-phase-7` · 464 tests, run under `TZ=UTC`,
+branch `tidy-up-before-phase-7` · 469 tests, run under `TZ=UTC`,
 `Australia/Sydney` and `America/Los_Angeles` before every commit.
 
 ### What exists
@@ -1596,3 +1596,77 @@ notifications off never turns information off — it only decides what a phone
 interrupts you for.
 
 Tests: 464, under all three timezones.
+
+
+---
+
+## 27. The green repaint, and native screen transitions
+
+### 27.1 Colour
+
+The client asked for the app to take Grocery Mate's green. Every value below
+was measured, which is the entire reason `app/globals.css` is the only file
+allowed to contain a hex.
+
+**The logo green cannot be the button green.** The mark is `#039147`; white
+text on it is **4.08:1**, under the 4.5:1 floor. Same hue deepened to
+`#046a38` gives **6.72:1**. `--brand-mark` keeps the original for artwork,
+where nothing sits on top of it.
+
+| Token | Was | Now | Why |
+|---|---|---|---|
+| `--brand` | `#082F55` | `#04351E` | Auth screens, splash, browser chrome |
+| `--page` | `#d2e3f4` | `#dcece1` | Ink 14.6:1, muted 6.9:1 on it |
+| `--action` | `#1b4f8f` | `#046a38` | 6.72:1 on white |
+| `--paid` | `#15803d` | `#0f766e` | See below |
+| `--person-3` | `#0e7490` | `#3538cd` | Teal now means "paid" |
+
+**[decision] Paid moved from green to teal.** It had to. §9's palette note says
+paid is "deliberately NOT the action colour", and that constraint was satisfied
+for free while the action tone was navy. With a green action, a green "Mark all
+paid" button and a green "Save invoice" button are the same button. Teal is
+what this file already named as the alternative for exactly this case — the
+original author wrote the contingency down and it came true.
+
+**[decision] The urgency ramp is untouched.** Red, amber, blue, grey. That
+sequence is *meaning*, not branding: it is the one thing on screen that has to
+be read correctly at a glance, on a bad phone, in bad light, and its contrast
+is already verified. The week blue in fact separates better now that the action
+colour is no longer navy.
+
+**[decision] Three shadows became tokens.** `--shadow-lift`, `--shadow-sheet`,
+`--shadow-dialog`. They were `rgba(8,47,85,…)` literals inside three
+components — navy shadows that a repaint would have silently missed, in a
+codebase whose one palette rule is that colour lives in a single file. Found by
+grepping for the old navy rather than by looking at the screen.
+
+**Reverting is one block.** The previous palette is kept verbatim as a comment
+directly beneath the new one. Paste it over and the app is navy again.
+
+### 27.2 Screens push and pop
+
+§21 gave every route the same 4px fade, reasoning that a full slide on every
+tap becomes tiring. Half right — the tiring part is sliding when nothing moved
+in the hierarchy.
+
+`navDirection` in `lib/nav.ts` compares URL depth: `/` is 0, `/b/gmh` is 2,
+`/b/gmh/pending` is 3. Deeper is a push and the screen arrives from the right;
+shallower is a pop and it comes from the left; **the same depth is neither**,
+and keeps the plain fade — Suppliers and Customers are peers, and sliding
+between them would say one sits inside the other.
+
+**[decision] A heuristic, deliberately.** Next's router does not report which
+direction a navigation went. The cost of guessing wrong is a screen sliding the
+wrong way for 260ms, which does not justify maintaining a navigation-history
+stack. Five tests pin the cases that matter.
+
+**[decision] 24px of travel, not a screen width.** The app renders the new
+screen over the old one rather than carrying both, so a full-width slide shows
+an empty edge where the outgoing screen should be. 24px on a long decelerating
+curve reads as the same gesture without the hole.
+
+The previous path is a `useRef`, not state: it must not itself cause a render,
+and it is read during the render that follows the change — which is exactly the
+render whose animation depends on it.
+
+Tests: 469, under all three timezones.

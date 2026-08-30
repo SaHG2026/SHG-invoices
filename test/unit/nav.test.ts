@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_ITEMS, activeSection, isBusinessActive } from '@/lib/nav';
+import { NAV_ITEMS, activeSection, isBusinessActive, navDirection } from '@/lib/nav';
 import { businessIdForPath } from '@/lib/scope';
 import { BUSINESSES } from '../fixtures/invoices';
 
@@ -137,5 +137,34 @@ describe('the + knows which business you are standing in', () => {
 
   it('picks nothing for a business that does not exist', () => {
     expect(businessIdForPath('/b/nope', BUSINESSES)).toBeNull();
+  });
+});
+
+describe('which way a screen arrives', () => {
+  it('pushes when you go deeper', () => {
+    expect(navDirection('/', '/b/gmh')).toBe('forward');
+    expect(navDirection('/b/gmh', '/b/gmh/pending')).toBe('forward');
+    expect(navDirection('/customers', '/customers/c-1')).toBe('forward');
+  });
+
+  it('pops when you come back up', () => {
+    expect(navDirection('/b/gmh/pending', '/b/gmh')).toBe('back');
+    expect(navDirection('/customers/c-1', '/customers')).toBe('back');
+    expect(navDirection('/b/gmh', '/')).toBe('back');
+  });
+
+  it('fades sideways, where there is no hierarchy to imply', () => {
+    // Suppliers and Customers are peers. Sliding between them would say one
+    // sits inside the other.
+    expect(navDirection('/customers', '/suppliers')).toBe('level');
+    expect(navDirection('/settings', '/customers')).toBe('level');
+  });
+
+  it('fades on the very first screen, with nothing to come from', () => {
+    expect(navDirection(null, '/')).toBe('level');
+  });
+
+  it('does not animate a navigation to where you already are', () => {
+    expect(navDirection('/b/gmh', '/b/gmh')).toBe('level');
   });
 });

@@ -83,3 +83,36 @@ function normalise(pathname: string): string {
   const path = (pathname || '/').split('?')[0]!.split('#')[0]!;
   return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
 }
+
+/* -------------------------------------------------------------------------- *
+ * Which way a navigation went.
+ *
+ * Native apps push a screen in from the right and pop it back out to the
+ * right, and that direction is most of what makes the movement read as
+ * navigation rather than as a redraw. Next's router does not say which
+ * happened, so it is worked out from the URLs.
+ *
+ * Depth is the heuristic: `/` is 0, `/customers` is 1, `/b/gmh/pending` is 3.
+ * Going deeper is a push, coming back up is a pop, and moving sideways between
+ * two screens at the same level is neither — a slide there would imply a
+ * hierarchy that is not real, so those cross-fade.
+ *
+ * It is a heuristic and it is allowed to be. The cost of getting one wrong is
+ * a screen sliding the wrong way for 260ms, which is why this is not worth a
+ * navigation-history stack to get exactly right.
+ * -------------------------------------------------------------------------- */
+
+export type NavDirection = 'forward' | 'back' | 'level';
+
+function depth(pathname: string): number {
+  return pathname.split('/').filter(Boolean).length;
+}
+
+export function navDirection(from: string | null, to: string): NavDirection {
+  if (from === null || from === to) return 'level';
+  const a = depth(from);
+  const b = depth(to);
+  if (b > a) return 'forward';
+  if (b < a) return 'back';
+  return 'level';
+}

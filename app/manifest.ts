@@ -16,13 +16,13 @@ import type { MetadataRoute } from 'next';
  */
 
 /**
- * The icon artwork's own background. Also the splash and browser chrome.
+ * The app's own deep green. Also the splash and browser chrome.
  *
  * The one hex outside app/globals.css, and unavoidably so: a web manifest is
  * JSON served at build time, and JSON cannot read a CSS variable. It is kept
- * in sync by hand with `--brand`. If the brand navy ever changes, both move.
+ * in sync by hand with `--brand`. If the brand green ever changes, both move.
  */
-export const BRAND_NAVY = '#082F55';
+export const BRAND_GREEN = '#04351E';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -37,8 +37,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: BRAND_NAVY,
-    theme_color: BRAND_NAVY,
+    background_color: BRAND_GREEN,
+    theme_color: BRAND_GREEN,
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

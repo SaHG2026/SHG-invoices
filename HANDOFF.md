@@ -36,13 +36,10 @@ were "it feels instantaneous". Every feature decision defers to it.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local` (gitignored, already populated)
 
-Phases 1–6 are built, deployed and signed off. **Phase 7 is next** — PWA
-hardening, offline write queue, error boundaries, a 200-row performance pass,
-and push notifications. The client said there were "more bits to tidy up"
-before starting it, so **ask before beginning Phase 7.**
-
-Those tidy-up bits are on `tidy-up-before-phase-7` and are **not** Phase 7.
-`ARCHITECTURE.md` §§20–26 have the reasoning; the short version:
+Phases 1–6 were built, deployed and signed off. Everything after them is
+client-driven revision, done between Phase 6 and Phase 7 and all on
+`tidy-up-before-phase-7`. **That work is finished and deployed.**
+`ARCHITECTURE.md` §§20–27 carry the reasoning; the index:
 
 | | |
 |---|---|
@@ -53,11 +50,31 @@ Those tidy-up bits are on `tidy-up-before-phase-7` and are **not** Phase 7.
 | §24 | Second round of phone feedback — the sheet, the menu counts, renames |
 | §25 | Sales invoices: what customers owe. The sheet's third and final fix |
 | §26 | Copy trimmed; only Mani is notified about payments |
+| §27 | The green repaint; screens push and pop by URL depth |
 
-**Next, and agreed with the client: a green repaint**, then Phase 7. Every
-colour is a token in one `:root` block in `app/globals.css` — a repaint is that
-block and nothing else, which is why it is worth doing as its own commit.
-**Ask before starting Phase 7 proper.**
+**Phase 7 is next and has NOT been started** — PWA hardening, offline write
+queue, error boundaries, a 200-row performance pass, and push notifications.
+The client has said he will begin it in a fresh session. **§4 rule 8 still
+stands: ask before beginning it.**
+
+### If you are the fresh session picking up Phase 7
+
+Read §§1–7 of this file, then `ARCHITECTURE.md` §8.1 (push, and why the
+in-app feed is the real channel) and §19 (what the app is today). Three things
+about Phase 7 specifically are already decided and are easy to get wrong:
+
+1. **Push must not name Mani.** Only he is notified when a bill is *paid*;
+   everyone with the switch on is notified when one is *added*. Implement the
+   first as `profiles.notify_on_payment` — true for one row, and deliberately
+   NOT in the `self_update` column grant, because the client asked that others
+   cannot turn it on for themselves. Never a branch on a display name.
+   `ARCHITECTURE.md` §26.2.
+2. **iOS gives no push unless the app is on the Home Screen.** Not a setting,
+   not workable around. `ARCHITECTURE.md` §8.1 — tell the client before
+   building, not after.
+3. **The service worker touches no writes.** The offline queue is TanStack
+   Query's paused mutations persisted to IndexedDB. The SW makes the app
+   installable and serves the shell. `ARCHITECTURE.md` §7.
 
 ---
 
@@ -65,7 +82,7 @@ block and nothing else, which is why it is worth doing as its own commit.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 464 tests
+npx vitest run       # 469 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -76,6 +93,14 @@ worst historical bug class is date handling, and a Sydney-only pass hides it:
 ```bash
 for tz in UTC Australia/Sydney America/Los_Angeles; do TZ=$tz npx vitest run; done
 ```
+
+### Looking at the app without signing in
+
+`test/preview-dashboard.test.tsx` renders the real components against the real
+fixture and writes standalone HTML. Skipped unless `PREVIEW_OUT` is set.
+`ARCHITECTURE.md` §21.6 has the commands. It is the only way to see a screen
+without credentials, and it is how the green repaint was shown to the client
+before it shipped.
 
 ### Deploying — two commands, and the second is easy to forget
 

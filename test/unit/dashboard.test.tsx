@@ -37,6 +37,30 @@ vi.mock('@/lib/queries/reference', () => ({
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+/*
+ * The header bell reads recent activity, and marking paid is reachable from
+ * every list, so both are stubbed here even where the test does not exercise
+ * them. Without this the component tree reaches a real query and there is no
+ * QueryClient in a bare render.
+ */
+vi.mock('@/lib/queries/detail', () => ({
+  useRecentActivity: () => ({ data: [] }),
+  useInvoice: () => ({ data: null, isLoading: false }),
+  useInvoiceActivity: () => ({ data: [] }),
+  useInvoiceNotes: () => ({ data: [] }),
+  useAddNote: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/payments', () => ({
+  useMarkPaid: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({ paid: [], missed: [] }),
+    isPending: false,
+  }),
+  useUnmarkPaid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+
 const Dashboard = (await import('@/app/(app)/page')).default;
 
 function open() {

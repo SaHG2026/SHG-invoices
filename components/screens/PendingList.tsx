@@ -6,6 +6,8 @@ import { useBusinesses } from '@/lib/queries/reference';
 import { useProfiles } from '@/lib/queries/session';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { InvoiceRow } from '@/components/invoice/InvoiceRow';
+import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
+import type { InvoiceRow as Invoice } from '@/lib/types';
 import { formatCents } from '@/lib/money';
 import { filterInvoices, SORT_OPTIONS, sortInvoices, summarise, type SortKey } from '@/lib/derive/select';
 import { filterByScope, scopeHref, scopeLabel, type Scope } from '@/lib/scope';
@@ -32,6 +34,7 @@ export function PendingList({ scope }: { scope: Scope }) {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [paying, setPaying] = useState<Invoice[]>([]);
 
   /*
    * One chain: scope, then filters, then sort. The footer total is computed
@@ -138,6 +141,7 @@ export function PendingList({ scope }: { scope: Scope }) {
               onToggle={() =>
                 setExpandedId((current) => (current === invoice.id ? null : invoice.id))
               }
+              onMarkPaid={() => setPaying([invoice])}
             />
           ))}
         </ul>
@@ -161,6 +165,12 @@ export function PendingList({ scope }: { scope: Scope }) {
           </span>
         </div>
       </div>
+      <MarkPaidSheet
+        open={paying.length > 0}
+        invoices={paying}
+        onClose={() => setPaying([])}
+        onPaid={() => setExpandedId(null)}
+      />
     </AppChrome>
   );
 }

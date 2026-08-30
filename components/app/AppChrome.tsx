@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import { useState } from 'react';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
 import { PersonChip } from '@/components/ui/PersonChip';
+import { ActivityBell } from './ActivityBell';
 import { useCurrentProfile, useSignOut } from '@/lib/queries/session';
 
 /**
@@ -35,7 +36,8 @@ export function AppChrome({ children, back }: AppChromeProps) {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-edge bg-card">
-        <div className="mx-auto flex h-14 max-w-[560px] items-center gap-2 px-4">
+        {/* relative, so the bell panel can hang beneath the bar */}
+        <div className="relative mx-auto flex h-14 max-w-[560px] items-center gap-2 px-4">
           {back ? (
             <Link
               href={back.href}
@@ -54,6 +56,8 @@ export function AppChrome({ children, back }: AppChromeProps) {
           )}
 
           <span className="flex-1" />
+
+          <ActivityBell />
 
           {profile ? (
             <button

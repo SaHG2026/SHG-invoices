@@ -72,6 +72,10 @@ export function pendingHref(scope: Scope): Route {
   return `/b/${scope}/pending` as Route;
 }
 
+export function invoiceHref(id: string): Route {
+  return `/invoices/${id}` as Route;
+}
+
 /**
  * Narrow the one client-side array to this scope.
  *

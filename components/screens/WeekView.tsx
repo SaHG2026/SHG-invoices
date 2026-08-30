@@ -8,6 +8,7 @@ import { useBusinesses } from '@/lib/queries/reference';
 import { useProfiles } from '@/lib/queries/session';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { PaymentRunRow } from '@/components/invoice/PaymentRunRow';
+import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
 import { formatDay } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { summarise } from '@/lib/derive/select';
@@ -15,6 +16,7 @@ import { groupIntoRuns } from '@/lib/derive/runs';
 import { bucketByUrgency, URGENCY_COLOUR, URGENCY_TINT, type Urgency } from '@/lib/derive/urgency';
 import { filterByScope, isKnownScope, pendingHref, scopeLabel, type Scope } from '@/lib/scope';
 import { WEEK_HORIZON_DAYS } from '@/lib/constants';
+import type { InvoiceRow } from '@/lib/types';
 
 /**
  * The Week. Spec §7.2 — the screen that answers "what leaves the account, and
@@ -40,6 +42,7 @@ export function WeekView({ scope }: { scope: Scope }) {
   const today = useSydneyToday();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [paying, setPaying] = useState<InvoiceRow[]>([]);
 
   const scoped = useMemo(
     () => filterByScope(invoices, scope, businesses),
@@ -127,6 +130,7 @@ export function WeekView({ scope }: { scope: Scope }) {
                           people={people}
                           expandedId={expandedId}
                           onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
+                          onMarkPaid={setPaying}
                         />
                       ))}
                     </ul>
@@ -142,6 +146,12 @@ export function WeekView({ scope }: { scope: Scope }) {
           ) : null}
         </>
       )}
+      <MarkPaidSheet
+        open={paying.length > 0}
+        invoices={paying}
+        onClose={() => setPaying([])}
+        onPaid={() => setExpandedId(null)}
+      />
     </AppChrome>
   );
 }

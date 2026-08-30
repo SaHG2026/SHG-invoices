@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { PersonChip } from '@/components/ui/PersonChip';
+import { invoiceHref } from '@/lib/scope';
 import { formatDateTime, formatDay, formatDayWithYear, type DateStr } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { formatDaysLate, URGENCY_COLOUR, urgencyOf } from '@/lib/derive/urgency';
@@ -38,6 +40,8 @@ interface InvoiceRowProps {
   showSpine?: boolean;
   /** Hidden inside a payment run, where the supplier is already the heading. */
   showSupplier?: boolean;
+  /** Offered on unpaid rows; Phase 5. Absent on paid and void ones. */
+  onMarkPaid?: () => void;
 }
 
 export function InvoiceRow({
@@ -48,6 +52,7 @@ export function InvoiceRow({
   onToggle,
   showSpine = true,
   showSupplier = true,
+  onMarkPaid,
 }: InvoiceRowProps) {
   const urgency = urgencyOf(invoice.due_date, today);
   const late = formatDaysLate(invoice.due_date, today);
@@ -94,6 +99,13 @@ export function InvoiceRow({
         </span>
       </button>
 
+      {/*
+        The tick sits inside the expanded panel, not on the row.
+        Spec §6: un-ticking must not be swipeable from a list because it is too
+        easy to fat-finger — and the same argument applies to ticking. One
+        deliberate tap to open, one to pay.
+      */}
+
       {expanded ? (
         <dl className="row-in border-t border-hairline bg-pressed px-4 py-3 pl-5">
           <Detail label="Amount">
@@ -118,6 +130,25 @@ export function InvoiceRow({
             {author ? `${author.display_name} · ` : ''}
             {formatDateTime(invoice.created_at)}
           </Detail>
+
+          <div className="flex gap-2 pt-3">
+            {onMarkPaid ? (
+              <button
+                type="button"
+                onClick={onMarkPaid}
+                className="touch flex-1 rounded-sm px-3 text-sm font-medium"
+                style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
+              >
+                Mark paid
+              </button>
+            ) : null}
+            <Link
+              href={invoiceHref(invoice.id)}
+              className="touch flex flex-1 items-center justify-center rounded-sm border border-hairline bg-card px-3 text-sm text-ink"
+            >
+              Open
+            </Link>
+          </div>
         </dl>
       ) : null}
     </li>

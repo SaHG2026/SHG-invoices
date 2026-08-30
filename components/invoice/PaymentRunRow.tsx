@@ -28,6 +28,8 @@ interface PaymentRunRowProps {
   people: readonly Profile[];
   expandedId: string | null;
   onToggle: (id: string) => void;
+  /** Ticks every invoice in the run — one transfer, one call (notes §1.6). */
+  onMarkPaid: (invoices: PaymentRun['invoices']) => void;
 }
 
 export function PaymentRunRow({
@@ -36,6 +38,7 @@ export function PaymentRunRow({
   people,
   expandedId,
   onToggle,
+  onMarkPaid,
 }: PaymentRunRowProps) {
   const single = run.invoices[0];
   if (run.invoices.length === 1 && single) {
@@ -46,13 +49,24 @@ export function PaymentRunRow({
         people={people}
         expanded={expandedId === single.id}
         onToggle={() => onToggle(single.id)}
+        onMarkPaid={() => onMarkPaid([single])}
       />
     );
   }
 
   const urgency = urgencyOf(run.due_date, today);
   const late = formatDaysLate(run.due_date, today);
-  const expanded = expandedId === run.key;
+
+  /*
+   * The run stays open while one of its own invoices is open.
+   *
+   * Expansion is tracked with a single id so only one thing is open at a time,
+   * which is right for a list. Inside a run it was wrong: opening a child set
+   * the id to the child, which no longer matched the run, so the run collapsed
+   * and took the child with it. Tapping an invoice made it vanish.
+   */
+  const childOpen = run.invoices.some((invoice) => invoice.id === expandedId);
+  const expanded = expandedId === run.key || childOpen;
 
   return (
     <li className="relative border-b border-hairline last:border-b-0">
@@ -83,20 +97,39 @@ export function PaymentRunRow({
       </button>
 
       {expanded ? (
-        <ul className="row-in border-t border-hairline bg-pressed">
-          {run.invoices.map((invoice) => (
-            <InvoiceRow
-              key={invoice.id}
-              invoice={invoice}
-              today={today}
-              people={people}
-              expanded={expandedId === invoice.id}
-              onToggle={() => onToggle(invoice.id)}
-              showSpine={false}
-              showSupplier={false}
-            />
-          ))}
-        </ul>
+        <div className="row-in border-t border-hairline bg-pressed">
+          {/*
+            The whole run first, because that is the common act: one transfer
+            settles all of them. Paying one out of three happens, but rarely,
+            so it lives one level further in.
+          */}
+          <div className="px-3 pt-3">
+            <button
+              type="button"
+              onClick={() => onMarkPaid(run.invoices)}
+              className="touch w-full rounded-sm px-3 text-sm font-medium"
+              style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
+            >
+              Mark all {run.invoices.length} paid · {formatCents(run.total_cents)}
+            </button>
+          </div>
+
+          <ul>
+            {run.invoices.map((invoice) => (
+              <InvoiceRow
+                key={invoice.id}
+                invoice={invoice}
+                today={today}
+                people={people}
+                expanded={expandedId === invoice.id}
+                onToggle={() => onToggle(invoice.id)}
+                onMarkPaid={() => onMarkPaid([invoice])}
+                showSpine={false}
+                showSupplier={false}
+              />
+            ))}
+          </ul>
+        </div>
       ) : null}
     </li>
   );

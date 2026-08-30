@@ -112,3 +112,39 @@ export interface PaymentRun {
   invoices: InvoiceRow[];
   total_cents: number;
 }
+
+/* -------------------------------------------------------------------------- */
+
+/** What the audit trigger records. Spec §5. */
+export type ActivityAction = 'created' | 'edited' | 'paid' | 'unpaid' | 'voided';
+
+export interface ActivityEntry {
+  id: number;
+  entity_type: string;
+  entity_id: string;
+  action: ActivityAction;
+  actor_id: string;
+  /**
+   * Changed fields as `{ field: { from, to } }` for edits, or a snapshot of the
+   * invoice for a creation. Written by the database trigger, never the client
+   * — notes §2: "the client will forget".
+   */
+  detail: Record<string, unknown> | null;
+  created_at: Timestamp;
+}
+
+export interface InvoiceNote {
+  id: string;
+  invoice_id: string;
+  author_id: string;
+  body: string;
+  created_at: Timestamp;
+}
+
+/**
+ * One entry in the invoice detail stream. Spec §7.6: notes and system events
+ * in a single chronological stream, "distinguished by weight not by tabs".
+ */
+export type StreamItem =
+  | { kind: 'activity'; at: Timestamp; actorId: string; entry: ActivityEntry }
+  | { kind: 'note'; at: Timestamp; actorId: string; note: InvoiceNote };

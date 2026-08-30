@@ -3,13 +3,15 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
 import { sydneyToday } from '@/lib/date';
+import { formatCents, sumCents } from '@/lib/money';
+import { filterByScope } from '@/lib/scope';
 
 /**
- * Tapping a row opens it.
+ * The dashboard. ARCHITECTURE §16.
  *
- * The detail screen proper — with notes and the activity stream — is Phase 5.
- * This is the lighter thing the client asked for: enough to answer "what is
- * this one?" without leaving the list you are reading.
+ * Its whole job is to say what the group owes and which business needs
+ * looking at. So what matters is that the four business figures and the
+ * headline are the same money counted once — notes §3.
  */
 
 const invoices = makeInvoices(6).map((invoice, i) => ({
@@ -45,89 +47,54 @@ function open() {
   );
 }
 
-/** The row buttons are the ones naming a supplier and an amount. */
-function rows() {
-  return screen.getAllByRole('button', { expanded: false }).concat(
-    screen.queryAllByRole('button', { expanded: true }),
-  );
-}
-
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
 
-describe('expanding an invoice', () => {
-  it('starts closed', () => {
+describe('the money adds up', () => {
+  it('the business rows sum to the headline', () => {
     open();
-    expect(screen.queryByText('Reference')).not.toBeInTheDocument();
-    for (const row of rows()) expect(row).toHaveAttribute('aria-expanded', 'false');
+    // If these disagree the dashboard is lying about money, and every screen
+    // below it inherits the lie.
+    const perBusiness = BUSINESSES.map((business) =>
+      sumCents(filterByScope(invoices, business.code.toLowerCase(), BUSINESSES)),
+    );
+    expect(perBusiness.reduce((a, b) => a + b, 0)).toBe(sumCents(invoices));
+
+    // The headline appears twice: the big figure and the Overall row.
+    expect(screen.getAllByText(formatCents(sumCents(invoices)))).toHaveLength(2);
   });
 
-  it('opens on tap and shows the details', () => {
+  it('shows every business, including any owing nothing', () => {
     open();
-    const first = rows()[0]!;
-    fireEvent.click(first);
-
-    expect(first).toHaveAttribute('aria-expanded', 'true');
-    for (const label of [
-      'Amount',
-      'Supplier',
-      'Business',
-      'Invoice date',
-      'Due',
-      'Reference',
-      'Added',
-    ]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+    for (const business of BUSINESSES) {
+      expect(screen.getByText(business.name)).toBeInTheDocument();
     }
   });
 
-  it('names who added it and when', () => {
+  it('each business row shows its own total', () => {
     open();
-    fireEvent.click(rows()[0]!);
-
-    const added = screen.getByText('Added').closest('div')!;
-    // Some real person, and a readable time — never a raw id or a timestamp.
-    expect(within(added).getByText(/Mani|Milan|Sujan|Rabindra/)).toBeInTheDocument();
-    expect(added.textContent).not.toMatch(/undefined|NaN|Invalid|T\d\d:/);
+    for (const business of BUSINESSES) {
+      const scoped = filterByScope(invoices, business.code.toLowerCase(), BUSINESSES);
+      const row = screen.getByText(business.name).closest('a')!;
+      expect(within(row).getByText(formatCents(sumCents(scoped)))).toBeInTheDocument();
+    }
   });
 
-  it('shows the full business name, not just the code', () => {
+  it('links each row to its own scope', () => {
     open();
-    fireEvent.click(rows()[0]!);
-
-    const business = screen.getByText('Business').closest('div')!;
-    expect(business.textContent).toMatch(/GroceryMate|Majheri|Deli Delights/);
-  });
-
-  it('closes again on a second tap', () => {
-    open();
-    const first = rows()[0]!;
-
-    fireEvent.click(first);
-    expect(screen.getByText('Reference')).toBeInTheDocument();
-
-    fireEvent.click(first);
-    expect(screen.queryByText('Reference')).not.toBeInTheDocument();
-  });
-
-  it('keeps only one open at a time', () => {
-    open();
-    const all = rows();
-
-    fireEvent.click(all[0]!);
-    fireEvent.click(all[1]!);
-
-    // One expanded panel, not two stacked on top of each other.
-    expect(screen.getAllByText('Reference')).toHaveLength(1);
-    expect(screen.getAllByRole('button', { expanded: true })).toHaveLength(1);
+    expect(screen.getByText('Overall').closest('a')).toHaveAttribute('href', '/b/all');
+    for (const business of BUSINESSES) {
+      expect(screen.getByText(business.name).closest('a')).toHaveAttribute(
+        'href',
+        `/b/${business.code.toLowerCase()}`,
+      );
+    }
   });
 
   it('renders nothing broken — notes §6', () => {
     const { container } = open();
-    for (const row of rows()) fireEvent.click(row);
-
     const text = container.textContent ?? '';
     for (const token of ['undefined', 'NaN', '[object Object]', 'Invalid Date']) {
       expect(text).not.toContain(token);
@@ -136,17 +103,6 @@ describe('expanding an invoice', () => {
 });
 
 describe('the headline', () => {
-  it('sums the same invoices the list renders', () => {
-    open();
-    const total = invoices.reduce((sum, invoice) => sum + invoice.amount_cents, 0);
-    const formatted = new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD',
-    }).format(total / 100);
-
-    expect(screen.getByText(formatted)).toBeInTheDocument();
-  });
-
   it('greets the signed-in person', () => {
     open();
     expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/Rabindra/);

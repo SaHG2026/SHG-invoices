@@ -1,210 +1,113 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { useCurrentProfile, useProfiles, useSignOut } from '@/lib/queries/session';
+import { useMemo } from 'react';
+import { useCurrentProfile } from '@/lib/queries/session';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
-import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
-import { PersonChip } from '@/components/ui/PersonChip';
+import { useBusinesses } from '@/lib/queries/reference';
+import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { greet } from '@/lib/greeting';
-import { formatDateTime, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
+import { formatDayWithYear } from '@/lib/date';
 import { formatCents } from '@/lib/money';
-import { summarise } from '@/lib/derive/select';
-import { formatDaysLate, URGENCY_COLOUR, urgencyOf } from '@/lib/derive/urgency';
+import { summarise, summariseByBusiness } from '@/lib/derive/select';
+import { scopeHref } from '@/lib/scope';
 
 /**
- * Phase 3 dashboard.
+ * The dashboard. ARCHITECTURE §16.
  *
- * Still not the real one — that is Phase 4 (ARCHITECTURE §16), with Overall
- * plus the four businesses and the due spine. This exists so the add-invoice
- * sheet has somewhere to open from and something to land in, which is what
- * makes the fifteen-second run timeable on a real phone.
+ * Answers one question before anything else: what does the group owe, and
+ * which business needs looking at. Everything below is a way into that.
+ *
+ * Every figure here is derived from the one unpaid-invoice array, so the
+ * headline, the Overall row and the four business rows cannot disagree with
+ * each other or with the lists they lead to (notes §3).
  */
-/** One line of the expanded invoice panel. */
-function Detail({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-1.5 last:border-b-0">
-      <dt className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</dt>
-      <dd className="figure-date min-w-0 truncate text-right text-sm text-ink">{children}</dd>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const { data: profile } = useCurrentProfile();
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
-  const { data: people = [] } = useProfiles();
-  const signOut = useSignOut();
-  const [sheetOpen, setSheetOpen] = useState(false);
-
-  /*
-   * Which row is expanded — one at a time, by id rather than by index.
-   *
-   * By id because the list reorders: a new invoice arrives at the top, and an
-   * index would silently expand a different invoice underneath the person
-   * reading it.
-   */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // The greeting depends on the current time, which the server does not know.
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => setNow(new Date()), []);
-  const today = useMemo(() => (now ? sydneyToday(now) : null), [now]);
+  const { data: businesses = [] } = useBusinesses();
+  const today = useSydneyToday();
 
   const summary = useMemo(() => summarise(invoices), [invoices]);
-  const recent = useMemo(
-    () => [...invoices].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12),
-    [invoices],
+  const perBusiness = useMemo(
+    () => (today ? summariseByBusiness(invoices, businesses, today) : []),
+    [invoices, businesses, today],
   );
 
-  if (!profile) return null;
-
   return (
-    <main className="mx-auto min-h-dvh max-w-[560px] px-4 pb-28 pt-8">
-      <header className="mb-8">
+    <AppChrome>
+      <header className="mb-6">
         <p className="figure-date text-xs uppercase tracking-widest text-muted">
-          {today ? formatDayWithYear(today) : ' '}
+          {today ? formatDayWithYear(today) : '\u00a0'}
         </p>
-        <h1 className="text-h1 text-ink">{now ? greet(profile.display_name) : ' '}</h1>
+        <h1 className="text-h1 text-ink">
+          {today && profile ? greet(profile.display_name) : '\u00a0'}
+        </h1>
       </header>
 
-      <section className="mb-8 border-t border-hairline pt-5">
+      <section className="mb-6 rounded-sm border border-edge bg-card p-4">
         <p className="text-xs uppercase tracking-widest text-muted">Owing</p>
         <p className="money mt-1 text-total text-ink" style={{ textAlign: 'left' }}>
           {formatCents(summary.total_cents)}
         </p>
         <p className="mt-1 text-sm text-muted">
-          {summary.invoice_count === 0
-            ? 'Nothing outstanding.'
-            : `across ${summary.invoice_count} invoice${summary.invoice_count === 1 ? '' : 's'} · ${summary.supplier_count} supplier${summary.supplier_count === 1 ? '' : 's'}`}
+          {isLoading
+            ? 'Loading\u2026'
+            : summary.invoice_count === 0
+              ? 'Nothing outstanding.'
+              : `across ${summary.invoice_count} invoice${summary.invoice_count === 1 ? '' : 's'} \u00b7 ${summary.supplier_count} supplier${summary.supplier_count === 1 ? '' : 's'}`}
         </p>
       </section>
 
-      <section className="mb-8">
-        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Recently added</p>
-
-        {isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
-        ) : recent.length === 0 ? (
-          <p className="border-t border-hairline pt-4 text-sm text-muted">
-            No invoices yet. Add one with the + button.
-          </p>
-        ) : (
-          <ul className="border-t border-hairline bg-card">
-            {recent.map((invoice) => {
-              const urgency = today ? urgencyOf(invoice.due_date, today) : 'later';
-              const late = today ? formatDaysLate(invoice.due_date, today) : null;
-              const author = people.find((person) => person.id === invoice.created_by);
-              const isOpen = expandedId === invoice.id;
-
-              return (
-                <li key={invoice.id} className="relative border-b border-hairline last:border-b-0">
-                  <span
-                    aria-hidden
-                    className="absolute inset-y-0 left-0 w-[3px]"
-                    style={{ backgroundColor: URGENCY_COLOUR[urgency] }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(isOpen ? null : invoice.id)}
-                    aria-expanded={isOpen}
-                    className="flex h-row w-full items-center gap-3 pl-4 pr-3 text-left active:bg-pressed"
-                  >
-                    {/*
-                      Spec §9: the attribution chip is permanent and appears
-                      everywhere the invoice appears afterwards.
-                    */}
-                    {author ? <PersonChip profile={author} /> : <span className="size-6" />}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-ink">
-                        {invoice.supplier.name}
-                      </span>
-                      <span className="figure-date block truncate text-xs text-muted">
-                        {formatDay(invoice.due_date)}
-                        {late ? ` · ${late}` : ''} · {invoice.business.code}
-                        {invoice.internal_ref ? ` · ${invoice.internal_ref}` : ' · saving…'}
-                      </span>
-                    </span>
-                    <span className="money shrink-0 text-sm text-ink">
-                      {formatCents(invoice.amount_cents)}
-                    </span>
-                    <span aria-hidden className="shrink-0 text-xs text-muted">
-                      {isOpen ? '⌃' : '⌄'}
-                    </span>
-                  </button>
-
-                  {isOpen ? (
-                    <dl className="row-in border-t border-hairline bg-pressed px-4 py-3 pl-5">
-                      <Detail label="Amount">
-                        <span className="money" style={{ textAlign: 'left' }}>
-                          {formatCents(invoice.amount_cents)}
-                        </span>
-                      </Detail>
-                      <Detail label="Supplier">{invoice.supplier.name}</Detail>
-                      <Detail label="Business">{invoice.business.name}</Detail>
-                      <Detail label="Invoice date">{formatDayWithYear(invoice.invoice_date)}</Detail>
-                      <Detail label="Due">
-                        <span style={{ color: URGENCY_COLOUR[urgency] }}>
-                          {formatDayWithYear(invoice.due_date)}
-                          {late ? ` · ${late}` : ''}
-                        </span>
-                      </Detail>
-                      {invoice.invoice_number ? (
-                        <Detail label="Invoice number">{invoice.invoice_number}</Detail>
-                      ) : null}
-                      <Detail label="Reference">
-                        {invoice.internal_ref || 'assigned once it saves'}
-                      </Detail>
-                      <Detail label="Added">
-                        {author ? `${author.display_name} · ` : ''}
-                        {formatDateTime(invoice.created_at)}
-                      </Detail>
-                    </dl>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="mb-8">
+      <nav aria-label="Businesses">
         <Link
-          href="/specimen"
-          className="touch flex items-center rounded-sm border border-hairline bg-card px-3 text-sm text-ink"
+          href={scopeHref('all')}
+          className="mb-2 flex h-row items-center gap-3 rounded-sm border border-edge bg-card px-3 active:bg-pressed"
         >
-          Design tokens (Phase 1 review page)
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-ink">Overall</span>
+            <span className="block text-xs text-muted">Every business together</span>
+          </span>
+          <span className="money shrink-0 text-sm text-ink">{formatCents(summary.total_cents)}</span>
+          <span aria-hidden className="shrink-0 text-xs text-muted">
+            &rsaquo;
+          </span>
         </Link>
-      </section>
 
-      <footer className="border-t border-hairline pt-4">
-        <button
-          type="button"
-          onClick={() => signOut.mutate()}
-          disabled={signOut.isPending}
-          className="touch w-full rounded-sm border border-hairline px-4 text-sm text-ink disabled:opacity-40"
-        >
-          {signOut.isPending ? 'Signing out…' : `Sign out (${profile.display_name})`}
-        </button>
-      </footer>
-
-      {/*
-        Global, and reachable from every screen. ARCHITECTURE §16: reading the
-        ledger is hierarchical, writing to it is not — making someone walk into
-        a business first would spend three of the fifteen seconds on navigation.
-      */}
-      <button
-        type="button"
-        onClick={() => setSheetOpen(true)}
-        aria-label="Add invoice"
-        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-sm bg-action text-h1 text-action-text shadow-[0_2px_12px_rgba(18,56,75,0.24)]"
-        style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
-      >
-        +
-      </button>
-
-      <AddInvoiceSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
-    </main>
+        <ul className="overflow-hidden rounded-sm border border-edge bg-card">
+          {perBusiness.map((entry) => (
+            <li key={entry.business.id} className="border-b border-hairline last:border-b-0">
+              <Link
+                href={scopeHref(entry.business.code.toLowerCase())}
+                className="flex h-row items-center gap-3 px-3 active:bg-pressed"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-ink">{entry.business.name}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {entry.invoice_count === 0
+                      ? 'Nothing outstanding'
+                      : `${entry.invoice_count} invoice${entry.invoice_count === 1 ? '' : 's'}`}
+                    {entry.overdue_count > 0 ? (
+                      <>
+                        {' \u00b7 '}
+                        <span style={{ color: 'var(--spine-overdue)' }}>
+                          {entry.overdue_count} overdue
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                </span>
+                <span className="money shrink-0 text-sm text-ink">
+                  {formatCents(entry.total_cents)}
+                </span>
+                <span aria-hidden className="shrink-0 text-xs text-muted">
+                  &rsaquo;
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </AppChrome>
   );
 }

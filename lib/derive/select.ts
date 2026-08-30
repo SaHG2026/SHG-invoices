@@ -12,7 +12,7 @@
 
 import { compareDates, type DateStr } from '../date';
 import { sumCents } from '../money';
-import type { InvoiceRow } from '../types';
+import type { Business, InvoiceRow } from '../types';
 
 export type SortKey = 'due' | 'supplier' | 'amount' | 'added';
 
@@ -101,4 +101,48 @@ export function summarise(rows: ReadonlyArray<InvoiceRow>): OutstandingSummary {
     invoice_count: rows.length,
     supplier_count: new Set(rows.map((row) => row.supplier_id)).size,
   };
+}
+
+export interface BusinessSummary extends OutstandingSummary {
+  business: Business;
+  /** How many are already past due — the number that decides the ordering. */
+  overdue_count: number;
+  overdue_cents: number;
+}
+
+/**
+ * One line per business for the dashboard.
+ *
+ * Every business appears, including the ones owing nothing: an empty row says
+ * "nothing outstanding here", while a missing row is indistinguishable from a
+ * business somebody forgot to set up.
+ *
+ * Ordered by whoever is most overdue, then by size. The dashboard's job is to
+ * put the thing that needs attention at the top, and `sort_order` is a
+ * housekeeping detail that knows nothing about that.
+ */
+export function summariseByBusiness(
+  rows: ReadonlyArray<InvoiceRow>,
+  businesses: ReadonlyArray<Business>,
+  today: DateStr,
+): BusinessSummary[] {
+  return businesses
+    .map((business) => {
+      const mine = rows.filter((row) => row.business_id === business.id);
+      const overdue = mine.filter((row) => compareDates(row.due_date, today) < 0);
+      return {
+        business,
+        total_cents: sumCents(mine),
+        invoice_count: mine.length,
+        supplier_count: new Set(mine.map((row) => row.supplier_id)).size,
+        overdue_count: overdue.length,
+        overdue_cents: sumCents(overdue),
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.overdue_cents - a.overdue_cents ||
+        b.total_cents - a.total_cents ||
+        a.business.sort_order - b.business.sort_order,
+    );
 }

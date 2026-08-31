@@ -866,9 +866,10 @@ as slot names); the app tolerates either.
 4. **Supplier payment terms.** Suppliers created from the add-invoice sheet have none. The
    suppliers list counts them and the supplier page sets them. The clean slate takes
    today's with it; the gap remains for the real ones.
-5. **CSV export.** Deferred pending the bookkeeper's answer to "what do you do with the
-   file when you get it?" — see §17. CSV is an hour; a real `.xlsx` is half a day and the
-   first dependency added purely for output.
+5. **Export by date range** — named by the client at handover, and the next piece of
+   work after a month of use. "From this date to this date export in excel or csv etc."
+   Still waiting on the question §17 asked: what happens to the file when it arrives.
+   That answer decides between an hour of CSV and half a day of `.xlsx`. §33.2.
 6. **Whether a customer can pay half an invoice.** The one question §28.3 leaves open.
    `sales_invoices.status` is binary today, and on a part payment both of its values are
    untrue.
@@ -2365,3 +2366,86 @@ nothing is asked when nothing is waiting, that the loss is stated in words, that
 "Wait" leaves them signed in, and that the app tries to send before it asks.
 
 Tests: 532, under all three timezones.
+
+---
+
+## 33. Handover — what was accepted, and what is next
+
+Written at the end of the session that shipped Phase 7. The app is live, the
+ledger is empty, and the three of them can start.
+
+### 33.1 What was accepted rather than fixed, and why
+
+A full pre-release audit ran against the live system before handover: the
+anonymous-access attack script against every table and RPC, an attempted
+anonymous upload and delete against the storage bucket, every policy, grant,
+constraint and trigger read, all 36 commits searched for secrets, `npm audit`,
+a clean build and the suite under three timezones. Eleven findings, no
+criticals.
+
+**One was fixed** — §32, signing out discarding unsent work. It was the only
+finding that was a defect rather than a risk: the app saying something untrue.
+
+**The rest the client accepted, and the reasoning is his, recorded because
+somebody will otherwise read them as things that were missed.** The reframing
+that decides all of them:
+
+> "this is meant to be just an advanced interactive notes. They have better
+> means to track record of things. Rather than scribble it somewhere or put in
+> note and then consolidate, its more of a reminder app about 'oh its already
+> due tomorrow?'"
+
+That changes the risk arithmetic completely, and it is the right frame. A
+reminder layer over records that live elsewhere is not a system of record, and
+the findings should be read against that:
+
+| Finding | Accepted because |
+|---|---|
+| No confirmed backup plan | The records exist elsewhere. Losing this database costs the reminders, not the accounts. |
+| Deletion possible outside the app | The app offers no delete path and never will, and only the client reaches Supabase. Deleting via a crafted request needs skill and intent none of the three has. |
+| `paid_by` forgeable by a direct request | Same reasoning, and the activity log takes its actor from the session, so the truth survives regardless. |
+| Staff photographs at public, guessable urls | Four headshots of people who run shops. Asked explicitly; answered explicitly. |
+| No bucket-level size or type limit | Only the builder can upload at all. |
+| `postcss` advisories via Next 15 | Build-time only, no runtime exposure, and no fix exists short of Next 16. Revisit at a quiet moment. |
+
+**The one correction worth keeping.** The client's reasoning was "as long as it
+can't be deleted from the app, it's fine, as I am the only one who can access
+Supabase." The first half is true and stays true. The second is not quite: a
+signed-in member could in principle delete through a crafted API request
+without touching Supabase. The decision stands and is sound; the premise was
+half right, and the next person should know which half.
+
+### 33.2 The next piece of work
+
+Not bugs, and not soon — **after a month of real use**, which is the same
+discipline spec §11 applies to everything else on that list.
+
+**Export by date range.** In his words: *"from this date to this date export in
+excel or csv etc."* That is more specific than §17 had it, and it settles the
+question §17 left open. The shape it implies:
+
+- A date range, not "everything" — which means the export is a *report*, taken
+  for a period, rather than a backup of the ledger.
+- Almost certainly the history screen's own filters, extended: it already
+  scopes by business, payer, search and void, and an export that disagreed with
+  the screen it was launched from would be the "one array, one total" rule
+  broken at the last step.
+- CSV is an hour and needs no dependency. A real `.xlsx` is half a day and is
+  the first dependency added purely for output — spec §4 rules out libraries
+  that cost more than they save, and this one is genuinely borderline.
+
+**The question to ask him before building either:** what happens to the file
+when it arrives. §17 has been waiting on that answer since Phase 6 and it is
+still the thing that decides between the two. If it is opened, read and
+deleted, CSV is right. If it is kept, formatted, and handed to somebody, it is
+worth the half day.
+
+### 33.3 Where everything sits
+
+- **Live:** https://shg-invoices.vercel.app, deployed from `main`.
+- **Repo:** `SaHG2026/SHG-invoices`. `main` now holds everything;
+  `phase-1-foundation` and `tidy-up-before-phase-7` are history.
+- **Database:** migrations `001`–`009` plus `CATCH_UP_001`–`009` all applied.
+  The ledger is empty by design — `CATCH_UP_009_RESET.sql` was run at handover.
+- **Push:** live. Edge Function deployed, secrets set, trigger installed.
+- **Tests:** 532, under `UTC`, `Australia/Sydney` and `America/Los_Angeles`.

@@ -31,16 +31,17 @@ from cold app open.** That target has been measured and met; the client's words
 were "it feels instantaneous". Every feature decision defers to it.
 
 - **Live:** https://shg-invoices.vercel.app
-- **Repo:** `SaHG2026/SHG-invoices`, branch `tidy-up-before-phase-7`
-  (everything through Phase 6 is on `phase-1-foundation`; the branch-per-phase
-  convention in `ARCHITECTURE.md` §14 was not followed until now)
+- **Repo:** `SaHG2026/SHG-invoices`, branch **`main`** — which holds everything.
+  `phase-1-foundation` and `tidy-up-before-phase-7` are history and can be
+  ignored. There was no `main` until handover; the branch-per-phase convention
+  in `ARCHITECTURE.md` §14 was never followed and is not worth starting now.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local` (gitignored, already populated)
 
-Phases 1–6 were built, deployed and signed off. §§20–27 are the client-driven
-revisions made between 6 and 7, all on `tidy-up-before-phase-7` and all
-deployed. §29 is Phase 7, which is built and **not yet deployed**. §28 is the
-only section describing work that is decided and not built at all.
+**Everything is built, deployed and in use.** Phases 1–7, the client-driven
+revisions between 6 and 7, push, and the go-live reset. §33 is the state at
+handover and the list of audit findings that were accepted rather than fixed —
+read it before concluding anything looks wrong.
 
 `ARCHITECTURE.md` carries the reasoning for every one of them:
 
@@ -59,20 +60,20 @@ only section describing work that is decided and not built at all.
 | §30 | Rabindra becomes the builder; logos and photographs change without a deploy |
 | §31 | The third motion pass — why it was abrupt; the go-live reset |
 | §32 | Signing out no longer discards unsent work |
+| §33 | **Handover** — the audit findings accepted, and what is next |
 
-**Phase 7 is built** — the offline write queue, the service worker, error
-boundaries, the 200-row pass and push. `ARCHITECTURE.md` §29.
+**Phase 7 is built, deployed and switched on** — the offline write queue, the
+service worker, error boundaries, the 200-row pass, and push all the way
+through to a phone. `ARCHITECTURE.md` §29, and `db/push/README.md` for how the
+sending half is wired if it ever needs re-doing.
 
-**One part of it is not switched on.** Push sends nothing until the five steps
-in `db/push/README.md` are done: a VAPID keypair, one Vercel environment
-variable, an Edge Function deploy with its secrets, and one SQL file. Every
-one of them needs credentials that deliberately do not exist on this side. In
-the meantime the app behaves exactly as it does today — the switch works,
-devices subscribe, nothing is sent — because the in-app bell was always the
-real channel and push was always a nudge on top of it.
+**The go-live reset has been run.** The ledger is empty on purpose: every
+supplier, invoice and customer from the build was test data and was deleted
+before the three of them started (§31.2). An empty app is the expected state,
+not a broken one.
 
-**§4 rule 8 applies now: the phase is finished, so report and wait.** What
-follows is §28's go-live work, and when is the client's call.
+**§4 rule 8 still applies to whatever comes next.** §33.2 has the piece of
+work the client has already named, and it is deliberately not soon.
 
 ### Four things Phase 7 decided that are easy to undo by accident
 
@@ -121,16 +122,20 @@ fixture and writes standalone HTML. Skipped unless `PREVIEW_OUT` is set.
 without credentials, and it is how the green repaint was shown to the client
 before it shipped.
 
-### Deploying — two commands, and the second is easy to forget
+### Deploying
 
 ```bash
 npx vercel deploy --prod --yes
-npx vercel alias set <new-deployment>.vercel.app shg-invoices.vercel.app
 ```
 
-**Without the alias step the stable URL still serves the previous build.**
+It now aliases `shg-invoices.vercel.app` itself, and says `Aliased` in the
+output when it has. Earlier notes in this file said a second
+`vercel alias set` was always required — check the output before reaching for
+it, and only run it if the alias line is missing.
+
 There is no GitHub auto-deploy: the client's Vercel account has no GitHub
-connection. Every release is manual.
+connection. Every release is manual, and it is his to run — the CLI login
+lives on his machine.
 
 ### Database changes
 
@@ -231,66 +236,58 @@ with `within()`.
 
 ## 6. What is still owed
 
-**The database is up to date.** `node db/verify_catchups.mjs` confirmed on
-31 Aug 2026 that `customers`, `sales_invoices`, both sales RPCs and the push
-tables are all present — CATCH_UP_004 and 005 have been run, and the entries
-that used to sit here saying otherwise are gone. That script sees schema shape
-only, which is all the anon key is allowed to see. `db/verify_catchups.sql`
-covers the rest — the reference index, the accent slots, the column grant — and
-is read-only, for pasting into the Supabase editor.
+**Nothing is blocking. The app is live and in daily use.** Everything below
+is either waiting on real usage or waiting on the client.
 
-### Before it goes to the three of them — the go-live gate
+### Done, so nobody re-derives them
 
-`ARCHITECTURE.md` §28 has the reasoning for all three.
+Every database file through `CATCH_UP_009_RESET` has been run. Push is fully
+wired and sending. Rabindra is the builder — out of the lists, out of both
+notification audiences, access untouched. Logos and photographs are his to
+change from `/brand` without a deploy. The go-live reset has been run and the
+ledger started empty.
 
-1. **A clean slate.** Written as `db/CATCH_UP_009_RESET.sql` and handed to the
-   client — run once, by him, immediately before the three of them start.
-   Every invoice, note, activity row, supplier, customer, sales invoice, ref
-   counter and push subscription goes; businesses, profiles and every policy
-   stay. §31.2.
-   A deliberate exception to §4 rule 5, which is exactly why it lives **outside
-   the app** — no screen, no button, no admin mode. Nothing in SQL can tell an
-   empty ledger from a month-old one, so the warning at the top of that file is
-   the only safeguard there is, and it is the feature.
-2. ~~**Rabindra stops being one of the names.**~~ **Done** — `CATCH_UP_007.sql`
-   and §30.1. `role = 'builder'`, which no RLS policy reads, so his access is
-   untouched. He is out of the payer filter and out of both push audiences.
-   §28.2 predicted this would also cost him the six-digit quick unlock; it does
-   not, because there is no profile picker — the unlock screen reads whoever
-   signed in.
-3. **Deli Delights' logo** — and this is no longer a job for whoever has the
-   repo. §30.2: the client adds it himself at `/brand`, reachable from
-   Settings. `lib/logos.ts` stays as the fallback for what shipped, so adding a
-   file there is still possible and no longer necessary. Rabindra's photograph
-   is **no longer wanted** and is not owed.
+### The next piece of work, deliberately not yet
 
-### Owed after Phase 7
+1. **Export by date range**, in his words *"from this date to this date export
+   in excel or csv etc."* §33.2 has the shape and the one question to ask him
+   before building it: what happens to the file when it arrives. That answer
+   decides between an hour of CSV and half a day of `.xlsx` plus the first
+   dependency added purely for output.
+   **After a month of real use**, per spec §11's discipline and his own words.
 
-4. **Switching push on — two steps left of five.** Done: `CATCH_UP_006.sql` is
-   run, the VAPID keypair is generated, and the public half is set in Vercel.
-   Left: deploy the Edge Function with its four secrets, and run
-   `db/push/notify_trigger.sql` after setting `app.notify_url` and
-   `app.notify_secret`. Both need a Supabase CLI login, which is the one
-   credential that does not exist on this side. `db/push/README.md`.
-   **The private key and the notify secret are not in this repo** and were
-   handed to the client directly; if they are lost, generate a new keypair and
-   update the Vercel variable to match.
-5. **Supplier payment terms.** Suppliers created from the add-invoice sheet
+### Small things, whenever
+
+2. **Deli Delights' logo**, when he sends it — and it is no longer a job for
+   whoever has the repo. He adds it himself at `/brand`, reachable from
+   Settings. `lib/logos.ts` remains the fallback for what shipped.
+3. **Supplier payment terms.** Suppliers created from the add-invoice sheet
    have none and fall back to 14 days. The suppliers list counts them; the
-   supplier page sets them. The clean slate removes today's instances; the gap
-   stays, so it is worth a prompt once real suppliers exist.
-6. **CSV export.** Waiting on the bookkeeper's answer to *"what do you do with
-   the file when you get it?"* CSV is an hour. A real `.xlsx` is half a day and
-   the first dependency added purely for output. `ARCHITECTURE.md` §17.
-7. **`CATCH_UP_003.sql`** may still be unrun (accents as slot names). The app
-   tolerates either, so it is not urgent. `db/verify_catchups.sql` answers it.
+   supplier page sets them. Worth a prompt once real suppliers exist.
+4. **Tidying the audit left behind** (§33.1): three unused packages
+   (`lucide-react`, `react-hook-form`, `@hookform/resolvers`), the `/specimen`
+   page, and the middleware's `offline` exemption matching more than it should.
+   None of it does harm; all of it makes the next audit shorter.
+
+### Known and deliberately accepted — do not "fix" these
+
+The pre-release audit found eleven things. One was a defect and was fixed
+(§32). **The other ten were weighed by the client and accepted**, on the
+reframing that this is a reminder layer over records that live elsewhere —
+not a system of record. §33.1 has each one with his reasoning.
+
+If you are auditing this app and find no automatic backups, an open deletion
+path outside the app, or staff photographs at public urls: **those are
+decisions, not oversights.** Read §33.1 before raising them again. If the app
+ever stops being a notebook and starts being the record, every one of them
+must be reopened — that is the condition the acceptance rests on.
 
 **Closed:** Deli Delights receivables. §17 scoped a Phase 8 of three tables;
 the client's ruling is that `customers` and `sales_invoices` are the whole of
-it, because the app is a shared notebook and not an accounting system.
-**Part payments are carried by a note and a moved due date**, on both sides,
-and deliberately not by an `amount_received_cents` column — a partial-payment
-field is the first plank of an accounts package. §28.3 has what that costs.
+it. **Part payments are carried by a note and a moved due date**, on both
+sides, and deliberately not by an `amount_received_cents` column — a
+partial-payment field is the first plank of an accounts package. §28.3 has
+what that costs.
 
 ---
 

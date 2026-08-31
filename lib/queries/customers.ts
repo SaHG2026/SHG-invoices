@@ -1,6 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { qk } from './keys';
 import type { Customer } from '@/lib/types';
@@ -60,16 +62,40 @@ export function useAllCustomers() {
   });
 }
 
-export function useCreateCustomer() {
-  const queryClient = useQueryClient();
+export interface CreateCustomerInput {
+  /** Decided here rather than by the database, for the reason in `optimisticSupplier`. */
+  id: string;
+  name: string;
+  actorId: string;
+}
 
-  return useMutation({
-    mutationFn: async ({ name, actorId }: { name: string; actorId: string }): Promise<Customer> => {
-      const { data, error } = await supabase()
+/** A customer as it exists before the database has seen it. */
+export function optimisticCustomer(id: string, name: string): Customer {
+  return {
+    id,
+    name: name.trim(),
+    contact_name: null,
+    contact_phone: null,
+    contact_email: null,
+    notes: null,
+    active: true,
+  };
+}
+
+export function registerCustomerMutations(queryClient: QueryClient) {
+  const insertInto = (customer: Customer) => (current: Customer[] | undefined) =>
+    [...(current ?? []).filter((existing) => existing.id !== customer.id), customer].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+
+  queryClient.setMutationDefaults(mk.customers.create, {
+    mutationFn: async ({ id, name, actorId }: CreateCustomerInput): Promise<void> => {
+      const { error } = await supabase()
         .from('customers')
-        .insert({ name: name.trim(), created_by: actorId })
-        .select(COLUMNS)
-        .single();
+        .upsert(
+          { id, name: name.trim(), created_by: actorId },
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
 
       if (error) {
         // customers_name_ci is a unique index on active customers.
@@ -78,24 +104,19 @@ export function useCreateCustomer() {
         }
         throw error;
       }
-      return data as Customer;
     },
-    onSuccess: (customer) => {
-      const insert = (current: Customer[] | undefined) =>
-        [...(current ?? []), customer].sort((a, b) => a.name.localeCompare(b.name));
-
-      queryClient.setQueryData<Customer[]>(qk.customers.all, insert);
-      queryClient.setQueryData<Customer[]>(qk.customers.withInactive, insert);
+    onMutate: ({ id, name }: CreateCustomerInput) => {
+      const optimistic = optimisticCustomer(id, name);
+      queryClient.setQueryData<Customer[]>(qk.customers.all, insertInto(optimistic));
+      queryClient.setQueryData<Customer[]>(qk.customers.withInactive, insertInto(optimistic));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk.customers.all });
       queryClient.invalidateQueries({ queryKey: qk.customers.withInactive });
     },
   });
-}
 
-export function useUpdateCustomer() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  queryClient.setMutationDefaults(mk.customers.update, {
     mutationFn: async ({
       id,
       ...changes
@@ -115,7 +136,7 @@ export function useUpdateCustomer() {
       }
       return data as Customer;
     },
-    onSuccess: (customer) => {
+    onSuccess: (customer: Customer) => {
       const replace = (current: Customer[] | undefined) =>
         (current ?? []).map((existing) => (existing.id === customer.id ? customer : existing));
 
@@ -124,5 +145,15 @@ export function useUpdateCustomer() {
       queryClient.invalidateQueries({ queryKey: qk.customers.all });
       queryClient.invalidateQueries({ queryKey: qk.customers.withInactive });
     },
+  });
+}
+
+export function useCreateCustomer() {
+  return useMutation<void, Error, CreateCustomerInput>({ mutationKey: mk.customers.create });
+}
+
+export function useUpdateCustomer() {
+  return useMutation<Customer, Error, Partial<Customer> & { id: string }>({
+    mutationKey: mk.customers.update,
   });
 }

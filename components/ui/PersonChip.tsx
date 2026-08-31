@@ -1,4 +1,7 @@
+'use client';
+
 import { personPhoto } from '@/lib/logos';
+import { useBrandAsset } from '@/lib/brand/context';
 import type { Profile } from '@/lib/types';
 
 /**
@@ -50,7 +53,11 @@ interface PersonChipProps {
 
 export function PersonChip({ profile, size = 'sm' }: PersonChipProps) {
   const slot = slotOf(profile);
-  const photo = personPhoto(profile.display_name);
+
+  // Uploaded first, then the bundled file, then initials. Same three levels as
+  // BusinessMark, for the same reason.
+  const uploaded = useBrandAsset('people', profile.display_name);
+  const photo = uploaded ?? personPhoto(profile.display_name);
 
   /*
    * A photograph where there is one, initials where there is not.

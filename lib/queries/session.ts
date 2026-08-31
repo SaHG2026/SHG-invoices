@@ -63,6 +63,32 @@ export function useProfiles() {
 }
 
 /**
+ * The people who run the businesses.
+ *
+ * The counterpart to `useProfiles`, and the distinction matters: that one is a
+ * LOOKUP, used to put a name and a face against whoever touched a row, and it
+ * must keep returning everybody or a chip somewhere cannot name its actor.
+ * This one is a LIST OF PEOPLE, rendered as choices, and it leaves out
+ * builders.
+ *
+ * ARCHITECTURE §28.2: Rabindra builds and maintains the app and is not part of
+ * running the businesses. Two facts about one person that the schema used to
+ * be unable to tell apart. `role` carries the second one and no RLS policy
+ * reads it, so nothing about his access changes — he simply stops being
+ * offered as one of the four.
+ *
+ * They are different questions, so they get different functions. Filtering the
+ * lookup instead would leave an unnamed chip on any row he ever touched.
+ */
+export function useTeam() {
+  const query = useProfiles();
+  return {
+    ...query,
+    data: (query.data ?? []).filter((person) => person.role !== 'builder'),
+  };
+}
+
+/**
  * The one field a person may change about themselves.
  *
  * ARCHITECTURE §8.1: two mechanisms in migration 007 enforce that, because

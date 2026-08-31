@@ -14,3 +14,7 @@ playwright-report/
 
 .vercel
 .env*
+
+# Supabase CLI scratch state: which project is linked, which CLI version.
+# Machine-local, not source.
+supabase/.temp/

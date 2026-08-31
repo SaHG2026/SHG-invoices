@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({ markPaid: vi.fn(), unmark: vi.fn() }));
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 

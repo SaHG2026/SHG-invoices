@@ -6,10 +6,9 @@ import { usePathname } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { AddInvoiceSheet } from '@/components/invoice/AddInvoiceSheet';
 import { AddSalesInvoiceSheet } from '@/components/invoice/AddSalesInvoiceSheet';
-import { PersonChip } from '@/components/ui/PersonChip';
 import { ActivityBell } from './ActivityBell';
+import { ConnectionStatus } from './ConnectionStatus';
 import { NavDrawer } from './NavDrawer';
-import { useCurrentProfile } from '@/lib/queries/session';
 import { navDirection } from '@/lib/nav';
 
 /**
@@ -47,7 +46,6 @@ interface AppChromeProps {
 }
 
 export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) {
-  const { data: profile } = useCurrentProfile();
   /*
    * Keyed on the path so the animation replays on every navigation.
    *
@@ -151,17 +149,19 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
             <HomeGlyph />
           </Link>
 
+          <ConnectionStatus />
+
           <ActivityBell />
 
-          {profile ? (
-            <Link
-              href={'/settings' as Route}
-              aria-label={`Signed in as ${profile.display_name} — settings`}
-              className="touch flex shrink-0 items-center justify-center"
-            >
-              <PersonChip profile={profile} />
-            </Link>
-          ) : null}
+          {/*
+            The profile chip used to sit here, linking to Settings. Removed at
+            the client's request, and it costs nothing: the menu opens with the
+            same chip, the same name and the same link, and the menu button is
+            two centimetres to the left on every screen.
+
+            What the space buys is the connection symbol above, which is the
+            one thing in this header that changes on its own.
+          */}
         </div>
       </header>
 

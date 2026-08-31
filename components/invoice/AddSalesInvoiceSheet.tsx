@@ -6,7 +6,12 @@ import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useBusinesses } from '@/lib/queries/reference';
 import { useCreateSalesInvoice } from '@/lib/queries/sales';
-import { useAllCustomers, useCreateCustomer } from '@/lib/queries/customers';
+import {
+  optimisticCustomer,
+  useAllCustomers,
+  useCreateCustomer,
+} from '@/lib/queries/customers';
+import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { addDays, sydneyToday } from '@/lib/date';
 import { formatCents, parseAmountToCents } from '@/lib/money';
 import { DEFAULT_TERMS_DAYS, DUE_PRESETS_DAYS } from '@/lib/constants';
@@ -70,17 +75,23 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   async function addCustomerInline() {
     if (!profile || newCustomerName.trim() === '') return;
     const name = newCustomerName.trim();
-    try {
-      const created: Customer = await createCustomer.mutateAsync({ name, actorId: profile.id });
-      setCustomerId(created.id);
-      setNewCustomerName('');
-      toast.show(`Added ${name}.`);
-    } catch (problem) {
-      toast.show(
-        problem instanceof Error ? problem.message : 'Couldn’t add that customer.',
-        'problem',
-      );
+    const created: Customer = optimisticCustomer(crypto.randomUUID(), name);
+    const outcome = await submitWrite(createCustomer, {
+      id: created.id,
+      name,
+      actorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that customer.'), 'problem');
+      return;
     }
+
+    setCustomerId(created.id);
+    setNewCustomerName('');
+    toast.show(
+      outcome.kind === 'queued' ? `Added ${name} — will send when you’re back online.` : `Added ${name}.`,
+    );
   }
 
   async function save() {

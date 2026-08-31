@@ -117,6 +117,29 @@ export function sydneyToday(now: Date = new Date()): DateStr {
 }
 
 /**
+ * This instant, as an ISO timestamp.
+ *
+ * The one sanctioned use of `toISOString`, and it exists so that the ban on it
+ * everywhere else can be absolute rather than "except where it happens to be
+ * fine". Three optimistic updates were calling it directly, which meant the
+ * rule in HANDOFF §4.2 was already untrue and the next person reading those
+ * lines would reasonably conclude the rule was advisory.
+ *
+ * **This is an instant, not a calendar date, and the two must never be
+ * confused.** `2026-09-01T13:30:00Z` is the first of September in London and
+ * the second in Sydney. Anything that wants a day asks `sydneyToday()` or
+ * converts explicitly with `sydneyDateOf()` — taking the first ten characters
+ * of this string is precisely the bug that notes §3 is about, and the reason
+ * the return type is `Timestamp` rather than `string`.
+ *
+ * Only for `created_at`/`updated_at` on an optimistic row, where the value is
+ * a placeholder that the server's own clock replaces on the next refetch.
+ */
+export function nowTimestamp(now: Date = new Date()): Timestamp {
+  return now.toISOString();
+}
+
+/**
  * The hour of the day in Sydney, 0–23.
  *
  * Used for the dashboard greeting. Deliberately not the phone's own clock: a

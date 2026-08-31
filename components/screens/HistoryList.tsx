@@ -5,7 +5,7 @@ import { AppChrome } from '@/components/app/AppChrome';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { InvoiceRow } from '@/components/invoice/InvoiceRow';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
-import { useProfiles } from '@/lib/queries/session';
+import { useProfiles, useTeam } from '@/lib/queries/session';
 import { useBusinesses, useSuppliers } from '@/lib/queries/reference';
 import { useHistory } from '@/lib/queries/history';
 import { formatCents, sumCents } from '@/lib/money';
@@ -25,7 +25,10 @@ import { businessForScope, isAll, scopeHref, scopeLabel, type Scope } from '@/li
  */
 export function HistoryList({ scope }: { scope: Scope }) {
   const today = useSydneyToday();
+  // Everybody, for naming whoever paid a given invoice.
   const { data: people = [] } = useProfiles();
+  // The three who pay things, for the filter chips. ARCHITECTURE §28.2.
+  const { data: team = [] } = useTeam();
   const { data: businesses = [] } = useBusinesses();
   const { data: suppliers = [] } = useSuppliers();
 
@@ -91,7 +94,7 @@ export function HistoryList({ scope }: { scope: Scope }) {
           Anyone
         </button>
 
-        {people.map((person) => (
+        {team.map((person) => (
           <button
             key={person.id}
             type="button"

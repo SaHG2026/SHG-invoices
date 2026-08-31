@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoice } from '../fixtures/invoices';
 import type { ActivityEntry, InvoiceNote } from '@/lib/types';
@@ -58,6 +59,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -65,7 +67,7 @@ vi.mock('@/lib/queries/detail', () => ({
   useInvoice: () => ({ data: mocks.invoice.current, isLoading: false }),
   useInvoiceActivity: () => ({ data: activity }),
   useInvoiceNotes: () => ({ data: notes }),
-  useAddNote: () => ({ mutateAsync: mocks.addNote, isPending: false }),
+  useAddNote: () => ({ mutateAsync: mocks.addNote, mutate: mocks.addNote, isPending: false }),
   useRecentActivity: () => ({ data: [] }),
 }));
 
@@ -100,6 +102,9 @@ function open() {
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  // Module-level state shared across the run: a test that goes offline and
+  // does not come back leaves the next one failing somewhere unrelated.
+  onlineManager.setOnline(true);
   mocks.invoice.current = invoice;
   mocks.unmark.mockResolvedValue(invoice);
   mocks.voidIt.mockResolvedValue(invoice);
@@ -151,7 +156,7 @@ describe('adding a note', () => {
   });
 
   it('gives the text back if it could not be saved', async () => {
-    mocks.addNote.mockRejectedValue(new Error('offline'));
+    mocks.addNote.mockRejectedValue(new Error('refused'));
     open();
 
     fireEvent.change(screen.getByLabelText('Add a note'), { target: { value: 'Important' } });
@@ -159,7 +164,27 @@ describe('adding a note', () => {
 
     // Losing what somebody typed is never acceptable.
     await waitFor(() => expect(screen.getByLabelText('Add a note')).toHaveValue('Important'));
-    expect(await screen.findByText(/check your connection/)).toBeInTheDocument();
+
+    /*
+     * It used to say "check your connection", which was a guess about the
+     * cause and usually the wrong one: while online, a rejected write is a
+     * refusal, not a signal problem. Being offline no longer reaches this
+     * branch at all - see the test below.
+     */
+    expect(await screen.findByText(/Nothing was written/)).toBeInTheDocument();
+  });
+
+  it('keeps a note and says it is queued when the phone is offline', async () => {
+    onlineManager.setOnline(false);
+    open();
+
+    fireEvent.change(screen.getByLabelText('Add a note'), { target: { value: 'Important' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(mocks.addNote).toHaveBeenCalled());
+    // The box is cleared, because the note is not lost - it is on the phone.
+    expect(screen.getByLabelText('Add a note')).toHaveValue('');
+    expect(await screen.findByText(/will send when you/)).toBeInTheDocument();
   });
 
   it('will not send an empty note', () => {

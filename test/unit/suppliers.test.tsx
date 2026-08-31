@@ -42,13 +42,26 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
   useSuppliers: () => ({ data: SUPPLIERS }),
-  useCreateSupplier: () => ({ mutateAsync: mocks.create, isPending: false }),
+  useCreateSupplier: () => ({ mutateAsync: mocks.create, mutate: mocks.create, isPending: false }),
+  // The real one, not a stub: it is the single definition of what a brand-new
+  // supplier looks like, and a mock of it here would let the sheet and the
+  // cache drift apart without a test noticing.
+  optimisticSupplier: (id: string, name: string) => ({
+    id,
+    name: name.trim(),
+    default_terms_days: null,
+    contact_name: null,
+    contact_phone: null,
+    notes: null,
+    active: true,
+  }),
 }));
 
 vi.mock('@/lib/queries/history', () => ({

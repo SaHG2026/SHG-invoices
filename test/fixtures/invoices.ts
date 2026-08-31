@@ -36,7 +36,9 @@ export const PROFILES: Profile[] = [
   { id: 'p-mani', display_name: 'Mani', initials: 'MA', accent: 'person-2', role: 'owner', notify_on_new_invoice: true, active: true },
   { id: 'p-milan', display_name: 'Milan', initials: 'MI', accent: 'person-3', role: 'member', notify_on_new_invoice: false, active: true },
   { id: 'p-sujan', display_name: 'Sujan', initials: 'SU', accent: 'person-4', role: 'member', notify_on_new_invoice: false, active: true },
-  { id: 'p-rabindra', display_name: 'Rabindra', initials: 'RA', accent: 'person-1', role: 'owner', notify_on_new_invoice: true, active: true },
+  // The builder: full access, not one of the people running the businesses,
+  // and never a notification target. ARCHITECTURE §28.2 / CATCH_UP_007.
+  { id: 'p-rabindra', display_name: 'Rabindra', initials: 'RA', accent: 'person-1', role: 'builder', notify_on_new_invoice: false, active: true },
 ];
 
 const SUPPLIER_NAMES: ReadonlyArray<[string, number | null]> = [

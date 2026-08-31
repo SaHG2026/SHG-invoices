@@ -12,11 +12,18 @@ import type { DateStr, Timestamp } from './date';
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
 
 /**
- * Not a permission. All four people have identical access to every invoice;
- * `role` only decides who sees the owner's overview and the lightly accented
- * treatment. No RLS policy references it — see migration 007.
+ * Not a permission. Every person has identical access to every invoice;
+ * `role` only decides what a screen shows. No RLS policy references it — see
+ * migration 007, which says so and warns that if it ever starts deciding what
+ * somebody can read or write, that belongs in a policy instead.
+ *
+ * `builder` is Rabindra, who maintains the app and does not run the
+ * businesses (ARCHITECTURE §28.2). It keeps him out of the lists of people and
+ * out of every notification, and it changes nothing about his access — which
+ * is exactly why it is here and not `active = false`: `is_member()` tests
+ * `active`, so deactivating him would lock him out of the app he maintains.
  */
-export type ProfileRole = 'member' | 'owner';
+export type ProfileRole = 'member' | 'owner' | 'builder';
 
 export interface Profile {
   id: string;

@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({ history: vi.fn() }));
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -89,14 +90,29 @@ beforeEach(() => {
 });
 
 describe('filtering by who paid — the two taps of spec §7.7', () => {
-  it('offers every person on arrival, no menu to open first', () => {
+  it('offers everybody who pays things on arrival, no menu to open first', () => {
     open();
     // Tap one is reaching this screen. Tap two must be the person.
-    for (const person of PROFILES) {
+    for (const person of PROFILES.filter((p) => p.role !== 'builder')) {
       expect(
         payerChips().getByRole('button', { name: new RegExp(person.display_name) }),
       ).toBeInTheDocument();
     }
+  });
+
+  it('does not offer the builder as somebody who paid', () => {
+    /*
+     * ARCHITECTURE §28.2. Rabindra maintains the app and does not run the
+     * businesses, so he is not one of the choices here. His access is
+     * untouched — this is `role`, which no RLS policy reads, and deliberately
+     * not `active`, which is the membership test itself.
+     *
+     * The lookup that names whoever paid an invoice still returns him, so a
+     * row he ever touched is still attributed correctly rather than showing an
+     * unnamed chip.
+     */
+    open();
+    expect(payerChips().queryByRole('button', { name: /Rabindra/ })).not.toBeInTheDocument();
   });
 
   it('filters to that person in a single tap', () => {

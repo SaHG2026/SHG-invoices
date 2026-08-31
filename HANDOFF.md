@@ -1,6 +1,6 @@
 # Handoff — Sagarmatha Payments
 
-You are picking up a build that is six phases in and working. This file is the
+You are picking up a build that is seven phases in and working. This file is the
 entry point: read it, then the three documents in §1, then start.
 
 **Everything below §3 is operational knowledge that was expensive to learn the
@@ -16,8 +16,9 @@ first time.** Reading it costs three minutes; re-deriving it costs a session.
 | `CLAUDE-CODE-NOTES.md` | **Where the bugs will be.** Written from a previous app of his that shipped these exact failures. Not hypothetical. |
 | `ARCHITECTURE.md` | **How** it is put together, and every decision taken since, with reasoning. §19 is the current state of the build. |
 
-Do not skim the notes. Eight bugs have already been found on a real phone in
-this build, and five of them are named in that file.
+Do not skim the notes. Ten bugs have been found in this build — nine on a real
+phone, one by writing down what a function's outcomes actually were — and five
+of them are named in that file before they happened.
 
 ---
 
@@ -36,10 +37,12 @@ were "it feels instantaneous". Every feature decision defers to it.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local` (gitignored, already populated)
 
-Phases 1–6 were built, deployed and signed off. Everything after them is
-client-driven revision, done between Phase 6 and Phase 7 and all on
-`tidy-up-before-phase-7`. **That work is finished and deployed.**
-`ARCHITECTURE.md` §§20–27 carry the reasoning; the index:
+Phases 1–6 were built, deployed and signed off. §§20–27 are the client-driven
+revisions made between 6 and 7, all on `tidy-up-before-phase-7` and all
+deployed. §29 is Phase 7, which is built and **not yet deployed**. §28 is the
+only section describing work that is decided and not built at all.
+
+`ARCHITECTURE.md` carries the reasoning for every one of them:
 
 | | |
 |---|---|
@@ -51,30 +54,45 @@ client-driven revision, done between Phase 6 and Phase 7 and all on
 | §25 | Sales invoices: what customers owe. The sheet's third and final fix |
 | §26 | Copy trimmed; only Mani is notified about payments |
 | §27 | The green repaint; screens push and pop by URL depth |
+| §28 | Going live: the clean slate, who counts as one of the four, Phase 8 closed |
+| §29 | **Phase 7** — the offline queue, the service worker, error boundaries, push |
+| §30 | Rabindra becomes the builder; logos and photographs change without a deploy |
+| §31 | The third motion pass — why it was abrupt; the go-live reset |
 
-**Phase 7 is next and has NOT been started** — PWA hardening, offline write
-queue, error boundaries, a 200-row performance pass, and push notifications.
-The client has said he will begin it in a fresh session. **§4 rule 8 still
-stands: ask before beginning it.**
+**Phase 7 is built** — the offline write queue, the service worker, error
+boundaries, the 200-row pass and push. `ARCHITECTURE.md` §29.
 
-### If you are the fresh session picking up Phase 7
+**One part of it is not switched on.** Push sends nothing until the five steps
+in `db/push/README.md` are done: a VAPID keypair, one Vercel environment
+variable, an Edge Function deploy with its secrets, and one SQL file. Every
+one of them needs credentials that deliberately do not exist on this side. In
+the meantime the app behaves exactly as it does today — the switch works,
+devices subscribe, nothing is sent — because the in-app bell was always the
+real channel and push was always a nudge on top of it.
 
-Read §§1–7 of this file, then `ARCHITECTURE.md` §8.1 (push, and why the
-in-app feed is the real channel) and §19 (what the app is today). Three things
-about Phase 7 specifically are already decided and are easy to get wrong:
+**§4 rule 8 applies now: the phase is finished, so report and wait.** What
+follows is §28's go-live work, and when is the client's call.
 
-1. **Push must not name Mani.** Only he is notified when a bill is *paid*;
-   everyone with the switch on is notified when one is *added*. Implement the
-   first as `profiles.notify_on_payment` — true for one row, and deliberately
-   NOT in the `self_update` column grant, because the client asked that others
-   cannot turn it on for themselves. Never a branch on a display name.
-   `ARCHITECTURE.md` §26.2.
-2. **iOS gives no push unless the app is on the Home Screen.** Not a setting,
-   not workable around. `ARCHITECTURE.md` §8.1 — tell the client before
-   building, not after.
-3. **The service worker touches no writes.** The offline queue is TanStack
-   Query's paused mutations persisted to IndexedDB. The SW makes the app
-   installable and serves the shell. `ARCHITECTURE.md` §7.
+### Four things Phase 7 decided that are easy to undo by accident
+
+1. **Push names nobody in code.** Only Mani is told when a bill is *paid*, and
+   that lives as `profiles.notify_on_payment` — true for one row, deliberately
+   outside the `self_update` column grant so nobody can turn it on for
+   themselves. The single place his name appears is an `UPDATE` in
+   `CATCH_UP_006.sql`, setting data. Never a branch on a display name.
+2. **Nothing in the app ever asks anybody to enable push.** No prompt, no
+   interstitial, no badge about the Home Screen. §28.4: build the capability
+   and stop. The switch is in Settings and that is the whole of it.
+3. **The service worker touches no writes, and must never.** `public/sw.js`
+   returns early on anything that is not a same-origin GET. A worker that
+   retries writes is a second queue in a second process, and two queues that
+   can both send the same invoice is how an invoice gets entered twice.
+   Background Sync makes exactly that mistake easy and appealing.
+4. **Everything a write needs must be in its variables, never in a closure.**
+   A queued write is resumed by key from a cold start, with no component left
+   holding what it captured. `lib/offline/keys.ts` has the full account, and
+   `test/unit/offline-queue.test.ts` fails if a new write is added to `mk`
+   without a function registered for it.
 
 ---
 
@@ -82,7 +100,7 @@ about Phase 7 specifically are already decided and are easy to get wrong:
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 469 tests
+npx vitest run       # 525 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -140,15 +158,21 @@ These are not preferences. Each one is load-bearing and several were paid for.
    worst bug. Calendar dates are `'YYYY-MM-DD'` strings and are never parsed
    into a `Date`.
 
-3. **Hex colours exist only in `app/globals.css`.** One documented exception:
-   `app/manifest.ts`, because a web manifest is JSON and cannot read a CSS
-   variable. Components use tokens.
+3. **Hex colours exist only in `app/globals.css`.** Components use tokens.
+   Two documented exceptions, both of which cannot read a CSS variable by
+   nature rather than by convenience: `app/manifest.ts`, because a web
+   manifest is JSON; and `app/global-error.tsx`, which renders when the root
+   layout has failed — which is exactly when the stylesheet cannot be relied
+   on, and a boundary that renders white-on-white is not a boundary.
 
 4. **One array, one total.** Every figure on a screen is derived from the same
    array the list renders (`ARCHITECTURE.md` §2). A total from a separate query
    is the bug notes §3 calls "trust-destroying".
 
 5. **Nothing is ever deleted.** Void with a reason. Deactivate, do not remove.
+   The one thing that is genuinely replaced rather than kept is a logo or a
+   photograph (§30.2) — a picture is not a record of anything, and Remove
+   puts back what shipped rather than leaving a hole.
 
 6. **Money is integer cents**, parsed and formatted only by `lib/money.ts`.
 
@@ -206,34 +230,66 @@ with `within()`.
 
 ## 6. What is still owed
 
-0. **Push must not name Mani.** Only he is notified when a bill is paid
-   (`ARCHITECTURE.md` §26), and the client asked for it explicitly. Implement it
-   as `profiles.notify_on_payment`, true for one row and outside the
-   `self_update` column grant — never as a branch on a display name.
-1. **Supplier payment terms.** Suppliers created from the add-invoice sheet
+**The database is up to date.** `node db/verify_catchups.mjs` confirmed on
+31 Aug 2026 that `customers`, `sales_invoices`, both sales RPCs and the push
+tables are all present — CATCH_UP_004 and 005 have been run, and the entries
+that used to sit here saying otherwise are gone. That script sees schema shape
+only, which is all the anon key is allowed to see. `db/verify_catchups.sql`
+covers the rest — the reference index, the accent slots, the column grant — and
+is read-only, for pasting into the Supabase editor.
+
+### Before it goes to the three of them — the go-live gate
+
+`ARCHITECTURE.md` §28 has the reasoning for all three.
+
+1. **A clean slate.** Written as `db/CATCH_UP_009_RESET.sql` and handed to the
+   client — run once, by him, immediately before the three of them start.
+   Every invoice, note, activity row, supplier, customer, sales invoice, ref
+   counter and push subscription goes; businesses, profiles and every policy
+   stay. §31.2.
+   A deliberate exception to §4 rule 5, which is exactly why it lives **outside
+   the app** — no screen, no button, no admin mode. Nothing in SQL can tell an
+   empty ledger from a month-old one, so the warning at the top of that file is
+   the only safeguard there is, and it is the feature.
+2. ~~**Rabindra stops being one of the names.**~~ **Done** — `CATCH_UP_007.sql`
+   and §30.1. `role = 'builder'`, which no RLS policy reads, so his access is
+   untouched. He is out of the payer filter and out of both push audiences.
+   §28.2 predicted this would also cost him the six-digit quick unlock; it does
+   not, because there is no profile picker — the unlock screen reads whoever
+   signed in.
+3. **Deli Delights' logo** — and this is no longer a job for whoever has the
+   repo. §30.2: the client adds it himself at `/brand`, reachable from
+   Settings. `lib/logos.ts` stays as the fallback for what shipped, so adding a
+   file there is still possible and no longer necessary. Rabindra's photograph
+   is **no longer wanted** and is not owed.
+
+### Owed after Phase 7
+
+4. **Switching push on — two steps left of five.** Done: `CATCH_UP_006.sql` is
+   run, the VAPID keypair is generated, and the public half is set in Vercel.
+   Left: deploy the Edge Function with its four secrets, and run
+   `db/push/notify_trigger.sql` after setting `app.notify_url` and
+   `app.notify_secret`. Both need a Supabase CLI login, which is the one
+   credential that does not exist on this side. `db/push/README.md`.
+   **The private key and the notify secret are not in this repo** and were
+   handed to the client directly; if they are lost, generate a new keypair and
+   update the Vercel variable to match.
+5. **Supplier payment terms.** Suppliers created from the add-invoice sheet
    have none and fall back to 14 days. The suppliers list counts them; the
-   supplier page sets them. Worth prompting him to do a pass.
-2. **CSV export.** Waiting on the bookkeeper's answer to *"what do you do with
+   supplier page sets them. The clean slate removes today's instances; the gap
+   stays, so it is worth a prompt once real suppliers exist.
+6. **CSV export.** Waiting on the bookkeeper's answer to *"what do you do with
    the file when you get it?"* CSV is an hour. A real `.xlsx` is half a day and
    the first dependency added purely for output. `ARCHITECTURE.md` §17.
-3. **`CATCH_UP_003.sql`** may still be unrun (accents as slot names). The app
-   tolerates either, so it is not urgent.
-3c. **Rabindra's photograph**, if his test account is staying. The other three
-   are in `public/people/`. Add a square file and one line in `lib/logos.ts`.
-   **Name it lower-case** — Windows does not care and Vercel's Linux
-   filesystem does; a test now stands over that.
-   Deli Delights has no logo either — same deal, `ARCHITECTURE.md` §22.
-3a. **`CATCH_UP_005.sql` — sales invoices.** What customers owe. Until it is
-   run, recording an invoice to a customer fails and every receivable figure
-   reads zero. `ARCHITECTURE.md` §25.2.
-3b. **`CATCH_UP_004.sql` — the customers table. This one IS urgent**: it has
-   been sent but until it is run, the Customers screen cannot load. Unlike 003
-   the app cannot work around it, because the table genuinely is not there. The
-   screen says so by name rather than showing an empty list.
-4. **Rabindra's test account** goes inactive when he is done —
-   `db/seed/002_profiles.sql`, statement commented out at the bottom.
-5. **Deli Delights receivables** — Phase 8, after a month of daily use. A second
-   ledger, not a flag on this one. `ARCHITECTURE.md` §17 explains why.
+7. **`CATCH_UP_003.sql`** may still be unrun (accents as slot names). The app
+   tolerates either, so it is not urgent. `db/verify_catchups.sql` answers it.
+
+**Closed:** Deli Delights receivables. §17 scoped a Phase 8 of three tables;
+the client's ruling is that `customers` and `sales_invoices` are the whole of
+it, because the app is a shared notebook and not an accounting system.
+**Part payments are carried by a note and a moved due date**, on both sides,
+and deliberately not by an `amount_received_cents` column — a partial-payment
+field is the first plank of an accounts package. §28.3 has what that costs.
 
 ---
 

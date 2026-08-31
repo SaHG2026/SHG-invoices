@@ -20,5 +20,6 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "//": "supabase/functions is Deno, not Next. It has its own globals (Deno.serve) and npm: specifiers, neither of which this compiler knows about, and it is never bundled into the app. Typechecked by the Supabase CLI at deploy time instead.",
+  "exclude": ["node_modules", "supabase"]
 }

@@ -758,7 +758,13 @@ Its own tables — `customers`, `sales_invoices`, `receipts` — reusing the par
 generic: the reference generator, the audit trigger, the money and date modules, the payment-run
 grouping. Roughly a phase of work.
 
-### Where it goes: Phase 8
+### Where it goes: Phase 8 — **superseded, see §28.3**
+
+> The two tables below were built early, at the client's request (§25.2). The third,
+> `receipts`, he has since ruled out: "this app wont be storing payment methods or
+> details. its more of a super advanced shared notebook." **Phase 8 no longer exists.**
+> What survives here, and the reason this section stays, is the argument against one
+> table with a direction flag — which is unaffected and still binding.
 
 After v1 is in daily use, and here is the reason rather than the excuse. Chasing a customer is a
 different job from paying a supplier — it involves reminders, part payments and a relationship — and
@@ -775,15 +781,22 @@ Nothing about the current schema blocks it, and nothing needs adding now.
 
 Written for whoever picks this up next, including a later session of me.
 **Kept current — §§20–27 are the changes made after the original six phases,
-and this section describes the app as it stands today.**
+§29 is Phase 7, and this section describes the app as it stands today. §28 is the
+one section describing what has been decided and not yet built.**
 
-Phases 1–6 built and signed off. Everything since is client-driven revision
-between Phase 6 and Phase 7: navigation, the home screen, the customer ledger.
-**Phase 7 — PWA, offline queue, error boundaries, push — has not been started,
-and the client asks to be consulted before it is.**
+Phases 1–7 built. 1–6 were signed off; §§20–27 are the client-driven
+revisions made between 6 and 7, and §29 is Phase 7 itself — the offline write
+queue, the service worker, error boundaries, the 200-row pass and push.
+
+**One part of Phase 7 is built and not yet on: push sends nothing until the
+four steps in `db/push/README.md` are done, and those need credentials that
+deliberately do not exist on this side.** §29.6.
+
+§28 is the other section describing work decided and not built: the clean slate
+before go-live, and taking Rabindra out of the profile list.
 
 Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`,
-branch `tidy-up-before-phase-7` · 469 tests, run under `TZ=UTC`,
+branch `tidy-up-before-phase-7` · 525 tests, run under `TZ=UTC`,
 `Australia/Sydney` and `America/Los_Angeles` before every commit.
 
 ### What exists
@@ -838,16 +851,34 @@ as slot names); the app tolerates either.
 
 ### Still owed to the client
 
-1. **Supplier payment terms.** Suppliers created from the add-invoice sheet have none. The
-   suppliers list counts them and the supplier page sets them. Worth a pass over the ones
-   created during Phases 3–6.
-2. **CSV export.** Deferred pending the bookkeeper's answer to "what do you do with the
+**Gates on handing it over — §28, decided and not yet built:**
+
+1. **The clean slate.** Every supplier, invoice, note, activity row, customer and sales
+   invoice in the database is test data and comes out before day one, counters included.
+   One SQL file, run once, outside the app. §28.1.
+2. **Rabindra stops being one of the names** — visible to nobody, notified about nothing,
+   access unchanged. **Not `active = false`**, which is the membership test itself. §28.2.
+3. **Deli Delights' logo**, promised before launch. Rabindra's photograph is no longer
+   wanted. §22 has where they go and why the filename must be lower-case.
+
+**After that:**
+
+4. **Supplier payment terms.** Suppliers created from the add-invoice sheet have none. The
+   suppliers list counts them and the supplier page sets them. The clean slate takes
+   today's with it; the gap remains for the real ones.
+5. **CSV export.** Deferred pending the bookkeeper's answer to "what do you do with the
    file when you get it?" — see §17. CSV is an hour; a real `.xlsx` is half a day and the
    first dependency added purely for output.
-3. **Deli Delights receivables.** Phase 8, after a month of daily use. See §17 for why it
-   is a second ledger and not a flag.
-4. **Rabindra's test account** goes inactive when it is no longer needed —
-   `db/seed/002_profiles.sql` has the statement, commented out.
+6. **Whether a customer can pay half an invoice.** The one question §28.3 leaves open.
+   `sales_invoices.status` is binary today, and on a part payment both of its values are
+   untrue.
+
+**Closed:** Deli Delights receivables as §17 scoped it. The client's ruling is that
+`customers` and `sales_invoices` are the whole job — §28.3.
+
+**Database state:** `node db/verify_catchups.mjs` confirmed on 31 Aug 2026 that every table,
+view and function the CATCH_UP files add is present. `db/verify_catchups.sql` is the
+read-only companion for what the anon key cannot see — indexes, grants, row contents.
 
 ### Bugs already found and fixed, so they are not re-introduced
 
@@ -863,10 +894,16 @@ Each of these shipped, was caught on a real phone, and now has a test standing o
 | Terms counted from today, not the invoice date | Late-arriving invoices silently got extra days to pay | `invoice-form.test.ts` |
 | Opening an invoice inside a run collapsed the run | Run and child shared one expansion value | `mark-paid.test.tsx` |
 | Ticking appeared to do nothing, so people tapped again | Only the unpaid list was invalidated; the row vanished without saying what happened | `invoice-row.test.tsx` |
+| Ticking a run appeared to erase two invoices | A run and its children shared one expansion value | `mark-paid.test.tsx`, §23.1 |
+| An offline save said nothing at all, and a refused one said "Saved" | A paused mutation never settles, so the catch written for offline could not be reached — and two branches were describing three outcomes | `offline-queue.test.ts`, §29.2 |
 
-The pattern worth carrying forward: **five of the eight were shape problems, not logic
+The pattern worth carrying forward: **six of the ten were shape problems, not logic
 problems.** The fix each time was to make the broken state unrepresentable rather than to
 correct the branch that produced it.
+
+The tenth is the one found without a phone. It was shipped, it had a test over it, and the
+test asserted the wrong branch — so it passed for four phases. What found it was writing
+down what the three outcomes actually were.
 
 ### How the client works
 
@@ -1670,3 +1707,614 @@ and it is read during the render that follows the change — which is exactly th
 render whose animation depends on it.
 
 Tests: 469, under all three timezones.
+
+---
+
+## 28. Going live — the clean slate, and who counts as one of the four
+
+Decided with the client on 31 Aug 2026, before Phase 7 was authorised. None of
+it is built yet. All of it is a gate on handing the app to the three of them.
+
+### 28.1 The ledger starts empty
+
+Everything in the database today is test data. Suppliers with invented names,
+invoices with invented amounts, the activity log recording all of it. They open
+the app on day one and it must look like a notebook nobody has written in.
+
+What comes out: `invoices`, `invoice_notes`, `activity_log`, `suppliers`,
+`sales_invoices`, `customers`, and the rows in `invoice_ref_counters`.
+What stays: the four `businesses`, and the `profiles`.
+
+**The counters matter more than they look.** They are what makes the first real
+invoice `GMH-260901-01`. Leave them and the first thing the client ever logs is
+numbered in the nineties, which is a small thing that says loudly that he is
+using somebody's test rig.
+
+**[decision] It is one SQL file, run once, before anybody signs in — not a
+feature.** §4 rule 5 says nothing is ever deleted, and that rule is load-bearing:
+it is why a mistaken tap can never lose an invoice, and why history is always
+answerable. A reset is the one moment where deleting is right, and the way to
+have both is for it to exist **outside the app entirely**. No screen, no button,
+no admin mode. If a delete path existed in the interface, rule 5 would be a
+convention rather than a fact, and conventions get worn away by the next
+feature that finds them inconvenient.
+
+So: `db/CATCH_UP_00N_RESET.sql`, sent like every other one, and unlike every
+other one it is **not** safe to run twice by accident on a live ledger — it is
+safe, it just destroys a month of work the second time. It must therefore say
+at the top, in the first three lines, exactly what it removes and that it is
+meant to be run once. That warning is the feature.
+
+### 28.2 Rabindra is not one of the names
+
+> "my name should not be visible in the profiles. Obviously as the builder and
+> maintenance, I always have the access, but I am not the part of an active
+> management so I dont want all the notifications and stuffs. In the profiles
+> only three names will be seen."
+
+Two facts about the same person that the schema currently cannot tell apart:
+**he may use the app**, and **he is not one of the people running it**. Today
+one column carries both, and it carries them wrongly.
+
+**The trap, named first.** The obvious move is `active = false`, and it is
+wrong. `is_member()` in migration 007 is `exists (select 1 from profiles where
+id = auth.uid() and p.active)` — that column *is* the membership test. Setting
+it false does not hide him, it locks him out of the app he maintains, and it
+does so silently: every screen simply returns nothing.
+
+**[decision] A third value on `role`: `'member'`, `'owner'`, `'builder'`.**
+`role` already exists for exactly this kind of fact — §8.1 wrote it to decide
+what a screen shows and stated that it is deliberately absent from every RLS
+policy. Extending it keeps that promise. One value, one row, one `update` to
+reverse, and no policy anywhere learns about it. It is the same move as §26.2's
+`notify_on_payment`: a fact about a row, never a branch that names somebody.
+
+What reads it:
+
+- **The unlock picker and any list of the people** render a new selector —
+  active, and `role <> 'builder'`. Three faces, three names.
+- **`push_targets` excludes builders in SQL**, so it holds regardless of what
+  the app remembers to filter, and regardless of his own switch. That is what
+  "I dont want all the notifications" has to mean to survive a refactor.
+- **`is_member()` is untouched.** Access is unchanged.
+
+**What `useProfiles()` must keep doing: returning him.** It is the lookup the
+attribution chips resolve names through, and a chip that cannot name whoever
+touched a row is a worse bug than a name appearing where it should not. The
+data keeps everybody; the two screens that present *the people* filter. Those
+are different questions and they get different selectors.
+
+The cost, stated: he loses the six-digit quick unlock, because the picker is
+what it is chosen from. He signs in with email and password. For the person who
+deploys the thing, that is the right side of the trade.
+
+### 28.3 Receivables: Phase 8 is closed
+
+> "if we are talking about the customers, then its already added and so is the
+> entry methods. other than that, I dont think there is anything else to track.
+> This app wont be storing payment methods or details. its more of a super
+> advanced shared notebook."
+
+He is right, and §17 is now out of date rather than wrong. It scoped three
+tables — `customers`, `sales_invoices`, `receipts` — and reasoned that nobody
+yet knew which of reminders, part payments and relationship-chasing Deli
+Delights actually needed. §25.2 then built the first two at his request. What
+§17 still projected was the third, and the answer to its own open question is
+now in: **none of them.** Who owes us, how much, since when, and a tick when it
+lands. That is the whole job.
+
+`receipts` was only ever needed to record a payment as an event with its own
+detail — method, reference, part amount. A notebook does not do that, and this
+is a notebook. **Phase 8 as written in §17 does not exist.** §17 stays in this
+document because its *reasoning* is still what stops anybody merging the two
+ledgers into one table with a direction flag, and that reasoning is unaffected.
+
+**Part payments — [decision] notes carry them, on both sides.** Asked, and
+answered: *"there is a feature to add notes as well, and with dates being
+editable, if its followed up properly it will be good."*
+
+`sales_invoices.status` stays binary, and so does the payables side. A customer
+who pays half gets a note saying so and a due date moved to when the rest is
+expected. The invoice stays outstanding for its full amount until it is
+actually settled, which is the conservative direction: it over-states what is
+owed rather than under-stating it, and the number a person is chasing is never
+smaller than the truth.
+
+The alternative was `amount_received_cents` with the status derived from it, and
+the reason not to build it is not effort — it is that a partial-payment column
+is the first plank of an accounts package. It brings a remaining-balance figure
+on every row, then a receipts history, then reconciliation, and each one is
+reasonable given the last. §28.3's ruling is that this is a notebook. A note and
+a date are what a notebook has.
+
+**What this costs, so it is not a surprise later:** a half-paid invoice reads as
+fully outstanding on every total until somebody opens it. The information is
+never lost — it is in the note and the activity stream — but it is not in the
+headline figure. If Deli Delights starts taking deposits routinely rather than
+occasionally, that is the signal to revisit, and revisiting means the column,
+not a workaround.
+
+### 28.4 Push is a capability, not a rollout
+
+> "they will add a homescreen icon, and enable the push if they think its
+> needed, if not its their call. I just want the app to be capable of doing so
+> when needed."
+
+This settles the uncomfortable part in §8.1 rather than removing it. iOS still
+gives no push until the app is on the Home Screen, and push is still not
+guaranteed delivery — but neither is now a thing to warn the client about
+before building, because he has already decided the switch is theirs to find.
+
+What it changes about Phase 7: build the subscription path, the Edge Function
+and the switch, verify it end to end on one device, and stop. **No onboarding
+prompt, no "enable notifications" interstitial, no badge nagging somebody to
+install to the Home Screen.** The in-app bell remains the channel that always
+works (§8.1), which is precisely what makes it safe for push to be optional.
+
+---
+
+## 29. Phase 7 — the app off the network, and push
+
+Authorised 31 Aug 2026. Everything below is built, typechecks, and passes 506
+tests under all three timezones. **Push is the exception and it is stated
+plainly in §29.6: the app half is done and nothing will actually be sent until
+four steps only the client can do are done.**
+
+### 29.1 The offline write queue
+
+`networkMode: 'offlineFirst'` was set in Phase 1, so an offline write already
+paused instead of failing. What Phase 7 adds is the half that makes that
+survive the app being closed: the paused mutations are persisted to IndexedDB
+and resumed when the phone comes back.
+
+`lib/offline/` is the whole of it — `keys.ts`, `persister.ts`, `register.ts`,
+`submit.ts`, `pending.ts` — and `app/providers.tsx` wires it in.
+
+**[decision] Every write is registered by key, not declared in its hook.** This
+is the one structural change and it touches all seven query modules. A restored
+write comes back as a key plus its variables and nothing else; the function it
+was going to run died with the session that made it. TanStack finds it again by
+looking the key up in `setMutationDefaults`, which is why each module now
+exports a `register*Mutations(queryClient)` and its hook is one line:
+`useMutation({ mutationKey: mk.x })`.
+
+The consequence to keep in mind when adding a write: **anything the mutation
+needs must be in the variables.** `useAddNote(invoiceId)` closed over the
+invoice id, which works perfectly until the write is resumed two days later
+with no component holding it. It now takes the id in its variables, and that is
+the rule for every future write.
+
+**[decision] The implementations stay in `lib/queries/*`; only the list lives
+in `lib/offline/register.ts`.** One file holding all eleven mutation functions
+would put the offline story in one place and separate each write from the query
+keys it invalidates, the types it uses, and the reasoning written beside it.
+Every one of those is a stronger relationship than "is also queueable".
+
+**Client-generated ids, everywhere a row is created.** Invoices and sales
+invoices already did it (notes §1.5). Notes, suppliers and customers now do
+too, and it buys two different things:
+
+- **Replay safety.** Every create is `upsert(..., { ignoreDuplicates: true })`
+  on that id, so a write that arrives twice does nothing the second time.
+- **The entry flow no longer waits for the database.** This is the bigger one.
+  Adding a supplier from inside the sheet used to `await` an id from the
+  server; offline that await never returns, because the write is paused rather
+  than refused — so the fifteen-second flow stopped dead at exactly the place
+  it is most likely to be used, a supplier's dock with no signal. The sheet now
+  decides the id, selects the supplier immediately, and both writes queue in
+  order behind each other.
+
+**What is persisted, and what is refused.** Only mutations, only paused ones,
+and only ones with a registered function. Reads are never persisted — notes
+§1.5, and it is the decision most likely to be reversed by somebody trying to
+make the app open faster offline. It must not be: an hours-stale total that
+looks current is the trust-destroying failure the bug notes name. The offline
+page says the network is gone rather than showing Tuesday's figures.
+
+A paused mutation whose key is not in `mk` is **dropped rather than stored**,
+because a stored write with no function fails on resume, after the session that
+made it has gone, where nobody can be told. `test/unit/offline-queue.test.ts`
+asserts that every key in `mk` has a function registered and that
+`QUEUEABLE_KEYS` and `mk` have not drifted apart.
+
+Seven days, then the queue is discarded — `maxAge` in `persister.ts`. A write
+made on Friday at a dock and resumed on Monday is what this is for; one made
+three weeks ago and replayed now is an invoice nobody remembers entering, which
+has almost certainly been entered again by hand in the meantime.
+
+### 29.2 A bug found while building it — and it was already shipped
+
+The add-invoice sheet had this, and it reads correctly:
+
+```ts
+try   { await createInvoice.mutateAsync(...); toast('Saved · REF') }
+catch { toast('Saved — will send when you’re back online.') }
+```
+
+It is wrong twice.
+
+**A paused mutation never settles.** Offline, the write is not attempted and
+not rejected — it waits. So `await` does not throw, it hangs, and the catch
+written to handle being offline is the one branch being offline can never
+reach. The sheet closed and said nothing at all.
+
+**And the catch lied about everything else.** A write refused by RLS, a
+malformed payload, a supplier that no longer exists — every one of them landed
+in a catch that says "Saved". In a payments ledger, saying "saved" when nothing
+was saved is the worst sentence this app can produce.
+
+The test standing over it asserted the *rejected* case showed the queued
+message, so it passed, and it could never have caught this.
+
+`lib/offline/submit.ts` replaces the try/catch with three outcomes — `saved`,
+`queued`, `failed` — and checks for being offline *before* starting rather than
+after failing, because once a mutation is paused there is nothing to await.
+Four screens use it.
+
+**This is a tenth for §19's table, and it is the same shape as the other five:
+a value that could hold states which should not exist.** Two branches
+describing three outcomes. The fix was not a better catch; it was making the
+third state representable.
+
+### 29.3 The service worker
+
+`public/sw.js`, registered after `load` and skipped entirely in development —
+a worker caching the shell across a hot reload produces the worst class of bug
+there is, where the code on screen is not the code on disk.
+
+Two guards in `fetch`, and both are absolute:
+
+- **GET only.** A POST, PATCH or DELETE passes through untouched. This is the
+  line that stops the worker becoming a second write queue. Two queues that can
+  both send the same invoice is how an invoice gets entered twice, and
+  Background Sync makes that exact mistake easy and appealing.
+- **Our own origin only.** Every Supabase request — reads, writes, the token
+  refresh — is none of the worker's business. Caching a signed-in read would
+  serve one person's invoices to whoever opens the app next on that phone.
+
+Static assets are cache-first, because Next fingerprints them and a cached copy
+cannot be stale. Navigations are network-first with `/offline` as the fallback
+— deliberately not the last dashboard we happen to have, for the reason in
+§29.1. `/offline` is excluded from the middleware matcher so that what gets
+precached is the page and not a redirect to `/login`.
+
+### 29.4 Error boundaries
+
+Three files, none of which existed: `app/(app)/error.tsx` for the signed-in
+screens, `app/global-error.tsx` for a failure in the root layout itself, and
+`app/not-found.tsx`. Before them, a thrown render error took the whole app to a
+blank white page.
+
+Each says the same thing first, because it is the first question somebody in a
+shop actually has: **nothing has been lost.** Then a way to retry, then a way
+out. None of them shows `error.message` — in a production React build it is a
+digest like "Minified React error #418", which tells the person nothing and
+reads as if the app is blaming them. It goes to the console.
+
+`global-error.tsx` is the second documented exception to rule 3, alongside
+`app/manifest.ts`, and HANDOFF §4.3 now names both. It replaces the document at the moment the root
+layout has failed, which is exactly when the stylesheet cannot be relied on,
+and a boundary that renders white-on-white is not a boundary.
+
+### 29.5 The 200-row pass
+
+`test/unit/scale.test.ts`, against the seeded 200-invoice fixture. It found one
+thing and confirmed another.
+
+**Found:** `summariseByBusiness` called `onlyUnpaid(rows)` inside its map over
+businesses, so the work grew with businesses × invoices — four businesses and
+two hundred rows is eight hundred passes to do two hundred rows of filtering.
+Hoisted. Not slow enough for anybody to have noticed, which is the point of
+looking.
+
+**Confirmed:** everything else is linear, and the invariant that matters holds
+at scale — every total is the sum of exactly the rows shown, under a business
+filter, under a search, per bucket and per payment run. At forty rows an
+off-by-one in a total is invisible. At two hundred it is not.
+
+The timing budgets in that file are loose on purpose. They catch an accidental
+O(n²) and they say nothing about milliseconds on a phone; that number comes
+from a phone.
+
+**Empty states were already done.** Spec §10 lists them in this phase, and an
+audit found every screen that can be empty already says so in its own words —
+`HistoryList` even distinguishes "nothing matches your filter" from "nothing
+has been paid yet". Nothing was owed and nothing was added.
+
+### 29.6 Push — built, and not yet on
+
+The shape, unchanged from §8.1: an invoice event fires a database trigger, the
+trigger decides who to tell, and an Edge Function signs and sends.
+
+**[decision] The Edge Function has no database access at all.** The obvious
+design — the function reads `push_targets` itself with the service-role key —
+is the one every tutorial shows and it is forbidden here. HANDOFF §4.1: no
+service-role key, anywhere. The rule is absolute precisely so no future feature
+has to re-argue it, and "but this one only reads" is exactly the argument that
+would end it.
+
+So the direction is reversed. Postgres already holds the rule about who hears
+what, in the two views from `CATCH_UP_006.sql`, and `notify_push()` sends the
+finished list of endpoints to the function. The function holds the VAPID
+private key — the one secret that genuinely cannot live in the database,
+because signing is a thing only the sender can do — and knows nothing else. It
+cannot read an invoice even if something asks it to.
+
+**Only Mani hears about a payment**, as `profiles.notify_on_payment`, true for
+one row and outside the `self_update` column grant so nobody can turn it on for
+themselves. §26.2 said this must never be `if (person.name === 'Mani')` and it
+is not: the one place his name appears is an `UPDATE` in a migration, setting
+data. Both target views also exclude `role = 'builder'`, which is the mechanism
+§28.2 chose for keeping Rabindra out of every notification — no builders exist
+yet, and putting it in the view now makes that change one `UPDATE` later
+instead of another file to run.
+
+**No prompting, ever.** §28.4: build the capability and stop. There is no
+onboarding prompt, no "enable notifications" interstitial, no badge suggesting
+anybody install to the Home Screen. The switch is in Settings and somebody who
+never opens Settings never hears about it. That is the intended outcome.
+
+Settings now shows what the device can actually do rather than a switch that
+might silently do nothing: on an iPhone in a Safari tab it says to add the app
+to the Home Screen first, because Apple gives no Push API until then; where
+permission has been denied it says only browser settings can undo that, because
+the app cannot.
+
+**One thing found while switching it on, worth not re-deriving.** The address
+and the shared secret were going to live in database settings
+(`alter database postgres set app.notify_url = ...`), which is the obvious
+place for them and which fails on a hosted Supabase project: `42501:
+permission denied to set parameter`. The SQL editor connects as `postgres`,
+which is not a superuser there. They live in an `app_config` table instead,
+with RLS on and **no policy at all** — a combination that denies everyone,
+leaving only the table's owner and the SECURITY DEFINER function that reads it.
+Supabase Vault would encrypt it at rest and is the tidier answer; it is one
+more extension to depend on, and what is stored only lets its holder send a
+notification.
+
+**What is left, and it is not mine to do** — `db/push/README.md` has the five
+steps. Generating the VAPID keypair, putting the public half in Vercel,
+deploying the Edge Function with its secrets, and running `notify_trigger.sql`
+all need credentials that deliberately do not exist on my side. Until they are
+done the switch works, devices subscribe, and nothing is sent. Nothing is
+broken in the meantime, because the bell was always the real channel and push
+was always a nudge on top of it.
+
+### 29.7 One rule made true again
+
+HANDOFF §4.2 says `new Date()` appears in `lib/date.ts` and nowhere else, and
+`toISOString()` is banned outright. Three files were calling both directly, for
+optimistic `created_at` timestamps — harmless in themselves, and enough to make
+the rule untrue, which means the next person reading those lines would
+reasonably conclude it was advisory.
+
+`nowTimestamp()` in `lib/date.ts` is now the one sanctioned use, and it says in
+its own comment what it is not: an instant, never a calendar date. Taking the
+first ten characters of it is the exact bug notes §3 is about.
+
+Tests: 506, up from 469, under `UTC`, `Australia/Sydney` and
+`America/Los_Angeles`.
+
+---
+
+## 30. The builder, and pictures that change without a deployment
+
+Two things the client asked for in one message, on 31 Aug 2026, after Phase 7
+was built and before it was deployed. Both are §28 work brought forward, and
+the second is new.
+
+### 30.1 Rabindra becomes the builder
+
+> "Designate me as a builder and then so I wont be shown in their feed as a
+> user."
+
+§28.2 decided the mechanism and `CATCH_UP_007.sql` does it: `role` gains a
+third value, `'builder'`, and his row gets it. Nothing about his access
+changes, because no RLS policy reads `role` — migration 005 says so, and says
+that if it ever starts deciding what somebody can read or write, that belongs
+in a policy instead.
+
+**[decision] `useTeam()` beside `useProfiles()`, not instead of it.** The two
+answer different questions and conflating them is the way to get this wrong:
+
+- `useProfiles()` is a **lookup**. It resolves a name and a face against
+  whoever touched a row, and it must keep returning everybody. Filter it and
+  any invoice he ever touched renders an unnamed chip.
+- `useTeam()` is a **list of people**, rendered as choices, and it excludes
+  builders.
+
+One caller changed: the payer filter on History. That is the only place in the
+app that enumerates people as choices — which is worth recording, because §28.2
+predicted this would also cost him the six-digit quick unlock. **It does not.**
+There is no profile picker: the unlock screen reads `useCurrentProfile()`, so
+it shows whoever signed in and knows nothing about the list. §28.2 was wrong
+about that cost and this paragraph is the correction.
+
+The fixture now has him as a builder with both notification flags false, which
+is what the database says after `CATCH_UP_007.sql`. `CATCH_UP_006`'s two push
+views already excluded the role, so he is not a notification target by two
+independent mechanisms.
+
+### 30.2 Pictures, changed from the app
+
+> "Grant me a permission to edit and change the pictures/icons from my end that
+> way I wont have to call up on you each time they have any updates on logo."
+
+`lib/logos.ts` is a hand-edited table of files in the repo. Its own comment
+argued for that — four pictures that change roughly never do not need a
+migration — and it was right about the pictures and wrong about the people.
+Every new logo was a message to whoever had the repo, plus a deployment.
+
+A Supabase Storage bucket, `brand`, now sits in front of that registry.
+`/brand` lists every business and every person with Add, Replace and Remove.
+
+**[decision] Three levels, not two.** An uploaded picture wins over the bundled
+file, which wins over the letters or initials. Dropping the middle level would
+be simpler and would mean a removed upload takes GroceryMate back to a grey
+tile rather than back to the logo that shipped.
+
+**[decision] Deterministic paths, and no table.** A business's logo is always
+`businesses/<code>` and a person's is `people/<name>`, lower-cased, no
+extension. Replacing one is an upsert to the same path, so the bucket cannot
+accumulate orphans and there is no second table to fall out of step with what
+is actually stored. The public url carries `?v=<modified time>` because
+Supabase's CDN caches on the url and the url does not otherwise change when the
+file behind it does — without it, an upload appears to have silently failed.
+
+**[decision] A React context, not a hook in the leaf components.**
+`BusinessMark` and `PersonChip` are rendered dozens of times per screen and in
+most of the component tests. A query hook inside them would make every one of
+those tests need a QueryClient to draw a 24px square, and would couple the
+smallest components in the app to the data layer. The context's default is an
+empty map, so a chip with no provider above it falls back to exactly what it
+drew before — which is also what happens on a phone before the bucket has
+loaded, and before `CATCH_UP_007.sql` has been run at all.
+
+**Who may change one: the builder, and nobody else.** Enforced by a storage
+policy on `storage.objects` and mirrored in the screen so that no button is
+offered that would be refused. This shipped as `owner or builder` and was
+corrected within the hour — §30.3 has the client's reasoning and mine.
+
+**What this deliberately cannot do: the app's own icon.** The Home Screen tile
+and the browser-tab icon are read by the phone before the app has loaded, so
+they are part of the build and a new one is still a deployment. The screen says
+so in a sentence rather than offering a control that quietly does nothing.
+
+**Not queued for offline**, unlike every write in `lib/offline/keys.ts`. A
+queued upload means holding an image in IndexedDB for up to a week and
+replaying it against a path that may have been changed twice since. Changing a
+logo is a deliberate act done sitting down; "try again when you have signal" is
+an honest answer for it.
+
+Tests: 522, under all three timezones.
+
+### 30.3 The correction: Mani is a user, not an editor
+
+`CATCH_UP_007.sql` let the owner change pictures as well as the builder. That
+was my call, on the reasoning that the point of the feature was nobody having
+to wait on one person. The client corrected it:
+
+> "mani doesnt get to do any editing stuffs. the three users are only users
+> with mani having slight higher authority. the builder is basically a shadow
+> operator and its not in the system."
+
+He is right, and it is the sharper reading of what `role` has always meant
+here. **Mani's authority is over the money.** He is the one told when a bill is
+paid (§26.2), and the one whose screen carries the owner's overview (§8.1). It
+was never authority over the app itself, and a logo is part of the app rather
+than part of the ledger. Widening it to `owner` quietly turned a fact about the
+ledger into a permission over the product, which is the thing migration 005's
+comment warns against in the other direction.
+
+`CATCH_UP_008.sql` replaces `is_brand_editor()` with `role = 'builder'` alone.
+The four storage policies call it by name, so replacing the function is the
+whole change — nothing needs re-granting.
+
+**"Not in the system" also reached the pictures screen.** It listed all four
+people, which would have offered a slot for a photograph of somebody who has
+asked not to appear. It now renders `useTeam()`, the same three names as the
+payer filter.
+
+So the shape, stated once: **three users, one of whom hears about payments; one
+builder, who is not a user and is the only editor.**
+
+### 30.4 A wifi symbol, and the chip that made room for it
+
+> "include a wifi like symbol on the header bar to signify if they are online
+> or offline. you can remove the profile picture thing from the top right
+> corner."
+
+**[decision] The indicator is always visible**, which reverses what Phase 7
+shipped a week earlier. `QueuedWrites` rendered nothing when there was signal
+and nothing queued, on the notes §6 reasoning that an interface should not
+narrate a state that is simply normal.
+
+That reasoning is right in general and wrong here. **A symbol that appears only
+when something is wrong is a symbol nobody has ever seen before the moment
+something is wrong.** On a dock with one bar the question is not "is something
+broken" but "did that save", and an indicator that is normally absent cannot
+answer it: there is no way to tell *fine* from *not rendered*. Always-on, the
+arcs simply go quiet, and the answer is in the same place every time.
+
+Offline is the same three arcs with a stroke through them rather than a
+different icon, so the two states read as one thing changing. A queued count
+sits beside it when there is one, and wins the accessible label — "2 waiting"
+already implies there is no signal, and it is the half that says something
+about somebody's invoices rather than about their phone.
+
+**The profile chip is gone from the header**, which is what makes room. Nothing
+became unreachable: the drawer opens with the same chip, the same name and the
+same link to Settings, and the menu button is on every screen. `AppChrome` no
+longer reads `useCurrentProfile()` at all.
+
+Tests: 525, under all three timezones.
+
+---
+
+## 31. The third motion pass, and the slate
+
+### 31.1 "Still abrupt" — the two earlier passes were fixing the wrong thing
+
+§23.3 tuned the curve. §27.2 gave push and pop their directions. Both were
+about how the arriving screen moved, and the client's report after each was
+some version of the same sentence: *"still abrupt... doesn't give that premium
+feel."*
+
+**Nothing animates out.** React unmounts the old screen and mounts the new one
+in the same commit, so the outgoing content disappears in a single frame. A
+transition has two halves and every pass so far had described only the arrival.
+With the arriving screen starting at `opacity: 0`, what a person actually sees
+is:
+
+```
+content  ->  empty background  ->  a ghost fading up  ->  content
+```
+
+The flash of nothing in the middle is the whole of the abruptness, and no
+easing curve was ever going to fix it — the eye was reading a gap, not a curve.
+
+**[decision] A push and a pop no longer fade.** They are pure translation: the
+new screen is fully opaque from its first frame and slides into place over the
+page ground. There is never a moment with nothing on it. 28px over 300ms on the
+iOS curve, up from 24px over 260ms — once the fade is gone the movement is the
+only thing to see, and 260ms read as fast-then-stop.
+
+The sideways move keeps a fade, and that is not an inconsistency: nothing moved
+in the hierarchy, so there is no direction to travel in, and a cross-dissolve
+is the honest way to say "this replaced that". It fades from 0.4 rather than
+from 0, for the same reason as above.
+
+**The alternative, and why not.** Genuinely animating the outgoing screen means
+holding both in the tree for the length of the transition — either the View
+Transitions API, which is experimental in this Next version, or carrying the
+previous children in state. Both are real changes to how every screen mounts,
+for a second half nobody sees once the gap is closed. If the client says it
+again after this, that is the next thing to try and it should be tried
+properly, not approximated.
+
+**Not verified on a phone.** This was reasoned from the code and confirmed in
+the browser only as far as the computed values — 300ms, the right curve, no
+opacity in the keyframes. Whether it *feels* right is his call and always was.
+
+### 31.2 The slate
+
+`CATCH_UP_009_RESET.sql`, written to §28.1 and run once before the app is
+handed over. Every invoice, note, activity row, supplier, customer and sales
+invoice goes; the businesses, the profiles and every policy, view and function
+stay. The reference counters go too, so the first real invoice is
+`GMH-YYMMDD-01` rather than something in the nineties.
+
+Push subscriptions are cleared as well. They are registrations rather than
+data — each one a browser that asked to be notified — and the three of them
+should switch notifications on deliberately, on their own phones, rather than
+inheriting what was left over from testing.
+
+`delete` throughout rather than `truncate`. Truncate would need `cascade`,
+which follows foreign keys into tables this file has not named, and a reset
+that removes something nobody listed is the exact surprise it exists to avoid.
+
+**No notification is sent and no history is written by it**: the audit trigger
+and the push trigger both fire on insert and update only, so a delete passes
+them silently.
+
+Tests: 525, under all three timezones.

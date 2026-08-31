@@ -1,6 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { buildHistorySearch } from '@/lib/derive/history';
 import { HISTORY_PAGE_SIZE } from '@/lib/constants';
@@ -81,10 +83,8 @@ export function useSupplierInvoices(supplierId: string) {
  * keeps every invoice they ever sent (notes §8). The unique index on the name
  * only covers active suppliers, so a name can be reused after deactivation.
  */
-export function useUpdateSupplier() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+export function registerSupplierEditMutations(queryClient: QueryClient) {
+  queryClient.setMutationDefaults(mk.suppliers.update, {
     mutationFn: async ({
       id,
       ...changes
@@ -104,12 +104,18 @@ export function useUpdateSupplier() {
       }
       return data as Supplier;
     },
-    onSuccess: (supplier) => {
+    onSuccess: (supplier: Supplier) => {
       queryClient.setQueryData<Supplier[]>(qk.suppliers.all, (current) =>
         (current ?? []).map((existing) => (existing.id === supplier.id ? supplier : existing)),
       );
       queryClient.invalidateQueries({ queryKey: qk.suppliers.all });
     },
+  });
+}
+
+export function useUpdateSupplier() {
+  return useMutation<Supplier, Error, Partial<Supplier> & { id: string }>({
+    mutationKey: mk.suppliers.update,
   });
 }
 

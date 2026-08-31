@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, SUPPLIERS } from '../fixtures/invoices';
 import { addDays, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
@@ -40,11 +41,31 @@ vi.mock('@/lib/queries/session', () => ({
 vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
   useSuppliers: () => ({ data: SUPPLIERS }),
-  useCreateSupplier: () => ({ mutateAsync: mocks.createSupplierMutate, isPending: false }),
+  useCreateSupplier: () => ({
+    mutateAsync: mocks.createSupplierMutate,
+    mutate: mocks.createSupplierMutate,
+    isPending: false,
+  }),
+  // The real one, not a stub: it is the single definition of what a brand-new
+  // supplier looks like, and a mock of it here would let the sheet and the
+  // cache drift apart without a test noticing.
+  optimisticSupplier: (id: string, name: string) => ({
+    id,
+    name: name.trim(),
+    default_terms_days: null,
+    contact_name: null,
+    contact_phone: null,
+    notes: null,
+    active: true,
+  }),
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({
-  useCreateInvoice: () => ({ mutateAsync: mocks.createInvoiceMutate, isPending: false }),
+  useCreateInvoice: () => ({
+    mutateAsync: mocks.createInvoiceMutate,
+    mutate: mocks.createInvoiceMutate,
+    isPending: false,
+  }),
   findDuplicates: mocks.findDuplicates,
   useUnpaidInvoices: () => ({ data: [], isLoading: false }),
 }));
@@ -66,6 +87,13 @@ const dueLabel = (days: number) => formatDay(addDays(TODAY, days));
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  /*
+   * Reset explicitly rather than trusting jsdom's default. `onlineManager` is
+   * module-level state shared by every test in the run, so a test that takes
+   * the app offline and does not put it back leaves the next one failing
+   * somewhere unrelated.
+   */
+  onlineManager.setOnline(true);
   mocks.createInvoiceMutate.mockResolvedValue({ internal_ref: 'GMH-260828-03' });
   mocks.findDuplicates.mockResolvedValue([]);
 });
@@ -135,16 +163,35 @@ describe('the common case: four taps and a number', () => {
     expect(await screen.findByText('Saved · GMH-260828-03')).toBeInTheDocument();
   });
 
-  it('is honest when the write is queued rather than saved', async () => {
-    // networkMode 'offlineFirst' pauses the write; calling that "saved" is a
-    // lie the person will act on (notes §1.5).
-    mocks.createInvoiceMutate.mockRejectedValue(new Error('offline'));
+  /*
+   * These two replace a single test that asserted the queued message appeared
+   * when the mutation REJECTED. It passed, and it was wrong: an offline write
+   * under networkMode 'offlineFirst' is paused, never rejected, so the case it
+   * claimed to cover could not reach that branch. Everything that did reach it
+   * — an RLS refusal, a bad payload — was being told it had been saved.
+   * lib/offline/submit.ts.
+   */
+  it('says a write is queued when the phone is offline', async () => {
+    onlineManager.setOnline(false);
     open();
     pickSupplier('Bidfood');
     enterAmount('100');
     save();
 
     expect(await screen.findByText(/will send when you’re back online/)).toBeInTheDocument();
+    // Started, not awaited: a paused mutation never settles.
+    expect(mocks.createInvoiceMutate).toHaveBeenCalled();
+  });
+
+  it('does not say "saved" when the write was refused', async () => {
+    mocks.createInvoiceMutate.mockRejectedValue(new Error('new row violates row-level security'));
+    open();
+    pickSupplier('Bidfood');
+    enterAmount('100');
+    save();
+
+    expect(await screen.findByText(/row-level security/)).toBeInTheDocument();
+    expect(screen.queryByText(/will send when you’re back online/)).not.toBeInTheDocument();
   });
 });
 
@@ -176,33 +223,43 @@ describe('the supplier field', () => {
   });
 
   it('offers to create a supplier that does not exist, and selects it', async () => {
-    const created = {
-      id: 'new-supplier-id',
-      name: 'Newtown Provisions',
-      default_terms_days: null,
-      contact_name: null,
-      contact_phone: null,
-      notes: null,
-      active: true,
-    };
-    mocks.createSupplierMutate.mockResolvedValue(created);
-
     open();
     typeSupplier('Newtown Provisions');
     fireEvent.mouseDown(screen.getByRole('button', { name: /Add “Newtown Provisions”/ }));
 
-    await waitFor(() =>
-      expect(mocks.createSupplierMutate).toHaveBeenCalledWith({
-        name: 'Newtown Provisions',
-        actorId: profile.id,
-      }),
-    );
+    await waitFor(() => expect(mocks.createSupplierMutate).toHaveBeenCalled());
+
+    /*
+     * The id is the sheet's, not the database's.
+     *
+     * This is the assertion that matters now: whatever id the sheet sent to
+     * the supplier write is the id it then puts on the invoice. Nothing waits
+     * for a response in between, which is what makes the flow survive having
+     * no signal — and if those two ever drift apart, the invoice references
+     * a supplier that does not exist.
+     */
+    const sent = mocks.createSupplierMutate.mock.calls[0]![0];
+    expect(sent.name).toBe('Newtown Provisions');
+    expect(sent.actorId).toBe(profile.id);
+    expect(sent.id).toEqual(expect.any(String));
 
     enterAmount('50');
     save();
 
     await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalled());
-    expect(mocks.createInvoiceMutate.mock.calls[0]![0].payload.supplier_id).toBe('new-supplier-id');
+    expect(mocks.createInvoiceMutate.mock.calls[0]![0].payload.supplier_id).toBe(sent.id);
+  });
+
+  it('still selects a new supplier when the phone is offline', async () => {
+    // The case the old flow stopped dead on: it awaited an id the database was
+    // never going to send, so the sheet sat there with nothing selected.
+    onlineManager.setOnline(false);
+    open();
+    typeSupplier('Newtown Provisions');
+    fireEvent.mouseDown(screen.getByRole('button', { name: /Add “Newtown Provisions”/ }));
+
+    await waitFor(() => expect(mocks.createSupplierMutate).toHaveBeenCalled());
+    expect(await screen.findByDisplayValue('Newtown Provisions')).toBeInTheDocument();
   });
 });
 

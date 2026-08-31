@@ -1,4 +1,5 @@
 import { PIN_LENGTH, PIN_MAX_ATTEMPTS } from './constants';
+import { nowTimestamp } from './date';
 
 /**
  * The six-digit quick unlock.
@@ -131,7 +132,7 @@ export async function setPin(profileId: string, pin: string): Promise<void> {
     salt: toBase64(salt),
     hash,
     iterations: ITERATIONS,
-    createdAt: new Date().toISOString(),
+    createdAt: nowTimestamp(),
   } satisfies StoredPin);
 
   remove(ATTEMPT_PREFIX + profileId);

@@ -1,6 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { qk } from './keys';
 import type { Business, Supplier } from '@/lib/types';
@@ -59,33 +61,84 @@ export function useSuppliers() {
  * put a decision in the way of the fifteen seconds; they are filled in later
  * from the supplier screen, where there is time to look them up.
  */
-export function useCreateSupplier() {
-  const queryClient = useQueryClient();
+export interface CreateSupplierInput {
+  /**
+   * Generated on the client, and it is what makes adding a supplier work at a
+   * dock with no signal.
+   *
+   * The sheet used to wait for the database to hand back an id before it could
+   * put the new supplier on the invoice. Offline that wait never ends — the
+   * write is paused, not refused — so the flow stopped dead at the one
+   * moment this app exists to make fast. With the id decided here the sheet has
+   * everything it needs immediately, and both writes queue in the order they
+   * were made: the supplier first, then the invoice that references it.
+   */
+  id: string;
+  name: string;
+  actorId: string;
+}
 
-  return useMutation({
-    mutationFn: async ({ name, actorId }: { name: string; actorId: string }): Promise<Supplier> => {
-      const { data, error } = await supabase()
+export function registerSupplierMutations(queryClient: QueryClient) {
+  queryClient.setMutationDefaults(mk.suppliers.create, {
+    mutationFn: async ({ id, name, actorId }: CreateSupplierInput): Promise<void> => {
+      const { error } = await supabase()
         .from('suppliers')
-        .insert({ name: name.trim(), created_by: actorId })
-        .select('id, name, default_terms_days, contact_name, contact_phone, notes, active')
-        .single();
+        .upsert(
+          { id, name: name.trim(), created_by: actorId },
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
 
       if (error) {
-        // suppliers_name_ci is a unique index on active suppliers.
+        // suppliers_name_ci is a unique index on active suppliers. Reached when
+        // two people add the same supplier, or when one person adds it offline
+        // and again online before the queue drains.
         if (error.code === '23505') {
           throw new Error(`There is already a supplier called ${name.trim()}.`);
         }
         throw error;
       }
-      return data as Supplier;
     },
-    onSuccess: (supplier) => {
-      // Put it in the cache immediately so the sheet can select it without
-      // waiting for a refetch — the person is mid-entry.
+
+    /*
+     * Optimistic, so the sheet can select the supplier it has just made without
+     * waiting for anything. The row comes from `optimisticSupplier` below,
+     * which is the single definition of what a brand-new supplier looks like —
+     * so the cache and the screen cannot disagree about it.
+     */
+    onMutate: ({ id, name }: CreateSupplierInput) => {
       queryClient.setQueryData<Supplier[]>(qk.suppliers.all, (current) =>
-        [...(current ?? []), supplier].sort((a, b) => a.name.localeCompare(b.name)),
+        [...(current ?? []), optimisticSupplier(id, name)].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
       );
+    },
+
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk.suppliers.all });
     },
   });
+}
+
+/**
+ * A supplier as it exists the instant it is created, before the database has
+ * seen it.
+ *
+ * Terms are null deliberately. Asking for payment terms mid-entry would put a
+ * decision in the way of the fifteen seconds; they are filled in later from the
+ * supplier screen, where there is time to look them up.
+ */
+export function optimisticSupplier(id: string, name: string): Supplier {
+  return {
+    id,
+    name: name.trim(),
+    default_terms_days: null,
+    contact_name: null,
+    contact_phone: null,
+    notes: null,
+    active: true,
+  };
+}
+
+export function useCreateSupplier() {
+  return useMutation<void, Error, CreateSupplierInput>({ mutationKey: mk.suppliers.create });
 }

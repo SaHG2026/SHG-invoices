@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   clearAllLockState: vi.fn(),
   /* The device lock, driven from the test rather than from jsdom's crypto. */
   lock: { supported: true, set: false },
+  /* What this device can do about push, likewise. */
+  push: { support: 'off' as string },
+  enablePush: vi.fn(),
+  disablePush: vi.fn(),
 }));
 
 vi.mock('@/lib/pin', () => ({
@@ -38,6 +42,7 @@ vi.mock('@/lib/pin', () => ({
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: profile, isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: mocks.signOut, isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: mocks.updateNotify, isPending: false }),
 }));
@@ -55,6 +60,12 @@ vi.mock('@/lib/queries/invoices', () => ({
 }));
 
 vi.mock('@/lib/queries/detail', () => ({ useRecentActivity: () => ({ data: [] }) }));
+
+vi.mock('@/lib/queries/push', () => ({
+  usePushSupport: () => ({ data: mocks.push.support, isLoading: false }),
+  useEnablePush: () => ({ mutateAsync: mocks.enablePush, isPending: false }),
+  useDisablePush: () => ({ mutateAsync: mocks.disablePush, isPending: false }),
+}));
 vi.mock('next/navigation', () => ({ usePathname: () => '/settings' }));
 
 const { SettingsScreen } = await import('@/components/screens/SettingsScreen');
@@ -68,6 +79,7 @@ function open() {
 }
 
 beforeEach(() => {
+  mocks.push.support = 'off';
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -171,6 +183,67 @@ describe('signing out', () => {
     // It does, and somebody handing the phone over should know that.
     open();
     expect(screen.getByText(/clears the PIN on this device/)).toBeInTheDocument();
+  });
+});
+
+describe('notifications on this device', () => {
+  /*
+   * ARCHITECTURE §28.4: build the capability, then stop. The client's
+   * instruction is that adding the app to the Home Screen and turning push on
+   * is theirs to decide, so nothing in the app asks for it. This is the only
+   * place it can be turned on, and somebody who never opens Settings never
+   * hears about it.
+   */
+  it('offers the switch on a device that can take it', () => {
+    mocks.push.support = 'off';
+    open();
+    expect(screen.getByLabelText('Notify this device')).not.toBeChecked();
+  });
+
+  it('shows it already on where it is', () => {
+    mocks.push.support = 'on';
+    open();
+    expect(screen.getByLabelText('Notify this device')).toBeChecked();
+  });
+
+  it('says what an iPhone needs, rather than offering a switch that cannot work', () => {
+    // Apple's rule, not ours: a site in a Safari tab has no Push API at all.
+    // Offering the switch anyway is how somebody comes to believe they are
+    // being notified when they are not.
+    mocks.push.support = 'needs-home-screen';
+    open();
+    expect(screen.getByText(/Add to Home Screen/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Notify this device')).not.toBeInTheDocument();
+  });
+
+  it('says where a blocked permission can be undone, because the app cannot', () => {
+    mocks.push.support = 'denied';
+    open();
+    expect(screen.getByText(/blocked for this app/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Notify this device')).not.toBeInTheDocument();
+  });
+
+  it('says nothing at all where push is not available', () => {
+    // No Push API and nothing the person could do about it. Notes §6: the
+    // interface does not narrate what it cannot offer.
+    mocks.push.support = 'unavailable';
+    open();
+    expect(screen.queryByLabelText('Notify this device')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Home Screen/)).not.toBeInTheDocument();
+  });
+
+  it('subscribes this device when switched on', () => {
+    mocks.push.support = 'off';
+    open();
+    fireEvent.click(screen.getByLabelText('Notify this device'));
+    expect(mocks.enablePush).toHaveBeenCalled();
+  });
+
+  it('unsubscribes this device when switched off', () => {
+    mocks.push.support = 'on';
+    open();
+    fireEvent.click(screen.getByLabelText('Notify this device'));
+    expect(mocks.disablePush).toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { qk } from './keys';
 import type { ActivityEntry, InvoiceNote, InvoiceRow } from '@/lib/types';
@@ -75,24 +77,54 @@ export function useInvoiceNotes(id: string) {
   });
 }
 
-export function useAddNote(invoiceId: string) {
-  const queryClient = useQueryClient();
+export interface AddNoteInput {
+  /**
+   * Generated on the client before sending, so a note replayed from the
+   * offline queue conflicts on the primary key instead of appearing twice.
+   * Notes 1.5 - the same move the invoice insert makes, for the same reason.
+   */
+  id: string;
+  invoiceId: string;
+  body: string;
+  authorId: string;
+}
 
-  return useMutation({
-    mutationFn: async ({ body, authorId }: { body: string; authorId: string }) => {
+export function registerNoteMutations(queryClient: QueryClient) {
+  queryClient.setMutationDefaults(mk.notes.add, {
+    mutationFn: async ({
+      id,
+      invoiceId,
+      body,
+      authorId,
+    }: AddNoteInput): Promise<InvoiceNote | null> => {
       const { data, error } = await supabase()
         .from('invoice_notes')
-        .insert({ invoice_id: invoiceId, author_id: authorId, body: body.trim() })
+        .upsert(
+          { id, invoice_id: invoiceId, author_id: authorId, body: body.trim() },
+          { onConflict: 'id', ignoreDuplicates: true },
+        )
         .select('id, invoice_id, author_id, body, created_at')
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
-      return data as InvoiceNote;
+      // `null` means the note was already there - a replayed write, not a failure.
+      return (data as InvoiceNote | null) ?? null;
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['notes', invoiceId] });
+    onSettled: (_data: unknown, _error: unknown, input: AddNoteInput) => {
+      queryClient.invalidateQueries({ queryKey: ['notes', input.invoiceId] });
     },
   });
+}
+
+/**
+ * The invoice id moved out of the closure and into the variables.
+ *
+ * A queued note is resumed by key from a cold start, with no component left
+ * holding the id it belongs to - so anything the write needs has to travel in
+ * the variables that were persisted alongside it. lib/offline/keys.ts.
+ */
+export function useAddNote() {
+  return useMutation<InvoiceNote | null, Error, AddNoteInput>({ mutationKey: mk.notes.add });
 }
 
 /**

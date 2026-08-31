@@ -214,7 +214,11 @@
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
   --dur-panel: 260ms;
   --dur-fade: 180ms;
-  --dur-screen: 260ms;
+  /* 300ms over 28px on a hard decelerating curve: long enough to read as a
+     settle rather than a snap, short enough that a person tapping through four
+     screens is never waiting for one. Was 260ms, which read as fast-then-stop
+     once the fade was removed and the movement became the only thing to see. */
+  --dur-screen: 300ms;
 }
 
 /* ============================================================================
@@ -377,16 +381,46 @@
    sideways — between two screens at the same level — keeps the plain fade,
    because a slide there would imply a hierarchy that is not there.
 
-   Distance is 24px rather than a full screen width. A phone renders the new
+   Distance is 28px rather than a full screen width. A phone renders the new
    screen over the old one rather than carrying both, so a full-width travel
-   shows an empty edge; 24px on a long decelerating curve reads as the same
-   gesture without it.
+   shows an empty edge; a short throw on a long decelerating curve reads as the
+   same gesture without it.
+
+   ---------------------------------------------------------------------------
+   [decision] A push and a pop do not fade. Only the sideways move does.
+
+   Reported as "still abrupt... doesn't give that premium feel" after the
+   first two motion passes, both of which tuned the curve and the distance.
+   Neither was the problem. The problem was the shape of the transition.
+
+   Nothing animates OUT. React unmounts the old screen and mounts the new one
+   in the same commit, so the outgoing content vanishes in a single frame. A
+   transition has two halves and this one only ever described the arrival.
+   With the arriving screen starting at `opacity: 0`, the actual sequence a
+   person sees is:
+
+       content  ->  empty background  ->  a ghost fading up  ->  content
+
+   and the flash of nothing in the middle is the whole of the abruptness. The
+   easing was never going to fix it, because the eye was reading a gap, not a
+   curve.
+
+   So a push and a pop are now **pure translation**: the new screen is fully
+   opaque from its first frame and slides into place over the page ground.
+   There is no moment where nothing is on screen, which is the entire trick.
+
+   The sideways move keeps its fade, and that is not an inconsistency: nothing
+   moved in the hierarchy, so there is no direction to travel in, and a
+   cross-dissolve is the honest way to say "this replaced that". It fades from
+   0.4 rather than from 0 for the same reason as above — far enough to read
+   as a change, not so far that the screen goes blank first.
+   ---------------------------------------------------------------------------
    ------------------------------------------------------------------------- */
 
 @keyframes screen-in {
   from {
-    opacity: 0;
-    transform: translateY(4px);
+    opacity: 0.4;
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
@@ -400,11 +434,9 @@
 
 @keyframes screen-push {
   from {
-    opacity: 0;
-    transform: translateX(24px);
+    transform: translateX(28px);
   }
   to {
-    opacity: 1;
     transform: none;
   }
 }
@@ -415,11 +447,9 @@
 
 @keyframes screen-pop {
   from {
-    opacity: 0;
-    transform: translateX(-24px);
+    transform: translateX(-28px);
   }
   to {
-    opacity: 1;
     transform: none;
   }
 }

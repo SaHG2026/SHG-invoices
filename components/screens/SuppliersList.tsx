@@ -6,7 +6,8 @@ import { useMemo, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile } from '@/lib/queries/session';
-import { useCreateSupplier } from '@/lib/queries/reference';
+import { optimisticSupplier, useCreateSupplier } from '@/lib/queries/reference';
+import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { useAllSuppliers } from '@/lib/queries/history';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { rankSuppliers } from '@/lib/derive/supplier-match';
@@ -68,16 +69,21 @@ export function SuppliersList() {
     if (!profile || newName.trim() === '') return;
     const name = newName.trim();
     setNewName('');
-    try {
-      await createSupplier.mutateAsync({ name, actorId: profile.id });
-      toast.show(`Added ${name}.`);
-    } catch (error) {
+    const outcome = await submitWrite(createSupplier, {
+      id: optimisticSupplier(crypto.randomUUID(), name).id,
+      name,
+      actorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
       setNewName(name);
-      toast.show(
-        error instanceof Error ? error.message : 'Couldn’t add that supplier.',
-        'problem',
-      );
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that supplier.'), 'problem');
+      return;
     }
+
+    toast.show(
+      outcome.kind === 'queued' ? `Added ${name} — will send when you’re back online.` : `Added ${name}.`,
+    );
   }
 
   return (

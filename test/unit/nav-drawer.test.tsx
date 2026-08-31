@@ -23,6 +23,7 @@ const invoices = makeInvoices(60);
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[0], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -239,15 +240,44 @@ describe('the header it hangs off', () => {
     expect(screen.getByText('SHG Invoices')).toBeInTheDocument();
   });
 
-  it('sends the person chip to settings', () => {
+  it('has no profile chip — it lives in the menu now', () => {
+    /*
+     * Removed at the client's request to make room for the connection symbol.
+     * Nothing became unreachable: the drawer opens with the same chip, the
+     * same name and the same link to Settings, and the menu button is on
+     * every screen. The test below is the one that now guards that.
+     */
     render(
       <AppChrome>
         <p>the screen</p>
       </AppChrome>,
     );
-    expect(
-      screen.getByRole('link', { name: /Signed in as Mani/ }),
-    ).toHaveAttribute('href', '/settings');
+    expect(screen.queryByRole('link', { name: /Signed in as Mani/ })).not.toBeInTheDocument();
+  });
+
+  it('shows whether the phone is online, always, not only when it is not', () => {
+    /*
+     * Asked for directly, and the reason it is always visible rather than
+     * appearing on a problem: a symbol nobody has seen before cannot answer
+     * "did that save" at the moment it matters. You cannot tell "fine" from
+     * "not rendered".
+     */
+    render(
+      <AppChrome>
+        <p>the screen</p>
+      </AppChrome>,
+    );
+    expect(screen.getByRole('status', { name: 'Online' })).toBeInTheDocument();
+  });
+
+  it('still reaches settings, from the menu', () => {
+    render(
+      <AppChrome>
+        <p>the screen</p>
+      </AppChrome>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+    expect(screen.getByRole('link', { name: /Mani/ })).toHaveAttribute('href', '/settings');
   });
 });
 

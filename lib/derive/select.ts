@@ -224,9 +224,15 @@ export function summariseByBusiness(
   businesses: ReadonlyArray<Business>,
   today: DateStr,
 ): BusinessSummary[] {
+  // Hoisted out of the map: it was being recomputed once per business, so the
+  // work grew with businesses x invoices rather than with invoices. Four
+  // businesses and two hundred rows makes that eight hundred passes to do two
+  // hundred rows worth of filtering. Found in the 200-row pass (spec 9).
+  const unpaid = onlyUnpaid(rows);
+
   return businesses
     .map((business) => {
-      const mine = onlyUnpaid(rows).filter((row) => row.business_id === business.id);
+      const mine = unpaid.filter((row) => row.business_id === business.id);
       const overdue = mine.filter((row) => compareDates(row.due_date, today) < 0);
       return {
         business,

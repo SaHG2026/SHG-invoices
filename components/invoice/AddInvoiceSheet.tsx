@@ -6,7 +6,13 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { useToast } from '@/components/ui/Toast';
-import { useBusinesses, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
+import {
+  optimisticSupplier,
+  useBusinesses,
+  useCreateSupplier,
+  useSuppliers,
+} from '@/lib/queries/reference';
+import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { findDuplicates, useCreateInvoice } from '@/lib/queries/invoices';
 import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
 import {
@@ -159,14 +165,32 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     setErrors((current) => ({ ...current, supplier_id: '' }));
   }, []);
 
+  /**
+   * Add a supplier without leaving the sheet — spec 7.3.
+   *
+   * The id is decided here rather than by the database, which is what lets the
+   * supplier be chosen immediately instead of after a round trip. Offline that
+   * round trip never completes, so the old version of this function stopped the
+   * entry flow dead at a dock with no signal; now the supplier is selected
+   * whether the write went or is waiting, and the invoice that follows queues
+   * behind it in order.
+   */
   async function onCreateSupplier(name: string) {
     if (!profile) return;
-    try {
-      const created = await createSupplier.mutateAsync({ name, actorId: profile.id });
-      chooseSupplier(created);
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Couldn’t add that supplier.', 'problem');
+
+    const created = optimisticSupplier(crypto.randomUUID(), name);
+    const outcome = await submitWrite(createSupplier, {
+      id: created.id,
+      name,
+      actorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that supplier.'), 'problem');
+      return;
     }
+
+    chooseSupplier(created);
   }
 
   /**
@@ -265,23 +289,36 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     writeLastBusinessId(business.id);
     onClose();
 
-    try {
-      const saved = await createInvoice.mutateAsync({
-        payload,
-        supplier: { id: supplier.id, name: supplier.name },
-        business: { id: business.id, code: business.code, name: business.name },
-      });
+    const outcome = await submitWrite(createInvoice, {
+      payload,
+      supplier: { id: supplier.id, name: supplier.name },
+      business: { id: business.id, code: business.code, name: business.name },
+    });
 
-      toast.show(
-        saved?.internal_ref
-          ? `Saved · ${saved.internal_ref}`
-          : `Saved · ${formatCents(payload.amount_cents)} to ${supplier.name}`,
-      );
-    } catch {
-      // networkMode 'offlineFirst' means an offline write is paused, not lost.
-      // Saying "saved" would be a lie; saying nothing would be worse.
+    /*
+     * Three outcomes, three sentences. lib/offline/submit.ts has the account of
+     * why this used to be a try/catch and why that was wrong twice: an offline
+     * write never reached the catch at all, and everything that did reach it
+     * — an RLS refusal, a bad payload — was told it had been saved.
+     */
+    if (outcome.kind === 'queued') {
       toast.show('Saved — will send when you’re back online.', 'queued');
+      return;
     }
+
+    if (outcome.kind === 'failed') {
+      toast.show(
+        writeFailureMessage(outcome.error, 'Couldn’t save that invoice. Nothing was written.'),
+        'problem',
+      );
+      return;
+    }
+
+    toast.show(
+      outcome.data?.internal_ref
+        ? `Saved · ${outcome.data.internal_ref}`
+        : `Saved · ${formatCents(payload.amount_cents)} to ${supplier.name}`,
+    );
   }
 
   const busy = checking || createInvoice.isPending;

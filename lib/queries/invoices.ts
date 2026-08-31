@@ -1,9 +1,12 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/browser';
 import { pushRecentSupplierId } from '@/lib/recents';
 import { DUPE_LOOKBACK_DAYS, UNPAID_STALE_MS } from '@/lib/constants';
+import { nowTimestamp } from '@/lib/date';
+import { mk } from '@/lib/offline/keys';
 import { useMemo } from 'react';
 import { mergeRecentlyPaid, useRecentlyPaid } from '@/lib/recently-paid';
 import { qk } from './keys';
@@ -80,10 +83,18 @@ export interface CreateInvoiceInput {
  * from the offline queue is a no-op rather than a second identical invoice.
  * The id is generated before sending precisely so a retry can be recognised.
  */
-export function useCreateInvoice() {
-  const queryClient = useQueryClient();
+interface CreateContext {
+  previous?: InvoiceRow[];
+}
 
-  return useMutation({
+/**
+ * Registered at startup rather than declared in the hook — `lib/offline/keys.ts`
+ * has the full reasoning. In one line: a write that outlives the app finds its
+ * function again by key, and a hook that has been unmounted for two days
+ * cannot supply one.
+ */
+export function registerInvoiceMutations(queryClient: QueryClient) {
+  queryClient.setMutationDefaults(mk.invoices.create, {
     mutationFn: async ({ payload }: CreateInvoiceInput): Promise<Invoice | null> => {
       const { data, error } = await supabase()
         .from('invoices')
@@ -96,12 +107,20 @@ export function useCreateInvoice() {
       return (data as Invoice | null) ?? null;
     },
 
-    onMutate: async (input: CreateInvoiceInput) => {
+    /*
+     * Not re-run when a write resumes from disk.
+     *
+     * `onMutate` ran once, in the session that made the write, and its
+     * context died with that session — so `onError` below is written to cope
+     * with having none. That is the right way round: the optimistic row it
+     * would have added is already gone, because reads are never persisted.
+     */
+    onMutate: async (input: CreateInvoiceInput): Promise<CreateContext> => {
       // Non-negotiable. See above.
       await queryClient.cancelQueries({ queryKey: qk.invoices.unpaid });
 
       const previous = queryClient.getQueryData<InvoiceRow[]>(qk.invoices.unpaid);
-      const now = new Date().toISOString();
+      const now = nowTimestamp();
 
       const optimistic: InvoiceRow = {
         ...input.payload,
@@ -128,13 +147,13 @@ export function useCreateInvoice() {
       return { previous };
     },
 
-    onError: (_error, _input, context) => {
+    onError: (_error: unknown, _input: CreateInvoiceInput, context: CreateContext | undefined) => {
       if (context?.previous) {
         queryClient.setQueryData(qk.invoices.unpaid, context.previous);
       }
     },
 
-    onSuccess: (_data, input) => {
+    onSuccess: (_data: Invoice | null, input: CreateInvoiceInput) => {
       pushRecentSupplierId(input.supplier.id);
     },
 
@@ -142,6 +161,12 @@ export function useCreateInvoice() {
       queryClient.invalidateQueries({ queryKey: qk.invoices.unpaid });
       queryClient.invalidateQueries({ queryKey: qk.activity.recent });
     },
+  });
+}
+
+export function useCreateInvoice() {
+  return useMutation<Invoice | null, Error, CreateInvoiceInput, CreateContext>({
+    mutationKey: mk.invoices.create,
   });
 }
 

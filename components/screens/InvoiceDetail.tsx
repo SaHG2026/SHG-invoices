@@ -11,6 +11,7 @@ import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useProfiles, useCurrentProfile } from '@/lib/queries/session';
 import { useAddNote, useInvoice, useInvoiceActivity, useInvoiceNotes } from '@/lib/queries/detail';
 import { useUnmarkPaid, useVoidInvoice } from '@/lib/queries/payments';
+import { submitWrite } from '@/lib/offline/submit';
 import { describeActivity, mergeStream } from '@/lib/derive/activity';
 import { formatDateTime, formatDayWithYear } from '@/lib/date';
 import { formatCents } from '@/lib/money';
@@ -103,7 +104,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   const { data: activity = [] } = useInvoiceActivity(id);
   const { data: notes = [] } = useInvoiceNotes(id);
 
-  const addNote = useAddNote(id);
+  const addNote = useAddNote();
   const unmarkPaid = useUnmarkPaid();
   const voidInvoice = useVoidInvoice();
 
@@ -144,11 +145,24 @@ export function InvoiceDetail({ id }: { id: string }) {
     if (!profile || noteText.trim() === '') return;
     const body = noteText;
     setNoteText('');
-    try {
-      await addNote.mutateAsync({ body, authorId: profile.id });
-    } catch {
+
+    const outcome = await submitWrite(addNote, {
+      // Decided here so a note replayed from the queue conflicts on the primary
+      // key rather than appearing twice under the same invoice.
+      id: crypto.randomUUID(),
+      invoiceId: id,
+      body,
+      authorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
       setNoteText(body);
-      toast.show('Couldn’t add that note — check your connection.', 'problem');
+      toast.show('Couldn’t add that note. Nothing was written.', 'problem');
+      return;
+    }
+
+    if (outcome.kind === 'queued') {
+      toast.show('Note saved — will send when you’re back online.', 'queued');
     }
   }
 

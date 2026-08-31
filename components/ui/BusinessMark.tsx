@@ -1,4 +1,7 @@
+'use client';
+
 import { businessMark } from '@/lib/logos';
+import { useBrandAsset } from '@/lib/brand/context';
 import type { Business } from '@/lib/types';
 
 /**
@@ -25,7 +28,19 @@ export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
   const mark = businessMark(business.code);
   const px = size === 'md' ? 28 : 24;
 
-  if (mark.src) {
+  /*
+   * An uploaded logo wins over the bundled one, which wins over the letters.
+   *
+   * Three levels rather than two because each answers a different question:
+   * the upload is what somebody chose today, the bundled file is what shipped,
+   * and the letters are what identifies the business when there is no artwork
+   * at all. Losing the middle one would mean a failed upload takes GroceryMate
+   * back to a grey tile.
+   */
+  const uploaded = useBrandAsset('businesses', business.code);
+  const src = uploaded ?? mark.src;
+
+  if (src) {
     return (
       /*
         A plain <img>, not next/image. These are small static files served from
@@ -39,7 +54,7 @@ export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
       */
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={mark.src}
+        src={src}
         alt=""
         width={px}
         height={px}

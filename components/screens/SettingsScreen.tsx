@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
+import { PushSwitch } from '@/components/app/PushSwitch';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile, useSignOut, useUpdateNotifyPreference } from '@/lib/queries/session';
@@ -111,7 +112,24 @@ export function SettingsScreen() {
           />
           <span>Notify me when a new invoice is added</span>
         </label>
+
+        <PushSwitch profileId={profile.id} />
       </section>
+
+      {/*
+        Only shown to whoever maintains the app, who is the only person who can
+        change a picture — the three of them are users, not editors. A row
+        that opens a screen where every button is missing is worse than no row
+        — notes §6, the interface should not offer what it cannot do.
+      */}
+      {profile.role === 'builder' ? (
+        <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+          <p className="mb-2 text-xs uppercase tracking-widest text-muted">Pictures</p>
+          <Link href={'/brand' as Route} className="touch flex items-center text-base text-action">
+            Logos and photographs
+          </Link>
+        </section>
+      ) : null}
 
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
         <p className="mb-2 text-xs uppercase tracking-widest text-muted">This device</p>

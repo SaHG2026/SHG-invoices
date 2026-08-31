@@ -6,7 +6,12 @@ import { useMemo, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile } from '@/lib/queries/session';
-import { useAllCustomers, useCreateCustomer } from '@/lib/queries/customers';
+import {
+  optimisticCustomer,
+  useAllCustomers,
+  useCreateCustomer,
+} from '@/lib/queries/customers';
+import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { filterCustomers, orderCustomers } from '@/lib/derive/customer-match';
 import { useOutstandingSales } from '@/lib/queries/sales';
 import { receivableByCustomer } from '@/lib/derive/receivables';
@@ -60,17 +65,22 @@ export function CustomersList() {
     if (!profile || newName.trim() === '') return;
     const name = newName.trim();
     setNewName('');
-    try {
-      await createCustomer.mutateAsync({ name, actorId: profile.id });
-      toast.show(`Added ${name}.`);
-    } catch (error) {
+    const outcome = await submitWrite(createCustomer, {
+      id: optimisticCustomer(crypto.randomUUID(), name).id,
+      name,
+      actorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
       // Never lose what somebody typed.
       setNewName(name);
-      toast.show(
-        error instanceof Error ? error.message : 'Couldn’t add that customer.',
-        'problem',
-      );
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that customer.'), 'problem');
+      return;
     }
+
+    toast.show(
+      outcome.kind === 'queued' ? `Added ${name} — will send when you’re back online.` : `Added ${name}.`,
+    );
   }
 
   return (

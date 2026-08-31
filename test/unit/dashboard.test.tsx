@@ -35,6 +35,7 @@ vi.mock('@/hooks/use-sydney-today', () => ({
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: PROFILES[3], isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

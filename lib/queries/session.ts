@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/browser';
+import { clearOfflineQueue, clearShellCache } from '@/lib/offline/persister';
 import { clearAllLockState } from '@/lib/pin';
 import { clearRecentlyPaid } from '@/lib/recently-paid';
 import { qk } from './keys';
@@ -139,6 +140,20 @@ export function useSignOut() {
       clearRecentlyPaid();
       const { error } = await supabase().auth.signOut();
       if (error) throw error;
+
+      /*
+       * Both of this device's stores, not just the one in memory.
+       *
+       * `queryClient.clear()` below empties the cache the app is holding; it
+       * does not touch the copy of the write queue on disk. Leaving that
+       * behind meant a queued invoice could either be lost without anybody
+       * being told, or be sent later by whoever signed in next.
+       * lib/offline/persister.ts has the full account.
+       *
+       * Awaited before the navigation, because the navigation kills this page.
+       */
+      await clearOfflineQueue();
+      await clearShellCache();
     },
     onSuccess: () => {
       queryClient.clear();

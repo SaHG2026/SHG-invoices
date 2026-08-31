@@ -796,7 +796,7 @@ deliberately do not exist on this side.** §29.6.
 before go-live, and taking Rabindra out of the profile list.
 
 Live at **https://shg-invoices.vercel.app** · repo `SaHG2026/SHG-invoices`,
-branch `tidy-up-before-phase-7` · 525 tests, run under `TZ=UTC`,
+branch `tidy-up-before-phase-7` · 532 tests, run under `TZ=UTC`,
 `Australia/Sydney` and `America/Los_Angeles` before every commit.
 
 ### What exists
@@ -2318,3 +2318,50 @@ and the push trigger both fire on insert and update only, so a delete passes
 them silently.
 
 Tests: 525, under all three timezones.
+
+---
+
+## 32. Signing out no longer takes somebody's work with it
+
+The one audit finding fixed rather than accepted. §31 and the audit both name
+it; this is what was done.
+
+**What was wrong.** `queryClient.clear()` empties the cache in memory and does
+not touch the copy of the write queue on disk. So signing out left the queue
+behind, which is wrong in both directions at once: a queued invoice could be
+**lost** — the person was told "will send when you're back online" and nobody
+was going to send it — or **sent later by whoever signed in next**, since the
+queue is restored on the next load regardless of who that is. Attribution would
+have survived either way, because the author is baked into the payload. The
+promise would not have.
+
+**Two halves, and they belong in different places.**
+
+`clearOfflineQueue()` and `clearShellCache()` in `lib/offline/persister.ts` are
+the mechanical half: sign-out now clears both stores, awaited before the
+navigation that kills the page. Both swallow their own errors, because failing
+to sign out over a housekeeping error leaves somebody signed in, which is the
+worse of the two states.
+
+The Settings screen is the honest half. **[decision] It refuses to sign out
+quietly while anything is waiting.** With an empty queue it is the plain
+sign-out it always was; with something queued it names the count and says
+plainly that signing out loses it.
+
+**The dialog is live, and that is the point of it.** The count comes from the
+queue itself, so if the wifi returns while the question is on screen the queue
+drains, the count reaches zero and the dialog closes itself. Pressing sign-out
+with signal also kicks `resumePausedMutations()` first — the queue usually
+empties in the time it takes to read the question. A question that answers
+itself is better than one somebody has to think about, and the ones left over
+are the ones that genuinely needed asking.
+
+**What was deliberately not done: blocking sign-out.** Somebody handing a phone
+over, or signing out because they have to, must always be able to. The app's
+job is to make sure they know what it costs, not to decide for them.
+
+Seven tests, and they are about the sentence rather than the mechanism: that
+nothing is asked when nothing is waiting, that the loss is stated in words, that
+"Wait" leaves them signed in, and that the app tries to send before it asks.
+
+Tests: 532, under all three timezones.

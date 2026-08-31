@@ -58,6 +58,7 @@ only section describing work that is decided and not built at all.
 | §29 | **Phase 7** — the offline queue, the service worker, error boundaries, push |
 | §30 | Rabindra becomes the builder; logos and photographs change without a deploy |
 | §31 | The third motion pass — why it was abrupt; the go-live reset |
+| §32 | Signing out no longer discards unsent work |
 
 **Phase 7 is built** — the offline write queue, the service worker, error
 boundaries, the 200-row pass and push. `ARCHITECTURE.md` §29.
@@ -100,7 +101,7 @@ follows is §28's go-live work, and when is the client's call.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 525 tests
+npx vitest run       # 532 tests
 npx tsc --noEmit
 npx next build
 ```

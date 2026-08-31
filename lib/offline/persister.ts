@@ -103,3 +103,55 @@ export function offlinePersistOptions(
     },
   };
 }
+
+/**
+ * Forget everything this device was holding for the person signing out.
+ *
+ * ---------------------------------------------------------------------------
+ * Why sign-out has to reach in here at all
+ *
+ * `queryClient.clear()` empties the cache in memory. It does not touch the
+ * copy on disk, and the two were left to disagree: a write queued with no
+ * signal stayed in IndexedDB after somebody signed out, which is wrong in both
+ * directions at once.
+ *
+ * It could be **lost** — the person was told "will send when you're back
+ * online", and nobody was going to send it. And it could be **sent by the next
+ * person**, because the queue is restored on the next load whoever that is.
+ * The invoice would still carry its real author, so nothing would be
+ * misattributed; but one person's unsent work sitting on a handed-over phone
+ * is not something to leave to chance.
+ *
+ * So signing out clears both stores. The UI's job is to make sure nothing is
+ * still waiting before it gets here — see `SettingsScreen`, which refuses to
+ * sign out quietly while a write is pending.
+ * ---------------------------------------------------------------------------
+ */
+export async function clearOfflineQueue(): Promise<void> {
+  try {
+    await del('shg-offline-writes');
+  } catch {
+    /*
+     * Swallowed on purpose. A device that cannot reach IndexedDB never wrote a
+     * queue to it either, and failing to sign out because the cleanup failed
+     * would leave somebody signed in — which is the worse of the two states.
+     */
+  }
+}
+
+/**
+ * Drop the cached page shells the service worker keeps.
+ *
+ * They hold no ledger data — every figure is fetched after the page loads, so
+ * these are empty frames. Clearing them is about not handing the next person a
+ * stale screen from somebody else's session, not about secrecy.
+ */
+export async function clearShellCache(): Promise<void> {
+  try {
+    if (typeof caches === 'undefined') return;
+    const names = await caches.keys();
+    await Promise.all(names.filter((name) => name.startsWith('shg-')).map((name) => caches.delete(name)));
+  } catch {
+    /* Same reasoning as above: never block a sign-out on housekeeping. */
+  }
+}

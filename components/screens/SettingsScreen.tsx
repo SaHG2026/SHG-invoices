@@ -5,6 +5,9 @@ import type { Route } from 'next';
 import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useIsOnline, useQueuedWriteCount } from '@/lib/offline/pending';
+import { useQueryClient } from '@tanstack/react-query';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile, useSignOut, useUpdateNotifyPreference } from '@/lib/queries/session';
@@ -42,6 +45,12 @@ export function SettingsScreen() {
   const signOut = useSignOut();
   const updateNotify = useUpdateNotifyPreference();
 
+  // What is still waiting to send, and whether it could. Both are live, so the
+  // sign-out question below answers itself when the signal comes back.
+  const queued = useQueuedWriteCount();
+  const online = useIsOnline();
+  const queryClient = useQueryClient();
+
   // Storage cannot be read during render without breaking hydration.
   const [lock, setLock] = useState<{ supported: boolean; set: boolean } | null>(null);
 
@@ -69,6 +78,29 @@ export function SettingsScreen() {
       // query was never changed. Saying why matters more than saying it failed.
       toast.show('Couldn’t save that. It stays as it was.', 'problem');
     }
+  }
+
+  const [askingSignOut, setAskingSignOut] = useState(false);
+
+  /**
+   * Never sign out quietly over the top of unsent work.
+   *
+   * With nothing queued this is the plain sign-out it always was. With
+   * something queued it asks first, because the alternative is an invoice
+   * disappearing after the app promised to send it — which is the one thing
+   * this app is built never to do.
+   *
+   * Resuming first, when there is signal: the queue usually drains in the time
+   * it takes to read the question, and a question that answers itself is
+   * better than one somebody has to think about.
+   */
+  function pressedSignOut() {
+    if (queued === 0) {
+      signOut.mutate();
+      return;
+    }
+    if (online) void queryClient.resumePausedMutations();
+    setAskingSignOut(true);
   }
 
   /**
@@ -164,7 +196,7 @@ export function SettingsScreen() {
         </Link>
         <button
           type="button"
-          onClick={() => signOut.mutate()}
+          onClick={pressedSignOut}
           disabled={signOut.isPending}
           className="touch flex w-full items-center text-left text-sm text-action disabled:opacity-40"
         >
@@ -172,6 +204,39 @@ export function SettingsScreen() {
         </button>
         <p className="mt-1 text-xs text-muted">Signing out clears the PIN on this device.</p>
       </section>
+
+      {/*
+        Signing out clears this device, including anything still waiting to
+        send. That is the right thing to do and the wrong thing to do quietly:
+        somebody was told their invoice would go when the signal came back.
+
+        So the count is put in front of them, and it is live — if the wifi
+        returns while the question is on screen the queue drains, the count
+        reaches zero, and this closes itself rather than making somebody answer
+        a question that has stopped being true.
+      */}
+      <ConfirmDialog
+        open={askingSignOut && queued > 0}
+        title={
+          queued === 1
+            ? 'One invoice hasn’t sent yet'
+            : `${queued} things haven’t sent yet`
+        }
+        points={[
+          online
+            ? 'You have signal, so this should clear by itself in a moment. Waiting is the safe option.'
+            : 'This phone has no signal. Nothing can be sent until it comes back.',
+          'Signing out clears this device, and anything still waiting is lost.',
+        ]}
+        question="Sign out anyway?"
+        confirmLabel="Sign out anyway"
+        cancelLabel="Wait"
+        onConfirm={() => {
+          setAskingSignOut(false);
+          signOut.mutate();
+        }}
+        onCancel={() => setAskingSignOut(false)}
+      />
     </AppChrome>
   );
 }

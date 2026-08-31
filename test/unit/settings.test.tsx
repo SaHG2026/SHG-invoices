@@ -29,6 +29,9 @@ const mocks = vi.hoisted(() => ({
   lock: { supported: true, set: false },
   /* What this device can do about push, likewise. */
   push: { support: 'off' as string },
+  /* How many writes are still waiting, and whether there is signal. */
+  queue: { queued: 0, online: true },
+  resumePaused: vi.fn(),
   enablePush: vi.fn(),
   disablePush: vi.fn(),
 }));
@@ -61,6 +64,16 @@ vi.mock('@/lib/queries/invoices', () => ({
 
 vi.mock('@/lib/queries/detail', () => ({ useRecentActivity: () => ({ data: [] }) }));
 
+vi.mock('@/lib/offline/pending', () => ({
+  useQueuedWriteCount: () => mocks.queue.queued,
+  useIsOnline: () => mocks.queue.online,
+}));
+
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
+  return { ...actual, useQueryClient: () => ({ resumePausedMutations: mocks.resumePaused }) };
+});
+
 vi.mock('@/lib/queries/push', () => ({
   usePushSupport: () => ({ data: mocks.push.support, isLoading: false }),
   useEnablePush: () => ({ mutateAsync: mocks.enablePush, isPending: false }),
@@ -80,6 +93,8 @@ function open() {
 
 beforeEach(() => {
   mocks.push.support = 'off';
+  mocks.queue.queued = 0;
+  mocks.queue.online = true;
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -244,6 +259,76 @@ describe('notifications on this device', () => {
     open();
     fireEvent.click(screen.getByLabelText('Notify this device'));
     expect(mocks.disablePush).toHaveBeenCalled();
+  });
+});
+
+describe('signing out with work still waiting', () => {
+  /*
+   * The finding this was written for: signing out clears the device,
+   * including the queue on disk. Doing that silently means an invoice
+   * disappears after the app promised to send it when the signal came back
+   * — the one sentence this app must never say falsely.
+   */
+  it('signs out immediately when nothing is waiting', () => {
+    mocks.queue.queued = 0;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  it('asks first when something is still waiting, and does not sign out yet', () => {
+    mocks.queue.queued = 1;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(screen.getByText(/One invoice hasn/)).toBeInTheDocument();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('says plainly that waiting work is lost, and offers to wait instead', () => {
+    mocks.queue.queued = 2;
+    mocks.queue.online = false;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(screen.getByText(/2 things haven/)).toBeInTheDocument();
+    expect(screen.getByText(/anything still waiting is lost/)).toBeInTheDocument();
+    expect(screen.getByText(/no signal/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Wait' })).toBeInTheDocument();
+  });
+
+  it('tries to send what is waiting before asking, when there is signal', () => {
+    // The question usually answers itself: the queue drains while somebody
+    // is reading it.
+    mocks.queue.queued = 1;
+    mocks.queue.online = true;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(mocks.resumePaused).toHaveBeenCalled();
+  });
+
+  it('does not try to send when there is no signal', () => {
+    mocks.queue.queued = 1;
+    mocks.queue.online = false;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(mocks.resumePaused).not.toHaveBeenCalled();
+  });
+
+  it('signs out when the person says to anyway', () => {
+    mocks.queue.queued = 1;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out anyway' }));
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  it('stays signed in when they choose to wait', () => {
+    mocks.queue.queued = 1;
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Wait' }));
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
 });
 

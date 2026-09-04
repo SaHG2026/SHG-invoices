@@ -33,13 +33,37 @@ export const BUSINESSES: Business[] = [
 ];
 
 export const PROFILES: Profile[] = [
-  { id: 'p-mani', display_name: 'Mani', initials: 'MA', accent: 'person-2', role: 'owner', notify_on_new_invoice: true, active: true },
-  { id: 'p-milan', display_name: 'Milan', initials: 'MI', accent: 'person-3', role: 'member', notify_on_new_invoice: false, active: true },
-  { id: 'p-sujan', display_name: 'Sujan', initials: 'SU', accent: 'person-4', role: 'member', notify_on_new_invoice: false, active: true },
+  { id: 'p-mani', display_name: 'Mani', initials: 'MA', accent: 'person-2', role: 'owner', notify_on_new_invoice: true, active: true, business_id: null },
+  { id: 'p-milan', display_name: 'Milan', initials: 'MI', accent: 'person-3', role: 'member', notify_on_new_invoice: false, active: true, business_id: null },
+  { id: 'p-sujan', display_name: 'Sujan', initials: 'SU', accent: 'person-4', role: 'member', notify_on_new_invoice: false, active: true, business_id: null },
   // The builder: full access, not one of the people running the businesses,
   // and never a notification target. ARCHITECTURE §28.2 / CATCH_UP_007.
-  { id: 'p-rabindra', display_name: 'Rabindra', initials: 'RA', accent: 'person-1', role: 'builder', notify_on_new_invoice: false, active: true },
+  { id: 'p-rabindra', display_name: 'Rabindra', initials: 'RA', accent: 'person-1', role: 'builder', notify_on_new_invoice: false, active: true, business_id: null },
 ];
+
+/**
+ * A venue account: GroceryMate Parramatta's shared login. CATCH_UP_010.
+ *
+ * Deliberately NOT in `PROFILES`. That array is what `useProfiles` returns —
+ * the lookup every attribution chip reads — and half the suite counts its
+ * length or renders all of it. A venue appearing there by default would change
+ * what unrelated tests assert, which is how a fixture stops describing the app
+ * and starts propping it up.
+ *
+ * Tests that need a venue add it explicitly. `test/unit/venue.test.tsx` does.
+ */
+export const VENUE_PROFILE: Profile = {
+  id: 'p-gmp',
+  display_name: 'Parramatta',
+  initials: 'GMP',
+  // Not one of the four person slots, so PersonChip renders the venue
+  // treatment rather than pretending a shop is a person.
+  accent: 'venue',
+  role: 'staff',
+  notify_on_new_invoice: false,
+  active: true,
+  business_id: 'b-gmp',
+};
 
 const SUPPLIER_NAMES: ReadonlyArray<[string, number | null]> = [
   ['Bidfood', 14],

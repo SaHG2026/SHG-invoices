@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
+import { PasswordChange } from '@/components/app/PasswordChange';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useIsOnline, useQueuedWriteCount } from '@/lib/offline/pending';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,6 +13,7 @@ import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile, useSignOut, useUpdateNotifyPreference } from '@/lib/queries/session';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
+import { isStaff, STAFF_HOME } from '@/lib/staff';
 import { PIN_LENGTH } from '@/lib/constants';
 
 /**
@@ -58,6 +60,14 @@ export function SettingsScreen() {
     if (!profile) return;
     setLock({ supported: pinAvailable(), set: pinAvailable() && hasPin(profile.id) });
   }, [profile]);
+
+  /*
+   * Where "back" goes. A venue account has never seen the dashboard and
+   * cannot — `VenueGate` sends it to its own screen and `is_member()` would
+   * refuse the data anyway — so a back link pointing at `/` would bounce off a
+   * redirect and land somewhere it did not name.
+   */
+  const backHref = isStaff(profile) ? STAFF_HOME : ('/' as Route);
 
   if (!profile) {
     return (
@@ -118,7 +128,7 @@ export function SettingsScreen() {
   }
 
   return (
-    <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
+    <AppChrome back={{ href: backHref, label: 'Invoices' }}>
       <h1 className="text-h1 mb-4 text-ink">Settings</h1>
 
       <section className="mb-4 flex items-center gap-3 rounded-sm border border-edge bg-card p-4">
@@ -126,11 +136,26 @@ export function SettingsScreen() {
         <span className="min-w-0">
           <span className="block truncate text-base text-ink">{profile.display_name}</span>
           <span className="block truncate text-xs text-muted">
-            Sagarmatha Holdings{profile.role === 'owner' ? ' · owner' : ''}
+            {/*
+              A venue is a shop, not a person with a job title. Saying
+              "Sagarmatha Holdings" to whoever is on shift at Parramatta names
+              the wrong thing entirely — the useful fact is which login this
+              phone is signed in as, because it is shared.
+            */}
+            {isStaff(profile)
+              ? 'Shop login · shared'
+              : `Sagarmatha Holdings${profile.role === 'owner' ? ' · owner' : ''}`}
           </span>
         </span>
       </section>
 
+      {/*
+        Not shown to a venue. CATCH_UP_010 §6 turned both push audiences into
+        allowlists of `member` and `owner`, so a shop switching this on would
+        change a flag that no view reads and no notification would ever arrive.
+        Notes §6: the interface should not offer what it cannot do.
+      */}
+      {isStaff(profile) ? null : (
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
         <p className="mb-2 text-xs uppercase tracking-widest text-muted">Notifications</p>
 
@@ -147,6 +172,7 @@ export function SettingsScreen() {
 
         <PushSwitch profileId={profile.id} />
       </section>
+      )}
 
       {/*
         Only shown to whoever maintains the app, who is the only person who can
@@ -191,9 +217,19 @@ export function SettingsScreen() {
       <section className="rounded-sm border border-edge bg-card p-4">
         <p className="mb-1 text-xs uppercase tracking-widest text-muted">Account</p>
 
-        <Link href={'/specimen' as Route} className="touch flex items-center text-sm text-action">
-          Design tokens
-        </Link>
+        <PasswordChange />
+
+        {/*
+          The token specimen is a builder's page. It was reachable by everyone
+          when everyone was one of four people who would never tap it; a shop
+          phone is a different audience, and a screen full of colour swatches
+          is noise on it.
+        */}
+        {profile.role === 'builder' ? (
+          <Link href={'/specimen' as Route} className="touch flex items-center text-sm text-action">
+            Design tokens
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={pressedSignOut}

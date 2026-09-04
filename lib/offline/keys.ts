@@ -43,6 +43,29 @@ export const mk = {
     markReceived: ['sales', 'mark-received'] as const,
     unmarkReceived: ['sales', 'unmark-received'] as const,
   },
+  /**
+   * A venue logging its own invoice.
+   *
+   * Its own key rather than `invoices.create`, for a reason that is not
+   * tidiness: the two send different requests. A venue account has no SELECT
+   * policy on `invoices` (CATCH_UP_010 §4), so its insert must not ask for the
+   * row back — `.select()` would read the base table and hand over the very
+   * status columns the whole feature exists to withhold. One key, one
+   * function, one request shape.
+   */
+  venue: {
+    create: ['venue', 'create'] as const,
+    /**
+     * A venue correcting an invoice inside its five-minute window.
+     *
+     * Queueable like every other write, and the window is measured by the
+     * DATABASE against `created_at`, not by the queue. So an edit made in a
+     * dead spot and sent twenty minutes later is refused — correctly. The
+     * alternative, a client-side clock deciding, would mean a shop with a
+     * wrong phone clock editing an invoice from last Tuesday.
+     */
+    update: ['venue', 'update'] as const,
+  },
 } as const;
 
 /**
@@ -76,6 +99,8 @@ export const QUEUEABLE_KEYS: readonly (readonly string[])[] = [
   mk.sales.create,
   mk.sales.markReceived,
   mk.sales.unmarkReceived,
+  mk.venue.create,
+  mk.venue.update,
 ];
 
 /**

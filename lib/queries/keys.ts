@@ -55,6 +55,21 @@ export const qk = {
     outstanding: ['sales', 'outstanding'] as const,
     forCustomer: (customerId: string) => ['sales', 'customer', customerId] as const,
   },
+  /**
+   * What a venue account sees: the `staff_invoices` view, its own venue only.
+   *
+   * A separate key from `invoices`, and not a filter on one — the same
+   * reasoning ARCHITECTURE §17 gives for the two ledgers. These rows have no
+   * `status` column at all (CATCH_UP_010 §3), so anything that reached them
+   * through an invoice key would be a different shape than every consumer of
+   * that key expects, and `onlyUnpaid` would silently return all of them.
+   *
+   * There is no `unpaid` sibling here on purpose. A venue is never told what
+   * has been paid, so it has no unpaid list to hold.
+   */
+  venue: {
+    invoices: ['venue', 'invoices'] as const,
+  },
   activity: {
     forInvoice: (id: string) => ['activity', 'invoice', id] as const,
     recent: ['activity', 'recent'] as const,

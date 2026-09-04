@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase/browser';
 import { clearOfflineQueue, clearShellCache } from '@/lib/offline/persister';
 import { clearAllLockState } from '@/lib/pin';
 import { clearRecentlyPaid } from '@/lib/recently-paid';
+import { runsTheBusinesses } from '@/lib/staff';
 import { qk } from './keys';
 import type { Profile } from '@/lib/types';
 
@@ -32,7 +33,7 @@ export function useCurrentProfile() {
 
       const { data, error } = await client
         .from('profiles')
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active')
+        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -52,7 +53,7 @@ export function useProfiles() {
     queryFn: async (): Promise<Profile[]> => {
       const { data, error } = await supabase()
         .from('profiles')
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active')
+        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
         .eq('active', true)
         .order('display_name');
 
@@ -70,22 +71,28 @@ export function useProfiles() {
  * LOOKUP, used to put a name and a face against whoever touched a row, and it
  * must keep returning everybody or a chip somewhere cannot name its actor.
  * This one is a LIST OF PEOPLE, rendered as choices, and it leaves out
- * builders.
+ * builders and venues.
  *
  * ARCHITECTURE §28.2: Rabindra builds and maintains the app and is not part of
  * running the businesses. Two facts about one person that the schema used to
- * be unable to tell apart. `role` carries the second one and no RLS policy
- * reads it, so nothing about his access changes — he simply stops being
- * offered as one of the four.
+ * be unable to tell apart. `role` carries the second one, so nothing about his
+ * access changes — he simply stops being offered as one of the four.
  *
  * They are different questions, so they get different functions. Filtering the
- * lookup instead would leave an unnamed chip on any row he ever touched.
+ * lookup instead would leave an unnamed chip on any row he ever touched — and
+ * that now matters twice over, because the two venue accounts DO enter
+ * invoices, so `useProfiles` has to keep naming them while this one does not
+ * offer them.
+ *
+ * The predicate is an allowlist and lives in `lib/staff.ts`. It used to read
+ * `role !== 'builder'` inline, which would have listed GroceryMate Parramatta
+ * as one of the people who run the businesses the day that account existed.
  */
 export function useTeam() {
   const query = useProfiles();
   return {
     ...query,
-    data: (query.data ?? []).filter((person) => person.role !== 'builder'),
+    data: (query.data ?? []).filter(runsTheBusinesses),
   };
 }
 
@@ -111,7 +118,7 @@ export function useUpdateNotifyPreference() {
         .from('profiles')
         .update({ notify_on_new_invoice: notify })
         .eq('id', id)
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active')
+        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
         .single();
 
       if (error) throw error;

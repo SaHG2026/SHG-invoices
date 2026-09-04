@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
-import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
+import { BUSINESSES, PROFILES, SUPPLIERS, VENUE_PROFILE, makeInvoices } from '../fixtures/invoices';
 import type { Profile } from '@/lib/types';
 
 /**
@@ -22,6 +22,8 @@ import type { Profile } from '@/lib/types';
 const profile = { ...PROFILES[0]!, notify_on_new_invoice: true } as Profile;
 
 const mocks = vi.hoisted(() => ({
+  /* Who is signed in. Switched per test, so the venue branch can be reached. */
+  who: null as unknown,
   updateNotify: vi.fn(),
   signOut: vi.fn(),
   clearAllLockState: vi.fn(),
@@ -43,7 +45,7 @@ vi.mock('@/lib/pin', () => ({
 }));
 
 vi.mock('@/lib/queries/session', () => ({
-  useCurrentProfile: () => ({ data: profile, isLoading: false, isError: false }),
+  useCurrentProfile: () => ({ data: mocks.who, isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
   useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: mocks.signOut, isPending: false }),
@@ -92,6 +94,7 @@ function open() {
 }
 
 beforeEach(() => {
+  mocks.who = profile;
   mocks.push.support = 'off';
   mocks.queue.queued = 0;
   mocks.queue.online = true;
@@ -339,5 +342,60 @@ describe('renders nothing broken — notes §6', () => {
     for (const token of ['undefined', 'NaN', '[object Object]', 'Invalid Date']) {
       expect(text, `"${token}" leaked into settings`).not.toContain(token);
     }
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+
+describe('a venue account', () => {
+  beforeEach(() => {
+    mocks.who = VENUE_PROFILE;
+  });
+
+  /**
+   * CATCH_UP_010 §6 turned both push audiences into allowlists of `member` and
+   * `owner`. A shop switching this on would set a flag no view reads, and no
+   * notification would ever arrive — notes §6, do not offer what you cannot do.
+   */
+  it('is not offered notifications it can never receive', () => {
+    open();
+    expect(screen.queryByText(/Notify me when a new invoice is added/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Notifications')).not.toBeInTheDocument();
+  });
+
+  it('is described as a shared shop login, not as a person with a job title', () => {
+    open();
+    expect(screen.getByText(/Shop login/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sagarmatha Holdings/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * `VenueGate` would bounce a venue off `/`, so a back link pointing there
+   * lands somewhere it did not name. It has to go where they came from.
+   */
+  it('goes back to its own screen, which is the only one it has', () => {
+    open();
+    const back = screen.getByRole('link', { name: /Invoices/ });
+    expect(back).toHaveAttribute('href', '/venue');
+  });
+
+  it('is not shown the design tokens, which are a builder’s page', () => {
+    open();
+    expect(screen.queryByRole('link', { name: 'Design tokens' })).not.toBeInTheDocument();
+  });
+
+  it('can still sign out, set a PIN and change its password', () => {
+    open();
+    expect(screen.getByRole('button', { name: /Sign out/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /PIN/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+  });
+});
+
+describe('everybody', () => {
+  it('can change their own password', () => {
+    open();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
   });
 });

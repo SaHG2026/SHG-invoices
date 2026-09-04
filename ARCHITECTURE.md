@@ -2448,4 +2448,271 @@ worth the half day.
 - **Database:** migrations `001`–`009` plus `CATCH_UP_001`–`009` all applied.
   The ledger is empty by design — `CATCH_UP_009_RESET.sql` was run at handover.
 - **Push:** live. Edge Function deployed, secrets set, trigger installed.
-- **Tests:** 532, under `UTC`, `Australia/Sydney` and `America/Los_Angeles`.
+- **Tests:** 532 at handover; 572 after §34. All under `UTC`,
+  `Australia/Sydney` and `America/Los_Angeles`.
+
+
+---
+
+## 34. Venue staff accounts — the day `role` became a permission
+
+GroceryMate Parramatta and Hurstville get a login each. The client's reason, in
+his words: *"the idea is to reduce management work load by enabling staffs to
+add invoice, the management will just review"*.
+
+That sentence settles more of the design than it looks. It rules out read-only —
+which was my recommendation and was wrong on the premise — and it makes the
+venue chip load-bearing rather than decorative, because "who entered this" is
+the whole of what reviewing means here.
+
+### 34.1 What migration 005 was waiting for
+
+Migration 005 has carried this comment since Phase 1:
+
+> `role` is NOT a permission... If `role` ever starts deciding what somebody can
+> read or write, that belongs in a policy — and this comment is the warning that
+> no such policy has been written.
+
+`CATCH_UP_010` is that policy, taken deliberately rather than drifted into. From
+here `role` decides access for exactly one value — `staff` — and `member`,
+`owner` and `builder` remain what they always were: facts about what a screen
+shows, identical in access.
+
+### 34.2 The door, not nine locks
+
+Nine policies across 007, 008, 009 and CATCH_UP_007 say `is_member()`, and each
+means "one of the four". The obvious move is to add `and business_id = ...` to
+the ones that matter, which is nine chances to miss one, and a missed one is a
+leak nobody sees.
+
+So **`is_member()` changed meaning instead** — from "has an active profile" to
+"is one of the people who run the businesses". Every existing policy then
+excludes staff without being edited, and so does any policy written in a later
+phase by somebody who never reads this section, because they will write
+`is_member()` like all the others. Staff access is added one object at a time
+below it. The default is no.
+
+For the current four it is provably a no-op: all of them are `member`, `owner`
+or `builder`, and §7 of the file proves it in the same paste rather than
+asserting it.
+
+### 34.3 Why payment status needed a view
+
+Two mechanisms cannot withhold a column per-person, and both are worth knowing
+so nobody tries them later:
+
+- **RLS cannot restrict columns.** It decides which rows, full stop.
+- **A column-level `GRANT` can**, but it applies to the `authenticated` role,
+  which is every signed-in person. Hiding `status` that way hides it from Mani.
+
+So `staff_invoices` is a view with those columns simply absent, and the base
+table stays shut. **The view's `WHERE` is the entire boundary** — a view runs
+with its owner's rights and reads `invoices` in full — which is why it is the
+one thing in the file marked as such, and why `verify_rls.mjs` has to be run as
+a real staff account rather than clicked at.
+
+**And the view returns every invoice, paid or not.** That is the requirement,
+not laziness: if it held only unpaid ones, a row disappearing from a shop's list
+would *be* the payment notification. Absence leaks exactly the fact being
+withheld. Nothing on the venue screen may change when money moves.
+
+### 34.4 The consequence nobody would have predicted
+
+"What does this venue owe" **is** the payment status, computed. Any figure
+separating settled from unsettled hands over the withheld fact in a form harder
+to spot than a badge.
+
+So the venue screen has no liability total, no urgency, and no overdue
+treatment — `lib/derive/urgency.ts` exists and is deliberately not used there.
+The only figures are records of what was *entered*: a count and a sum per month,
+both of which move when somebody logs an invoice and never when somebody pays
+one. That property is what makes them safe, and `test/unit/venue.test.tsx`
+asserts it by checking the totals equal the whole month.
+
+Which is why this is a screen of its own rather than the dashboard filtered. The
+dashboard answers "what leaves the account this week". This answers "was that
+delivery logged, and for how much". Reusing the first would put an overdue badge
+on invoices paid a fortnight ago.
+
+### 34.5 Three blocklists that would have admitted the new role
+
+`push_targets`, `push_targets_payment` and `useTeam()` all filtered
+`role <> 'builder'`, written when builder was the only role to keep out. **A
+blocklist admits every role invented after it.** On the day these accounts
+existed, two notification audiences would have included the shops, and the
+profile picker would have listed GroceryMate Parramatta as one of the people who
+run the businesses.
+
+Nobody would have written that bug. It would simply have happened. All three are
+now allowlists, and the predicate lives in `lib/staff.ts` as a named function so
+it is findable and fails closed for whatever the sixth role turns out to be.
+
+This is §19's pattern again at a different scale: the fix makes the broken state
+unrepresentable rather than correcting the branch that produced it.
+
+### 34.6 What was duplicated on purpose
+
+`AddVenueInvoiceSheet` is a copy of `AddInvoiceSheet`, and `VenueChrome` a copy
+of the shell. That is deliberate, and it is the client's constraint applied
+literally — *"lets not publish anything, if it affects the useability of the
+current version"*.
+
+`AddInvoiceSheet` is the screen spec §1's fifteen seconds is measured through. A
+role branch inside it would put the app's one measured feature at regression
+risk to serve two accounts, and every later change to the entry path would have
+to be reasoned about in two audiences at once. Duplication is the cheaper
+mistake.
+
+**What is not duplicated is anything that decides what gets written.**
+`invoiceFormSchema` and `buildInvoicePayload` are imported, because notes §1.3
+is about precisely this: the previous app had two paths that built a record, one
+of them wrong, and it looked like it saved.
+
+Three things genuinely differ, each forced rather than chosen:
+
+1. **No business picker.** A venue has one venue and the database enforces it —
+   the insert `with check` (hardened in CATCH_UP_012) requires the row to be
+   the caller's own venue, unpaid, and attributed to the caller. Offering a
+   choice the insert would refuse is the interface promising what it cannot do.
+2. **A different duplicate lookup.** `find_duplicate_invoices` returns
+   `setof invoices` — status and `paid_at` included — so a venue must never
+   reach it. `find_duplicate_invoices_staff` returns five safe columns.
+   Without it the choice was leaking payment status or removing spec §6's
+   protection from the accounts most likely to need it: one login, two shifts,
+   no activity feed to check.
+3. **The toast cannot name the reference.** A venue has no SELECT policy on
+   `invoices`, so its insert must not `.select()` the row back — PostgREST
+   answers a select it cannot satisfy with an empty result rather than an error,
+   which would look like it worked. Its own mutation key exists for that reason,
+   not for tidiness.
+
+### 34.7 What was accepted
+
+- **Supplier names are visible across all four businesses.** The type-ahead is
+  how the fifteen seconds works and it needs the list. A name carries no amount.
+  INSERT is granted, UPDATE is not: one shop renaming a supplier the group
+  depends on is a change nobody could trace.
+- **Attribution is permanently the venue.** `created_by` and every
+  `activity_log.actor_id` says GMP, not which shift. Spec §5's "attributable to
+  a person forever" is partly given up for these two accounts, knowingly, and
+  **it is not recoverable later** — switching to per-person logins in six months
+  leaves everything before then as GMP.
+- **No void.** A wrong entry that survives the window below is voided by one of
+  the four.
+
+### 34.8 Five minutes to fix a typo
+
+Asked for after the first build: *"allow them to edit an invoice if its within 5
+minutes of recording it. in case they mess it."*
+
+My earlier answer was that no edit was possible without leaking payment status,
+and that was right about `status` and wrong about the conclusion. **A clock
+leaks nothing.** "Editable until it is paid" makes the rule deciding what a shop
+may do the same fact a shop may not know. "Editable for five minutes" is a
+rule they can see coming and which says nothing about money.
+
+`staff_update` still carries `status = 'unpaid'`, and it is not there to hide
+anything — it is there so an invoice already paid cannot have its amount changed
+underneath the payment. The residue is: somebody paid within five minutes of a
+shop entering it. Vanishingly rare, and the app says the same sentence for that
+refusal as for every other one.
+
+Four conditions on `using`, the same four minus the clock on `with check`.
+Leaving `with check` off is how a "fix a typo" policy quietly becomes "mark your
+own invoice paid", because RLS lets an update write any column the role may
+write and only `with check` constrains the result.
+
+**And a trigger, because RLS cannot say "this column may not change."**
+`created_at` is what the five minutes is measured from, and nothing in the
+policy stops it being *set* — a crafted update could write `created_at = now()`
+on every edit and keep one invoice editable forever. `pin_invoice_facts` forces
+`created_at` and `internal_ref` back to their old values on every update. That
+is the right rule for everybody: when a row was created, and what its reference
+is, are facts about it, not fields.
+
+The app side: `stillCorrectable` decides whether Edit is *offered*, `useNow`
+ticks so it disappears when the window closes, and the same sheet handles both
+paths through one `buildInvoicePayload` — notes §1.3 is quoted in that file
+twice because two write paths, one of them wrong, is the exact bug it describes.
+A queued correction is told plainly that it may not apply: the window is
+measured by the database, so an edit made in a dead spot and sent twenty minutes
+later is refused, correctly.
+
+### 34.9 Two people adding at the same time
+
+Asked at the same time, and the answer is that it was already handled — this
+section exists so nobody re-derives it.
+
+- **The invoice id** is a client-generated UUID (notes §1.5), so two phones
+  cannot collide, and a replayed offline write conflicts on the primary key
+  instead of duplicating.
+- **The reference** comes from `set_internal_ref`, whose counter bump is a
+  single `insert ... on conflict do update ... returning n`. One statement, so
+  the row lock is held for its whole duration. CATCH_UP_002 proved it with 50
+  concurrent inserts producing 50 distinct references, and added a unique index
+  on `internal_ref` as the backstop for whatever the next mistake is.
+- **The caches are separate.** Each phone has its own optimistic entry and its
+  own refetch; neither can overwrite the other's.
+- **The one real contention** is two people creating the *same new supplier* in
+  the same moment. `suppliers_name_ci` is a unique index on active names, so one
+  insert wins and the other gets `23505` — already handled, already named:
+  "There is already a supplier called Bidfood."
+
+Two people entering *different* invoices is not a case the system has to handle
+specially. It is the ordinary one.
+
+### 34.10 Changing your own password
+
+Asked for separately, and it applies to everybody, not only the shops. The
+client's assumption was that he would still be able to see them; **he cannot**.
+Supabase stores a bcrypt hash and no screen or API reveals a password. He can
+set a new one from the dashboard, which makes him the reset desk — fine at six
+accounts.
+
+The part that mattered: `supabase.auth.updateUser({ password })` needs only a
+live session and never asks what the old password was. Combined with §8's own
+admission that an unlocked phone reaches the data, that is account takeover for
+the price of picking up a phone. So the form re-authenticates with
+`signInWithPassword` first. Supabase's own `reauthenticate()` is unusable here —
+it emails a nonce, and two of the six accounts are shops with no mailbox.
+
+Two deliberate omissions: it does not sign out other devices, because the other
+device is the next shift and may be holding unsent invoices (§32); and it does
+not touch the PIN, because the PIN locks a phone and the password establishes
+who you are, and the last time two facts like that shared an owner, signing back
+in walked straight past the lock.
+
+### 34.11 Where it stands
+
+- **Database:** `CATCH_UP_010.sql` written, **not yet run**. Every statement is
+  a no-op until a staff profile exists, and §8 of the file — creating the two
+  accounts — is commented out on purpose.
+- **App:** built. `/venue`, `VenueChrome`, `AddVenueInvoiceSheet`, `VenueGate`,
+  the venue chip, `PasswordChange`.
+- **Tests:** 579, up from 532, under all three timezones. `tsc` and
+  `next build` clean.
+- **Verified against the live database.** `db/verify_staff.mjs` signs in as a
+  real staff account and proves the boundary rather than asserting it: the view
+  returns no payment columns (inspected on a real row, not assumed), every
+  fenced table is refused, and the insert policy — not a foreign key — refuses a
+  paid-injection and a forged `created_by` with `42501`.
+
+  Two things that verification found, each its own catch-up:
+    * **CATCH_UP_011** — `find_duplicate_invoices_staff` was callable by the
+      anon key (revoked from `anon` but not from `public`, which is where the
+      default grant lives). Not a leak — it returns nothing to an anonymous
+      caller — but a missing lock on a door bolted from the other side.
+    * **CATCH_UP_012** — the insert policy checked only the venue, so a crafted
+      request could enter an invoice already marked paid, or forge who entered
+      it. Closed by adding `created_by = auth.uid()` and `status = 'unpaid'` to
+      the `with check`. Found by running the verification, not by reading it —
+      two of the checks had been passing for the wrong reason.
+
+  Both are run. The one residual gap in the proof: "cannot file against another
+  venue" is caught by the ref trigger (`P0001`) before the policy is reached,
+  so it is not isolated to the policy — the write is refused, just by a
+  different mechanism. Getting `42501` there would need another venue's id,
+  which a staff account cannot read. The outcome holds regardless.
+- **Preview:** `test/preview-venue.test.tsx` renders the venue screen and its
+  sheet to standalone HTML without a session, the same way §21.6 works. It is
+  the only way to see these screens until the accounts exist.

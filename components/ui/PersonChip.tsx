@@ -31,6 +31,21 @@ const SLOTS = ['person-1', 'person-2', 'person-3', 'person-4'] as const;
 type Slot = (typeof SLOTS)[number];
 
 /**
+ * The venue accounts — GroceryMate Parramatta and Hurstville (CATCH_UP_010).
+ *
+ * Not a fifth person slot, and stored as `accent` like every other slot so
+ * this component keeps taking its instruction from the row rather than from a
+ * role check. Two things follow from it, and both are the point:
+ *
+ *   * a distinctly unsaturated treatment, because on a list management is
+ *     reviewing, "a shop entered this" is the fact worth reading at a glance
+ *   * never a photograph. A shop has no face, and the photo lookup is by
+ *     display name — 'Parramatta' matching some future file would put a
+ *     person's picture on a venue's invoices.
+ */
+const VENUE_SLOT = 'venue';
+
+/**
  * Tolerates the legacy hex values still in the database until the catch-up SQL
  * is run, so the app keeps working either way rather than rendering something
  * broken in the meantime.
@@ -52,12 +67,17 @@ interface PersonChipProps {
 }
 
 export function PersonChip({ profile, size = 'sm' }: PersonChipProps) {
-  const slot = slotOf(profile);
+  const isVenue = profile.accent === VENUE_SLOT;
+  const slot: string = isVenue ? VENUE_SLOT : slotOf(profile);
 
   // Uploaded first, then the bundled file, then initials. Same three levels as
   // BusinessMark, for the same reason.
+  //
+  // Hooks cannot be skipped, so a venue looks its photo up and then discards
+  // it below. Calling this conditionally would break the rules of hooks; the
+  // lookup is a map read, so the cost is nothing.
   const uploaded = useBrandAsset('people', profile.display_name);
-  const photo = uploaded ?? personPhoto(profile.display_name);
+  const photo = isVenue ? null : (uploaded ?? personPhoto(profile.display_name));
 
   /*
    * A photograph where there is one, initials where there is not.
@@ -111,3 +131,6 @@ export function PersonChip({ profile, size = 'sm' }: PersonChipProps) {
 
 /** The four slots, for the specimen page and the seed documentation. */
 export const PERSON_SLOTS = SLOTS;
+
+/** The venue slot, for the specimen page and CATCH_UP_010's insert. */
+export { VENUE_SLOT };

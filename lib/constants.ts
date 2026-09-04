@@ -29,6 +29,28 @@ export const DUPE_LOOKBACK_DAYS = 180;
 /** Auth session lifetime. Must match the Supabase Auth project setting. */
 export const SESSION_DAYS = 30;
 
+/**
+ * The floor the app puts under a password people choose for themselves.
+ *
+ * Supabase's own project setting is the real minimum and defaults to 6; this
+ * is stricter, which is allowed and is the only direction that works — a
+ * client cannot lower a server's floor, and pretending otherwise would show
+ * somebody an accepted password that the API then refuses.
+ */
+/**
+ * How long a venue has to correct an invoice it just entered.
+ *
+ * Must match the interval in `CATCH_UP_010`'s `staff_update` policy. The
+ * database is what enforces it; this is what decides whether the Edit control
+ * is offered, and the two disagreeing means a button that produces an error.
+ *
+ * A clock rather than "until it is paid", because the rule deciding what a
+ * shop may do must not be the fact a shop is not allowed to know.
+ */
+export const VENUE_EDIT_WINDOW_MS = 5 * 60_000;
+
+export const MIN_PASSWORD_LENGTH = 8;
+
 export const PIN_LENGTH = 6;
 export const PIN_MAX_ATTEMPTS = 5;
 

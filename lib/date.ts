@@ -43,6 +43,12 @@ const MS_PER_DAY = 86_400_000;
  * timezone. Numbers are locale-stable; names are not.
  */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Spelled out, for month headings. The short forms above are for dense rows. */
+const MONTHS_LONG = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function isDateStr(value: unknown): value is DateStr {
@@ -135,6 +141,26 @@ export function sydneyToday(now: Date = new Date()): DateStr {
  * Only for `created_at`/`updated_at` on an optimistic row, where the value is
  * a placeholder that the server's own clock replaces on the next refetch.
  */
+/**
+ * The wall clock, in milliseconds.
+ *
+ * Here rather than at its call sites for the reason every other clock read is
+ * here (§3, and notes §1.2): `new Date()` lives in this file and nowhere else,
+ * so there is one place to look when something is a day out.
+ *
+ * Used for durations only — how long ago something happened. Never for
+ * deciding what calendar date it is; `sydneyToday` is the only thing that
+ * answers that, and it does not go through here.
+ */
+export function nowMs(): number {
+  return new Date().getTime();
+}
+
+/** How long ago a `timestamptz` was, in milliseconds. Negative if it is ahead. */
+export function msSince(ts: Timestamp, now: number = nowMs()): number {
+  return now - new Date(ts).getTime();
+}
+
 export function nowTimestamp(now: Date = new Date()): Timestamp {
   return now.toISOString();
 }
@@ -211,6 +237,25 @@ export function formatDayWithYear(d: DateStr): string {
 export function formatWeekdayDay(d: DateStr): string {
   const at = new Date(toEpoch(d));
   return `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()}`;
+}
+
+/**
+ * 'September 2026' — the heading a month of invoices sits under.
+ *
+ * Sliced from the string rather than read off a Date, like everything else
+ * here. `'2026-09'.slice` cannot drift by a day; `new Date('2026-09-01')`
+ * parsed in Los Angeles is the 31st of August, which is the whole reason
+ * §3's rules exist.
+ */
+export function formatMonth(monthKey: string): string {
+  const year = monthKey.slice(0, 4);
+  const month = Number(monthKey.slice(5, 7));
+  return `${MONTHS_LONG[month - 1] ?? monthKey} ${year}`;
+}
+
+/** The month a calendar date falls in, as '2026-09'. A slice, never a parse. */
+export function monthOf(d: DateStr): string {
+  return d.slice(0, 7);
 }
 
 /** '11 Sep' — for tight columns where the weekday is already on the spine. */

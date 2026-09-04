@@ -18,6 +18,7 @@ const profile: Profile = {
   role: 'owner',
   notify_on_new_invoice: true,
   active: true,
+  business_id: null,
 };
 
 const pin = vi.hoisted(() => ({

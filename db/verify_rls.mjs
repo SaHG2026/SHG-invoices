@@ -51,6 +51,14 @@ const TABLES = [
   'activity_log',
   'push_subscriptions',
   'invoice_ref_counters',
+  // Added when they were. A table this list forgets is a table nothing checks,
+  // and the failure is silent — which is the whole reason this file exists.
+  'customers',
+  'sales_invoices',
+  // CATCH_UP_010. `staff_invoices` runs with its owner's rights and reads
+  // `invoices` in full, so if it were ever readable by the anon key it would
+  // hand over every venue's invoices without an error anywhere.
+  'staff_invoices',
 ];
 
 const failures = [];
@@ -107,6 +115,24 @@ const rpcs = [
   ['mark_invoices_paid', { p_ids: ['00000000-0000-0000-0000-000000000000'], p_ref: 'x' }],
   ['unmark_invoice_paid', { p_id: '00000000-0000-0000-0000-000000000000' }],
   ['void_invoice', { p_id: '00000000-0000-0000-0000-000000000000', p_reason: 'x' }],
+  ['mark_sales_received', { p_ids: ['00000000-0000-0000-0000-000000000000'], p_ref: 'x' }],
+  ['unmark_sales_received', { p_id: '00000000-0000-0000-0000-000000000000' }],
+  /*
+   * SECURITY DEFINER, so it reads `invoices` with the owner's rights and its
+   * own WHERE is the only thing scoping it. For an anonymous caller
+   * `staff_venue()` is null, `business_id = null` is never true, and it
+   * returns nothing — which is the failing-closed this checks is real.
+   */
+  ['find_duplicate_invoices_staff', {
+    p_supplier_id: '00000000-0000-0000-0000-000000000000',
+    p_invoice_number: 'x',
+    p_lookback_days: 180,
+  }],
+  ['find_duplicate_invoices', {
+    p_supplier_id: '00000000-0000-0000-0000-000000000000',
+    p_invoice_number: 'x',
+    p_lookback_days: 180,
+  }],
 ];
 
 for (const [name, args] of rpcs) {

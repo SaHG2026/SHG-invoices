@@ -76,6 +76,16 @@
   --person-4: #92400e; /* Sujan */
   --person-4-bg: #f8e8d8;
 
+  /* A venue, not a person. GroceryMate Parramatta and Hurstville
+     each have a shared shop login (CATCH_UP_010), and their chip
+     has to be legible as "a shop entered this" at a glance, on a
+     list management is reviewing.
+     So: deliberately outside the person ramp and deliberately
+     unsaturated. The four accents are the identity device; a
+     fifth hue competing with them would say "fifth person". */
+  --venue: #475569;
+  --venue-bg: #e9edf1;
+
   /* ---- 6. Shadows --------------------------------------- */
   /* Tokens rather than rgba() sprinkled through components, which is where
      they were — three navy shadows that a repaint would have missed, in a

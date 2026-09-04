@@ -12,18 +12,28 @@ import type { DateStr, Timestamp } from './date';
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
 
 /**
- * Not a permission. Every person has identical access to every invoice;
- * `role` only decides what a screen shows. No RLS policy references it — see
- * migration 007, which says so and warns that if it ever starts deciding what
- * somebody can read or write, that belongs in a policy instead.
+ * `member`, `owner` and `builder` are not permissions. Those three have
+ * identical access to every invoice, and `role` only decides what a screen
+ * shows them.
+ *
+ * `staff` IS a permission, and it is the only one. CATCH_UP_010 took that
+ * decision deliberately, against migration 005's standing warning that the
+ * day role started deciding what somebody could read or write, it had to move
+ * into a policy. It did move: `is_member()`, `staff_venue()` and the
+ * `staff_invoices` view are where it lives now. Nothing in this file or any
+ * component is the enforcement layer (notes §2).
  *
  * `builder` is Rabindra, who maintains the app and does not run the
  * businesses (ARCHITECTURE §28.2). It keeps him out of the lists of people and
  * out of every notification, and it changes nothing about his access — which
  * is exactly why it is here and not `active = false`: `is_member()` tests
  * `active`, so deactivating him would lock him out of the app he maintains.
+ *
+ * `staff` is a venue — GroceryMate Parramatta or Hurstville — not a person.
+ * One shared login per shop, which is why `lib/staff.ts` exists and why the
+ * attribution chip renders these differently.
  */
-export type ProfileRole = 'member' | 'owner' | 'builder';
+export type ProfileRole = 'member' | 'owner' | 'builder' | 'staff';
 
 export interface Profile {
   id: string;
@@ -45,6 +55,17 @@ export interface Profile {
    */
   notify_on_new_invoice: boolean;
   active: boolean;
+  /**
+   * The venue a `staff` profile belongs to, and null for everybody else.
+   *
+   * The database will not let those two facts disagree: `profiles_staff_has_venue`
+   * in CATCH_UP_010 requires staff to have one and forbids everyone else from
+   * having one, so "staff with no venue" and "owner tied to Hurstville" are
+   * both unrepresentable rather than merely unexpected.
+   *
+   * Not in the `self_update` column grant, so nobody can move themselves.
+   */
+  business_id: string | null;
 }
 
 /** One row per person per device. Written from Phase 7 onward. */
@@ -164,6 +185,31 @@ export interface SalesInvoice {
 /** A sales invoice with its customer resolved, as the lists render it. */
 export interface SalesInvoiceRow extends SalesInvoice {
   customer: Pick<Customer, 'id' | 'name'>;
+}
+
+/**
+ * One row of `staff_invoices` — what a venue account is allowed to see.
+ *
+ * Deliberately NOT `Omit<Invoice, 'status' | ...>`. Derived-by-subtraction
+ * would mean a column added to `Invoice` later arrives here silently, and the
+ * whole point of this type is that its fields were chosen one at a time. If
+ * `status`, `paid_at`, `paid_by` or `payment_ref` ever appear below, the view
+ * has been changed and CATCH_UP_010 §3 has been undone.
+ *
+ * The supplier's name is joined in by the view rather than looked up here:
+ * staff can read `suppliers`, but one round trip is one round trip.
+ */
+export interface StaffInvoice {
+  id: string;
+  business_id: string;
+  supplier_id: string;
+  supplier_name: string;
+  invoice_number: string | null;
+  internal_ref: string;
+  invoice_date: DateStr;
+  due_date: DateStr;
+  amount_cents: number;
+  created_at: Timestamp;
 }
 
 /** An invoice with its supplier and business resolved, as the lists render it. */

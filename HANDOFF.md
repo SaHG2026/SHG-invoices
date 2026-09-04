@@ -38,8 +38,12 @@ were "it feels instantaneous". Every feature decision defers to it.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local` (gitignored, already populated)
 
-**Everything is built, deployed and in use.** Phases 1–7, the client-driven
-revisions between 6 and 7, push, and the go-live reset. §33 is the state at
+**Everything through Phase 7 is built, deployed and in use.** Phases 1–7, the
+client-driven revisions between 6 and 7, push, and the go-live reset.
+
+**The venue staff accounts (§34) are built and NOT deployed.** `CATCH_UP_010.sql`
+has not been run and the two logins do not exist. Read §34.11 before touching any
+of it — the SQL has never been executed against a real database. §33 is the state at
 handover and the list of audit findings that were accepted rather than fixed —
 read it before concluding anything looks wrong.
 
@@ -61,6 +65,7 @@ read it before concluding anything looks wrong.
 | §31 | The third motion pass — why it was abrupt; the go-live reset |
 | §32 | Signing out no longer discards unsent work |
 | §33 | **Handover** — the audit findings accepted, and what is next |
+| §34 | **Venue staff accounts** — the day `role` became a permission |
 
 **Phase 7 is built, deployed and switched on** — the offline write queue, the
 service worker, error boundaries, the 200-row pass, and push all the way
@@ -74,6 +79,19 @@ not a broken one.
 
 **§4 rule 8 still applies to whatever comes next.** §33.2 has the piece of
 work the client has already named, and it is deliberately not soon.
+
+### The one thing §34 changed that everything else assumes
+
+**`role` is a permission now, for exactly one value.** `staff` decides access;
+`member`, `owner` and `builder` still decide only what a screen shows.
+`is_member()` was narrowed rather than nine policies edited, so a policy
+written in a later phase excludes venues by default — if you add one, write
+`is_member()` like all the others and it is already right.
+
+The trap it replaced: three role filters were written as `role <> 'builder'`,
+and a blocklist admits every role invented after it. All three are allowlists
+now (`lib/staff.ts`). If you add a fourth role check anywhere, write it as an
+allowlist or it will quietly include whatever comes next.
 
 ### Four things Phase 7 decided that are easy to undo by accident
 
@@ -102,7 +120,7 @@ work the client has already named, and it is deliberately not soon.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 532 tests
+npx vitest run       # 579 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -246,6 +264,29 @@ wired and sending. Rabindra is the builder — out of the lists, out of both
 notification audiences, access untouched. Logos and photographs are his to
 change from `/brand` without a deploy. The go-live reset has been run and the
 ledger started empty.
+
+### In flight: venue staff accounts (§34)
+
+Built, tested, and **not shipped**. Three things stand between here and live,
+in order:
+
+1. **Run `db/CATCH_UP_010.sql`.** Safe on its own — every statement is a no-op
+   until a staff profile row exists, and creating those is §8 of the file,
+   commented out. Section 7 prints one row per person; `still_a_member` must be
+   true for all four. If it is not, three people are locked out of a live app.
+2. **Verified.** `db/verify_staff.mjs` was run as a real staff account against
+   the live project — all green. It proves the view hides payment columns on a
+   real row, every fenced table is refused, and the insert policy refuses a
+   paid-injection and a forged author. It needs `STAFF_EMAIL` / `STAFF_PASSWORD`
+   in `.env.local` (removed after use). Re-run it after any change to the staff
+   policies or the view. CATCH_UP_011 and 012 came out of that run — read their
+   headers.
+3. **Deploy, then create the two real accounts.** In that order. An account that
+   exists before the screens do can sign in and land on a dashboard built for
+   somebody else.
+
+`test/preview-venue.test.tsx` renders both venue screens to standalone HTML
+without a session — the only way to see them until step 3.
 
 ### The next piece of work, deliberately not yet
 

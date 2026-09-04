@@ -4,7 +4,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { BUSINESS_MARKS, PERSON_PHOTOS, businessMark, personPhoto } from '@/lib/logos';
-import { BUSINESSES, PROFILES } from '../fixtures/invoices';
+import { runsTheBusinesses } from '@/lib/staff';
+import { BUSINESSES, PROFILES, VENUE_PROFILE } from '../fixtures/invoices';
 
 /**
  * Faces and logos.
@@ -18,6 +19,55 @@ import { BUSINESSES, PROFILES } from '../fixtures/invoices';
  * broken-image icon in the header of every screen, which is both the most
  * visible possible failure and the one no other test would catch.
  */
+
+describe('a venue is not a person', () => {
+  /**
+   * The chip is what management reads to see where an invoice came from, so
+   * "a shop entered this" has to be legible at a glance on a list they are
+   * reviewing. A fifth person accent would say "fifth person"; the venue
+   * treatment is deliberately outside that ramp.
+   */
+  it('renders the venue treatment, not one of the four person accents', () => {
+    render(<PersonChip profile={VENUE_PROFILE} />);
+    const chip = screen.getByText('GMP');
+    expect(chip).toHaveStyle({ backgroundColor: 'var(--venue-bg)' });
+    expect(chip).toHaveStyle({ color: 'var(--venue)' });
+  });
+
+  /**
+   * The photo lookup is by display name. A venue called 'Parramatta' matching
+   * some future file would put a person's face on a shop's invoices — so the
+   * lookup is discarded rather than merely expected to miss.
+   */
+  it('never shows a photograph, whatever the name would have matched', () => {
+    render(<PersonChip profile={{ ...VENUE_PROFILE, display_name: 'Milan' }} />);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText('GMP')).toBeInTheDocument();
+  });
+
+  /**
+   * An allowlist, and the reason it is one: `useTeam` filtered
+   * `role !== 'builder'` for a year, which would have listed both shops as
+   * people who run the businesses on the day those accounts existed. Nobody
+   * would have written that bug — it would simply have happened.
+   */
+  it('is not one of the people who run the businesses', () => {
+    expect(runsTheBusinesses(VENUE_PROFILE)).toBe(false);
+    expect(runsTheBusinesses({ role: 'builder' })).toBe(false);
+    expect(runsTheBusinesses({ role: 'owner' })).toBe(true);
+    expect(runsTheBusinesses({ role: 'member' })).toBe(true);
+  });
+
+  /**
+   * But it IS in the lookup. A venue enters invoices, so every row it touches
+   * needs a name against it — which is exactly the split `useProfiles` and
+   * `useTeam` exist to keep, and the reason the fixture keeps them separate.
+   */
+  it('still renders a name and initials, because it enters invoices', () => {
+    render(<PersonChip profile={VENUE_PROFILE} />);
+    expect(screen.getByTitle('Parramatta')).toBeInTheDocument();
+  });
+});
 
 describe('a person with a photograph', () => {
   it('shows the photograph instead of initials', () => {

@@ -156,6 +156,40 @@ export function outstandingFor(invoices: readonly Invoice[]): {
   return { total_cents: sumCents(unpaid), count: unpaid.length, oldest_due: oldest };
 }
 
+/**
+ * A supplier's invoices between two dates, split by what has happened to them.
+ *
+ * Pending and settled are separate figures rather than one total with a
+ * caption. "Total pending between two dates" is the question that was asked,
+ * and a single number that silently mixes money already gone with money still
+ * to go answers a different one.
+ *
+ * Void is counted and excluded from both. Spec §6: a void drops out of every
+ * total. Saying how many were voided is not a total, it is why the count of
+ * rows on screen does not match the count in the figures.
+ */
+export interface RangeSummary {
+  pending: { total_cents: number; count: number };
+  settled: { total_cents: number; count: number };
+  voided_count: number;
+}
+
+export function summariseRange(invoices: readonly Invoice[]): RangeSummary {
+  const pending = invoices.filter((invoice) => invoice.status === 'unpaid');
+  const settled = invoices.filter((invoice) => invoice.status === 'paid');
+
+  return {
+    pending: { total_cents: sumCents(pending), count: pending.length },
+    settled: { total_cents: sumCents(settled), count: settled.length },
+    voided_count: invoices.filter((invoice) => invoice.status === 'void').length,
+  };
+}
+
+/** The first day of the month a date falls in. String work, never a Date. */
+export function startOfMonth(day: DateStr): DateStr {
+  return `${day.slice(0, 7)}-01` as DateStr;
+}
+
 /** Used by the supplier page to show the window the spend figure covers. */
 export function sixMonthsAgo(today: DateStr): DateStr {
   return addDays(today, -182);

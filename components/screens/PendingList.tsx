@@ -11,11 +11,13 @@ import { useTickOff } from '@/hooks/use-tick-off';
 import type { InvoiceRow as Invoice } from '@/lib/types';
 import { formatCents } from '@/lib/money';
 import {
+  DUE_WINDOW_OPTIONS,
   filterInvoices,
   searchInvoices,
   SORT_OPTIONS,
   sortInvoices,
   summarise,
+  type DueWindow,
   type SortKey,
 } from '@/lib/derive/select';
 import { filterByScope, scopeHref, scopeLabel, type Scope } from '@/lib/scope';
@@ -32,7 +34,7 @@ import { filterByScope, scopeHref, scopeLabel, type Scope } from '@/lib/scope';
  * like a display glitch" — it cannot happen here, because there is nowhere
  * else for either number to come from.
  */
-export function PendingList({ scope }: { scope: Scope }) {
+export function PendingList({ scope, due: initialDue = 'all' }: { scope: Scope; due?: DueWindow }) {
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
@@ -40,7 +42,18 @@ export function PendingList({ scope }: { scope: Scope }) {
   const { tickOff, undo } = useTickOff();
 
   const [sort, setSort] = useState<SortKey>('due');
-  const [overdueOnly, setOverdueOnly] = useState(false);
+
+  /*
+   * The URL seeds this once; the pills change it here and do not write back.
+   *
+   * Arriving from the Overdue card is a navigation, which is why the window is
+   * in the URL at all (§16). Tapping a pill once you are here is not — it is
+   * adjusting a control on the screen you are already standing on. Making each
+   * tap a `router.replace` would put a round trip in the middle of a filter,
+   * and would make Back step through pill states instead of returning to the
+   * dashboard you came from.
+   */
+  const [due, setDue] = useState<DueWindow>(initialDue);
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -55,9 +68,9 @@ export function PendingList({ scope }: { scope: Scope }) {
     if (!today) return [];
     const scoped = filterByScope(invoices, scope, businesses);
     const found = searchInvoices(scoped, query);
-    const filtered = filterInvoices(found, { supplierId, overdueOnly, today });
+    const filtered = filterInvoices(found, { supplierId, due, today });
     return sortInvoices(filtered, sort);
-  }, [invoices, scope, businesses, query, supplierId, overdueOnly, sort, today]);
+  }, [invoices, scope, businesses, query, supplierId, due, sort, today]);
 
   const summary = useMemo(() => summarise(visible), [visible]);
 
@@ -124,23 +137,44 @@ export function PendingList({ scope }: { scope: Scope }) {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setOverdueOnly((on) => !on)}
-          aria-pressed={overdueOnly}
-          className="touch rounded-full border px-3 text-sm"
-          style={
-            overdueOnly
-              ? {
-                  borderColor: 'var(--spine-overdue)',
-                  backgroundColor: 'var(--spine-overdue-bg)',
-                  color: 'var(--spine-overdue)',
+        {/*
+          Three pills where there was one toggle, because there are now three
+          places to arrive from: both dashboard cards and the menu. A toggle
+          labelled "Overdue only" cannot express "next 7 days", and the card
+          above it can — so the control has to be able to say what the link
+          that opened it said.
+        */}
+        <div role="group" aria-label="Due window" className="flex flex-wrap gap-2">
+          {DUE_WINDOW_OPTIONS.map((option) => {
+            const chosen = due === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setDue(option.key)}
+                aria-pressed={chosen}
+                className="touch rounded-full border px-3 text-sm"
+                style={
+                  !chosen
+                    ? { borderColor: 'var(--hairline)' }
+                    : option.key === 'overdue'
+                      ? {
+                          borderColor: 'var(--spine-overdue)',
+                          backgroundColor: 'var(--spine-overdue-bg)',
+                          color: 'var(--spine-overdue)',
+                        }
+                      : {
+                          borderColor: 'var(--action)',
+                          backgroundColor: 'var(--action-bg)',
+                          color: 'var(--action)',
+                        }
                 }
-              : undefined
-          }
-        >
-          Overdue only
-        </button>
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
 
         {suppliers.length > 1 ? (
           <label className="touch flex items-center rounded-sm border border-hairline bg-card px-2 text-sm text-ink">
@@ -167,7 +201,7 @@ export function PendingList({ scope }: { scope: Scope }) {
         <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
           {query
             ? `Nothing matches “${query}”.`
-            : overdueOnly || supplierId
+            : due !== 'all' || supplierId
               ? 'Nothing matches those filters. Clear one to see more.'
               : 'No invoices outstanding here. Add one with the + button.'}
         </p>
@@ -201,7 +235,7 @@ export function PendingList({ scope }: { scope: Scope }) {
         <div className="mx-auto flex max-w-[560px] items-center gap-3 px-4 py-3 pr-20">
           <span className="min-w-0 flex-1 text-xs uppercase tracking-widest text-muted">
             {summary.invoice_count} invoice{summary.invoice_count === 1 ? '' : 's'}
-            {overdueOnly || supplierId || query ? ' · filtered' : ''}
+            {due !== 'all' || supplierId || query ? ' · filtered' : ''}
           </span>
           <span className="money shrink-0 text-h2 text-ink">
             {formatCents(summary.total_cents)}

@@ -298,7 +298,7 @@ describe('the customer page', () => {
 
   it('saves an edit', async () => {
     openDetail('c-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
     fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '0400 999 888' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
 
@@ -311,7 +311,7 @@ describe('the customer page', () => {
 
   it('turns a blank field into null rather than an empty string', async () => {
     openDetail('c-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
     fireEvent.change(screen.getByLabelText('Contact'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
 
@@ -321,12 +321,22 @@ describe('the customer page', () => {
 
   it('deactivates rather than deleting', async () => {
     openDetail('c-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.click(screen.getByLabelText('Active'));
-    fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove customer' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove customer' }),
+    );
 
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
     expect(mocks.update.mock.calls[0]![0].active).toBe(false);
+  });
+
+  it('asks before removing, and writes nothing if you go back', () => {
+    openDetail('c-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove customer' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Go back' }),
+    );
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('explains rather than showing an empty screen for an unknown customer', () => {

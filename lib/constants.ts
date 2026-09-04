@@ -69,6 +69,16 @@ export const UNPAID_STALE_MS = 30_000;
 /** History page size. */
 export const HISTORY_PAGE_SIZE = 50;
 
+/**
+ * The most invoices a supplier date range will total.
+ *
+ * There has to be a ceiling, and the only question is what happens at it. This
+ * one is chosen so the answer can be "that range is too wide, narrow it"
+ * rather than a total that is quietly short by however many rows fell off the
+ * end. A refused answer is recoverable; a wrong one is believed.
+ */
+export const SUPPLIER_RANGE_MAX = 500;
+
 /** The four businesses, in display order. Codes match `businesses.code`. */
 export const BUSINESS_CODES = ['GMH', 'GMP', 'MJR', 'DDL'] as const;
 export type BusinessCode = (typeof BUSINESS_CODES)[number];

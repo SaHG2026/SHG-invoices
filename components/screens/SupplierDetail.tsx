@@ -5,16 +5,29 @@ import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
 import { InvoiceRow } from '@/components/invoice/InvoiceRow';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useTickOff } from '@/hooks/use-tick-off';
 import { useProfiles } from '@/lib/queries/session';
 import { useSuppliers } from '@/lib/queries/reference';
-import { useSupplierInvoices, useUpdateSupplier } from '@/lib/queries/history';
+import {
+  useSupplierInvoices,
+  useSupplierRange,
+  useUpdateSupplier,
+  type RangeBasis,
+} from '@/lib/queries/history';
 import { useAllSuppliers } from '@/lib/queries/history';
-import { outstandingFor, spendByMonth, spendTotal, type MonthSpend } from '@/lib/derive/history';
+import {
+  outstandingFor,
+  spendByMonth,
+  spendTotal,
+  startOfMonth,
+  summariseRange,
+  type MonthSpend,
+} from '@/lib/derive/history';
 import { formatCents } from '@/lib/money';
-import { formatDayWithYear } from '@/lib/date';
-import { DEFAULT_TERMS_DAYS } from '@/lib/constants';
+import { compareDates, formatDayWithYear, isDateStr } from '@/lib/date';
+import { DEFAULT_TERMS_DAYS, SUPPLIER_RANGE_MAX } from '@/lib/constants';
 
 /**
  * One supplier. Spec §7.5.
@@ -64,6 +77,10 @@ export function SupplierDetail({ id }: { id: string }) {
   const updateSupplier = useUpdateSupplier();
 
   const [editing, setEditing] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
+  const [rangeBasis, setRangeBasis] = useState<RangeBasis>('due');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const supplier = all.find((s) => s.id === id) ?? active.find((s) => s.id === id) ?? null;
@@ -77,6 +94,22 @@ export function SupplierDetail({ id }: { id: string }) {
   const unpaid = invoices.filter((invoice) => invoice.status === 'unpaid');
   const settled = invoices.filter((invoice) => invoice.status !== 'unpaid');
 
+  /*
+   * The range fields default to this month so far, and are overridden the
+   * moment anybody types. Held as "" rather than as the resolved dates so a
+   * `today` that arrives after first render fills them in — `useSydneyToday`
+   * reads the clock in an effect, so the first render genuinely has no today.
+   */
+  const from = rangeFrom || (today ? startOfMonth(today) : '');
+  const to = rangeTo || today || '';
+  const backwards = isDateStr(from) && isDateStr(to) && compareDates(from, to) > 0;
+
+  const range = useSupplierRange(id, from, to, rangeBasis);
+  const rangeSummary = useMemo(
+    () => summariseRange(range.data?.rows ?? []),
+    [range.data],
+  );
+
   if (!supplier) {
     return (
       <AppChrome back={{ href: '/suppliers' as Route, label: 'Suppliers' }}>
@@ -85,15 +118,83 @@ export function SupplierDetail({ id }: { id: string }) {
     );
   }
 
+  /**
+   * Remove is deactivate, and it always has been. Rule 5: nothing is ever
+   * deleted, because every invoice this supplier has ever been on references
+   * it forever and a hole in that is not recoverable.
+   *
+   * What changed is that the word matches the intent and the consequence is
+   * stated before it happens, instead of a checkbox called "Active" whose
+   * meaning you had to already know.
+   */
+  const { id: supplierId, name: supplierName } = supplier;
+
+  async function setActive(active: boolean) {
+    try {
+      await updateSupplier.mutateAsync({ id: supplierId, active });
+      setConfirmingRemove(false);
+      toast.show(
+        active
+          ? `${supplierName} is back on the list.`
+          : `${supplierName} removed. Every invoice kept.`,
+      );
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Couldn’t save that.', 'problem');
+    }
+  }
+
+  const restore = () => setActive(true);
+
   return (
     <AppChrome back={{ href: '/suppliers' as Route, label: 'Suppliers' }}>
       <header className="mb-4">
         <h1 className="text-h1 text-ink">{supplier.name}</h1>
         {!supplier.active ? (
           <p className="mt-1 text-sm text-muted">
-            Deactivated — hidden when adding an invoice, and every invoice kept.
+            Removed from the add-invoice list. Every invoice it has ever been on is kept.
           </p>
         ) : null}
+
+        {/*
+          The two things you can do to a supplier, said out loud, directly
+          under its name.
+
+          Both existed already — Edit was a 14px word inside a panel four
+          scrolls down, and Remove was a checkbox labelled "Active". Neither is
+          a control somebody finds while looking for one, which is why this was
+          reported as missing rather than as buried. Nothing new can be done
+          here; it can now be seen.
+        */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing((open) => !open)}
+            aria-expanded={editing}
+            className="touch rounded-full border border-hairline bg-card px-4 text-sm text-ink"
+          >
+            {editing ? 'Cancel editing' : 'Edit details'}
+          </button>
+
+          {supplier.active ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingRemove(true)}
+              className="touch rounded-full border px-4 text-sm"
+              style={{ borderColor: 'var(--hairline)', color: 'var(--muted)' }}
+            >
+              Remove supplier
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void restore()}
+              disabled={updateSupplier.isPending}
+              className="touch rounded-full border border-action bg-action-bg px-4 text-sm text-action disabled:opacity-40"
+            >
+              {updateSupplier.isPending ? 'Restoring…' : 'Restore supplier'}
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
@@ -120,17 +221,164 @@ export function SupplierDetail({ id }: { id: string }) {
         {spend.length > 0 ? <Sparkline spend={spend} /> : null}
       </section>
 
-      <section className="mb-6 rounded-sm border border-edge bg-card p-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-xs uppercase tracking-widest text-muted">Details</p>
-          <button
-            type="button"
-            onClick={() => setEditing((open) => !open)}
-            className="touch text-sm text-action"
-          >
-            {editing ? 'Cancel' : 'Edit'}
-          </button>
+      {/*
+        Between two dates. Asked for after real use.
+
+        Two figures, not one. "Total pending between two dates" is about money
+        still to go; the settled figure is beside it because the same range
+        answers "and how much did we already pay them", and a single number
+        that mixed the two would answer neither.
+
+        The basis is a visible choice, not a default hidden in a comment: "what
+        falls due in October" and "what they billed us in October" are
+        different questions, and which one is on screen is written on it.
+      */}
+      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Between two dates</p>
+
+        <div className="mb-3 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted">From</span>
+            <input
+              type="date"
+              aria-label="From date"
+              value={from}
+              max={to || undefined}
+              onChange={(event) => setRangeFrom(event.target.value)}
+              className="figure-date touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted">To</span>
+            <input
+              type="date"
+              aria-label="To date"
+              value={to}
+              min={from || undefined}
+              onChange={(event) => setRangeTo(event.target.value)}
+              className="figure-date touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+            />
+          </label>
         </div>
+
+        <div role="group" aria-label="Count by" className="mb-3 flex flex-wrap gap-2">
+          {(
+            [
+              { key: 'due', label: 'By due date' },
+              { key: 'invoice', label: 'By invoice date' },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setRangeBasis(option.key)}
+              aria-pressed={rangeBasis === option.key}
+              className={`touch rounded-full border px-3 text-sm ${
+                rangeBasis === option.key
+                  ? 'border-action bg-action-bg text-action'
+                  : 'border-hairline bg-card text-ink'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {backwards ? (
+          <p role="alert" className="text-sm text-overdue">
+            The first date is after the second.
+          </p>
+        ) : range.isLoading ? (
+          <p className="text-sm text-muted">Adding it up…</p>
+        ) : range.isError ? (
+          <p className="text-sm text-overdue">Couldn’t read that range. Try again.</p>
+        ) : range.data?.truncated ? (
+          /* A refused answer can be narrowed. A short one gets written down. */
+          <p className="text-sm text-muted">
+            That range covers more than {SUPPLIER_RANGE_MAX} invoices, which is more than this can
+            total honestly. Narrow the dates.
+          </p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-2 gap-3">
+              <div>
+                <dt className="text-xs uppercase tracking-widest text-muted">Still pending</dt>
+                <dd className="money mt-1 text-h2 text-ink" style={{ textAlign: 'left' }}>
+                  {formatCents(rangeSummary.pending.total_cents)}
+                </dd>
+                <dd className="mt-0.5 text-xs text-muted">
+                  {rangeSummary.pending.count} invoice
+                  {rangeSummary.pending.count === 1 ? '' : 's'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-widest text-muted">Already paid</dt>
+                <dd className="money mt-1 text-h2 text-muted" style={{ textAlign: 'left' }}>
+                  {formatCents(rangeSummary.settled.total_cents)}
+                </dd>
+                <dd className="mt-0.5 text-xs text-muted">
+                  {rangeSummary.settled.count} invoice
+                  {rangeSummary.settled.count === 1 ? '' : 's'}
+                </dd>
+              </div>
+            </dl>
+
+            {rangeSummary.voided_count > 0 ? (
+              <p className="mt-2 text-xs text-muted">
+                {rangeSummary.voided_count} voided in this range, counted in neither figure.
+              </p>
+            ) : null}
+
+            {/*
+              The invoices the figures are made of, listed under them. Rule 4
+              holds inside a panel: a total nobody can open is a total nobody
+              can check.
+            */}
+            {(range.data?.rows.length ?? 0) === 0 ? (
+              <p className="mt-3 text-sm text-muted">Nothing in that range.</p>
+            ) : (
+              <ul className="mt-3 overflow-hidden rounded-sm border border-hairline">
+                {(range.data?.rows ?? []).map((invoice) => (
+                  <li
+                    key={invoice.id}
+                    className="flex h-row items-center gap-3 border-b border-hairline px-3 last:border-b-0"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-ink">
+                        {invoice.invoice_number ? `#${invoice.invoice_number}` : invoice.internal_ref}
+                      </span>
+                      <span className="figure-date block truncate text-xs text-muted">
+                        {formatDayWithYear(
+                          rangeBasis === 'due' ? invoice.due_date : invoice.invoice_date,
+                        )}
+                        {' · '}
+                        {invoice.business.code}
+                        {invoice.status === 'unpaid'
+                          ? ' · pending'
+                          : invoice.status === 'paid'
+                            ? ' · paid'
+                            : ' · void'}
+                      </span>
+                    </span>
+                    <span
+                      className={`money shrink-0 text-sm ${
+                        invoice.status === 'unpaid' ? 'text-ink' : 'text-muted line-through'
+                      }`}
+                    >
+                      {formatCents(invoice.amount_cents)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="mb-6 rounded-sm border border-edge bg-card p-4">
+        {/* One Edit control, in the header. Two of them is two things to keep
+            in step, and the buried one is the one that was never found. */}
+        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Details</p>
 
         {editing ? (
           <SupplierForm
@@ -218,6 +466,22 @@ export function SupplierDetail({ id }: { id: string }) {
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        title={`Remove ${supplier.name}?`}
+        points={[
+          <>It stops appearing when anybody adds an invoice.</>,
+          <>
+            Every invoice it has ever been on is kept, and this page stays where it is. Nothing
+            is deleted, and you can put it back from here.
+          </>,
+        ]}
+        question="Remove it?"
+        confirmLabel="Remove supplier"
+        onConfirm={() => void setActive(false)}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </AppChrome>
   );
 }
@@ -236,7 +500,12 @@ function SupplierForm({
   busy,
   onSave,
 }: {
-  supplier: { name: string; default_terms_days: number | null; contact_name: string | null; contact_phone: string | null; active: boolean };
+  supplier: {
+    name: string;
+    default_terms_days: number | null;
+    contact_name: string | null;
+    contact_phone: string | null;
+  };
   busy: boolean;
   onSave: (changes: Record<string, unknown>) => void;
 }) {
@@ -244,7 +513,6 @@ function SupplierForm({
   const [terms, setTerms] = useState(supplier.default_terms_days?.toString() ?? '');
   const [contact, setContact] = useState(supplier.contact_name ?? '');
   const [phone, setPhone] = useState(supplier.contact_phone ?? '');
-  const [active, setActive] = useState(supplier.active);
 
   const field =
     'touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
@@ -264,7 +532,6 @@ function SupplierForm({
               : null,
           contact_name: contact.trim() || null,
           contact_phone: phone.trim() || null,
-          active,
         });
       }}
     >
@@ -323,16 +590,6 @@ function SupplierForm({
           onChange={(e) => setPhone(e.target.value)}
           className={field}
         />
-      </label>
-
-      <label className="mb-4 flex items-center gap-2 text-sm text-ink">
-        <input
-          type="checkbox"
-          checked={active}
-          onChange={(e) => setActive(e.target.checked)}
-          className="size-4"
-        />
-        Active
       </label>
 
       <button

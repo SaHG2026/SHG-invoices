@@ -104,8 +104,49 @@ describe('the two headline figures', () => {
 
   it('shows what is already late', () => {
     open();
-    const card = screen.getByText('Overdue').closest('div')!;
+    // Scoped to the card itself, not to the grid holding both of them. The
+    // looser version passed only because the two totals happened to differ.
+    const card = screen.getByText('Overdue').closest('a')!;
     expect(within(card).getByText(formatCents(expected.overdue.total_cents))).toBeInTheDocument();
+  });
+
+  /*
+   * Both cards are links now. Reported as "there is no touch interaction" —
+   * the two biggest things on the screen did nothing, above a list where every
+   * row does something.
+   *
+   * What these assert is the destination, because a card that opens the wrong
+   * filter is worse than one that opens nothing: the figure and the list would
+   * disagree, and the list would be the one believed.
+   */
+  it('opens the pending list filtered to its own window', () => {
+    open();
+    expect(screen.getByText('Overdue').closest('a')).toHaveAttribute(
+      'href',
+      '/b/all/pending?due=overdue',
+    );
+    expect(screen.getByText('Next 7 days').closest('a')).toHaveAttribute(
+      'href',
+      '/b/all/pending?due=next7',
+    );
+  });
+
+  it('names itself for a screen reader as the figure it is', () => {
+    open();
+    const card = screen.getByText('Overdue').closest('a')!;
+    // The label, the money and the detail line, in one name — otherwise the
+    // link announces as the word "Overdue" and nothing else.
+    expect(card.getAttribute('aria-label')).toContain(
+      formatCents(expected.overdue.total_cents),
+    );
+  });
+
+  it('stays a link when there is nothing late', async () => {
+    // A control that is sometimes not a control teaches that it is unreliable.
+    // Landing on "nothing matches those filters" answers the question asked.
+    open();
+    const card = screen.getByText('Next 7 days').closest('a')!;
+    expect(card).toHaveAttribute('href');
   });
 
   it('counts today inside the next seven days, not outside them', () => {

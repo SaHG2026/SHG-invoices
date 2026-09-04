@@ -1,4 +1,5 @@
 import type { Route } from 'next';
+import type { DueWindow } from './derive/select';
 import type { Business, InvoiceRow } from './types';
 
 /**
@@ -68,8 +69,18 @@ export function scopeHref(scope: Scope): Route {
   return `/b/${scope}` as Route;
 }
 
-export function pendingHref(scope: Scope): Route {
-  return `/b/${scope}/pending` as Route;
+/**
+ * The pending list, optionally already filtered to a due window.
+ *
+ * The window is in the URL rather than in a prop for the same reason the
+ * business scope is (§16): tapping the Overdue card is navigating to a place,
+ * not adjusting a control, so Back returns to the dashboard and the link can
+ * be shared. Adjusting the pills once you are there is the other thing, and it
+ * deliberately does not push a new URL — see PendingList.
+ */
+export function pendingHref(scope: Scope, due: DueWindow = 'all'): Route {
+  const path = `/b/${scope}/pending`;
+  return (due === 'all' ? path : `${path}?due=${due}`) as Route;
 }
 
 export function invoiceHref(id: string): Route {

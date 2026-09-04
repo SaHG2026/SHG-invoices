@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { filterInvoices, searchInvoices, sortInvoices, summarise } from '@/lib/derive/select';
+import {
+  filterInvoices,
+  parseDueWindow,
+  searchInvoices,
+  sortInvoices,
+  summarise,
+  summariseUrgency,
+} from '@/lib/derive/select';
 import { groupIntoRuns, runInvoiceIds } from '@/lib/derive/runs';
 import { sumCents } from '@/lib/money';
 import { BUSINESSES, FIXTURE_TODAY, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
@@ -30,13 +37,13 @@ describe('the sticky footer total — notes §3', () => {
     }
   });
 
-  it('equals the filtered list for combined and overdue-only filters', () => {
+  it('equals the filtered list for combined and due-window filters', () => {
     for (const business of BUSINESSES) {
       for (const supplier of SUPPLIERS.slice(0, 4)) {
         const filtered = filterInvoices(rows, {
           businessId: business.id,
           supplierId: supplier.id,
-          overdueOnly: true,
+          due: 'overdue' as const,
           today: FIXTURE_TODAY,
         });
         expect(summarise(filtered).total_cents).toBe(sumCents(filtered));
@@ -60,10 +67,74 @@ describe('the sticky footer total — notes §3', () => {
   });
 });
 
+describe('the dashboard cards and the lists they open', () => {
+  /**
+   * The two headline figures on Home are links now, and each opens the pending
+   * list already filtered to its own window. So there are two ways to arrive
+   * at the same money — a card total and a filtered list — and they must be
+   * the same number.
+   *
+   * They are, because both go through `urgencyOf` over the same array rather
+   * than through two comparisons that happen to agree today. These tests are
+   * what stops somebody re-deriving one of them "more simply" later.
+   */
+  const urgency = summariseUrgency(rows, FIXTURE_TODAY);
+
+  it('the Overdue card equals the list ?due=overdue opens', () => {
+    const listed = filterInvoices(rows, { due: 'overdue', today: FIXTURE_TODAY });
+    expect(summarise(listed).total_cents).toBe(urgency.overdue.total_cents);
+    expect(summarise(listed).invoice_count).toBe(urgency.overdue.invoice_count);
+  });
+
+  it('the Next 7 days card equals the list ?due=next7 opens', () => {
+    const listed = filterInvoices(rows, { due: 'next7', today: FIXTURE_TODAY });
+    expect(summarise(listed).total_cents).toBe(urgency.next7.total_cents);
+    expect(summarise(listed).invoice_count).toBe(urgency.next7.invoice_count);
+  });
+
+  it('next7 includes an invoice due today, and overdue does not', () => {
+    const dueToday = rows.filter((row) => row.due_date === FIXTURE_TODAY);
+    expect(dueToday.length).toBeGreaterThan(0);
+
+    const inWeek = filterInvoices(rows, { due: 'next7', today: FIXTURE_TODAY });
+    const inOverdue = filterInvoices(rows, { due: 'overdue', today: FIXTURE_TODAY });
+    for (const row of dueToday) {
+      expect(inWeek).toContain(row);
+      expect(inOverdue).not.toContain(row);
+    }
+  });
+
+  it('the two windows never both contain the same invoice', () => {
+    const overdue = new Set(
+      filterInvoices(rows, { due: 'overdue', today: FIXTURE_TODAY }).map((row) => row.id),
+    );
+    for (const row of filterInvoices(rows, { due: 'next7', today: FIXTURE_TODAY })) {
+      expect(overdue.has(row.id)).toBe(false);
+    }
+  });
+});
+
+describe('parseDueWindow', () => {
+  it('accepts the two real windows', () => {
+    expect(parseDueWindow('overdue')).toBe('overdue');
+    expect(parseDueWindow('next7')).toBe('next7');
+    expect(parseDueWindow('  NEXT7 ')).toBe('next7');
+  });
+
+  it('falls back to everything rather than to nothing', () => {
+    // A hand-typed URL, or a window renamed in a later phase. Showing the
+    // whole list is wrong-but-obvious; showing none looks like an empty ledger.
+    for (const raw of [undefined, null, '', 'week', 'overdue-only', 'DROP TABLE']) {
+      expect(parseDueWindow(raw)).toBe('all');
+    }
+  });
+});
+
 describe('filterInvoices', () => {
   it('refuses to guess what "overdue" means', () => {
     // Urgency is never self-derived — `today` must be handed in.
-    expect(() => filterInvoices(rows, { overdueOnly: true })).toThrow(/today/);
+    expect(() => filterInvoices(rows, { due: 'overdue' })).toThrow(/today/);
+    expect(() => filterInvoices(rows, { due: 'next7' })).toThrow(/today/);
   });
 
   it('filters by due-date range inclusively', () => {

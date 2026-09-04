@@ -5,6 +5,8 @@ import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoi
 import { sydneyToday } from '@/lib/date';
 import { formatCents } from '@/lib/money';
 import { filterByScope } from '@/lib/scope';
+import type { DueWindow } from '@/lib/derive/select';
+import { urgencyOf } from '@/lib/derive/urgency';
 import { sumCents } from '@/lib/money';
 
 /**
@@ -76,12 +78,17 @@ const { PendingList } = await import('@/components/screens/PendingList');
  * The screen takes a plain scope. The route file is the only thing that deals
  * in promised params, which is why it has nothing else in it.
  */
-function open(scope = 'all') {
+function open(scope = 'all', due?: DueWindow) {
   return render(
     <ToastProvider>
-      <PendingList scope={scope} />
+      <PendingList scope={scope} due={due} />
     </ToastProvider>,
   );
+}
+
+/** The due-window pills, scoped so 'Overdue' cannot match anything else. */
+function dueWindow() {
+  return within(screen.getByRole('group', { name: 'Due window' }));
 }
 
 /** Every invoice row currently rendered, by its supplier + amount button. */
@@ -105,6 +112,58 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('arriving from a dashboard card', () => {
+  /*
+   * The card is a link carrying `?due=`, the route unwraps it, and the screen
+   * takes it as a plain value. So what these check is the join: the list has
+   * to be filtered on FIRST render, before anybody touches a pill — otherwise
+   * the card opens the whole ledger and the figure that was tapped is nowhere
+   * on the screen it opened.
+   */
+  it('opens already filtered to overdue', async () => {
+    open('all', 'overdue');
+    await screen.findByRole('heading', { name: 'Pending' });
+
+    const overdue = invoices.filter((invoice) => invoice.due_date < TODAY);
+    expect(rowButtons()).toHaveLength(overdue.length);
+    expect(footerTotal()).toBe(formatCents(sumCents(overdue)));
+    expect(dueWindow().getByRole('button', { name: 'Overdue' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('opens already filtered to the next seven days, today included', async () => {
+    open('all', 'next7');
+    await screen.findByRole('heading', { name: 'Pending' });
+
+    const next7 = invoices.filter(
+      (invoice) => urgencyOf(invoice.due_date, TODAY) === 'today' || urgencyOf(invoice.due_date, TODAY) === 'week',
+    );
+    expect(rowButtons()).toHaveLength(next7.length);
+    expect(footerTotal()).toBe(formatCents(sumCents(next7)));
+  });
+
+  it('shows everything when the URL says nothing, or says nonsense', async () => {
+    open('all');
+    await screen.findByRole('heading', { name: 'Pending' });
+    expect(rowButtons()).toHaveLength(invoices.length);
+    expect(dueWindow().getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('lets the pills override what the link asked for', async () => {
+    open('all', 'overdue');
+    await screen.findByRole('heading', { name: 'Pending' });
+
+    fireEvent.click(dueWindow().getByRole('button', { name: 'All' }));
+    expect(rowButtons()).toHaveLength(invoices.length);
+    expect(footerTotal()).toBe(formatCents(sumCents(invoices)));
+  });
+});
+
 describe('the sticky total equals what is on screen', () => {
   it('with no filters', async () => {
     open();
@@ -125,12 +184,12 @@ describe('the sticky total equals what is on screen', () => {
     }
   });
 
-  it('after switching on overdue only', async () => {
+  it('after switching to the overdue window', async () => {
     open();
     await screen.findByRole('heading', { name: 'Pending' });
     const before = footerTotal();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Overdue only' }));
+    fireEvent.click(dueWindow().getByRole('button', { name: 'Overdue' }));
 
     const overdue = invoices.filter((invoice) => invoice.due_date < TODAY);
     expect(footerTotal()).toBe(formatCents(sumCents(overdue)));
@@ -153,13 +212,13 @@ describe('the sticky total equals what is on screen', () => {
     expect(rowButtons()).toHaveLength(mine.length);
   });
 
-  it('with a supplier and overdue-only together', async () => {
+  it('with a supplier and the overdue window together', async () => {
     open();
     await screen.findByRole('heading', { name: 'Pending' });
 
     const supplier = invoices[0]!.supplier;
     fireEvent.change(screen.getByRole('combobox'), { target: { value: supplier.id } });
-    fireEvent.click(screen.getByRole('button', { name: 'Overdue only' }));
+    fireEvent.click(dueWindow().getByRole('button', { name: 'Overdue' }));
 
     const both = invoices.filter(
       (invoice) => invoice.supplier_id === supplier.id && invoice.due_date < TODAY,
@@ -220,7 +279,7 @@ describe('empty states say what to do — spec §8', () => {
 
     const supplier = invoices[0]!.supplier;
     fireEvent.change(screen.getByRole('combobox'), { target: { value: supplier.id } });
-    fireEvent.click(screen.getByRole('button', { name: 'Overdue only' }));
+    fireEvent.click(dueWindow().getByRole('button', { name: 'Overdue' }));
 
     // Whichever this fixture produces, the copy must never be a bare "no results".
     const empty = screen.queryByText(/Clear one to see more|Add one with the \+ button/);

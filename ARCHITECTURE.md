@@ -2751,3 +2751,124 @@ likely safe fixes, depending on which it is: warm the Supabase connection on
 app open (helps only the cold-start, first-action case), or leave it (inherent
 mobile latency). Do not reach for the write paths without the client's report
 of which pattern it actually follows.
+
+---
+
+## 35. Round A — the figures became controls
+
+Three items from the first round of real usage feedback. All three are app-only:
+no migration, no policy, no write path touched, which is what made them safe to
+run while the "feels slower on a phone" report (§34.12) was still outstanding.
+
+### 35.1 The two headline figures did nothing when tapped
+
+Reported as *"touch interactive for overdue or pending bills. Right now there
+is no touch interaction"*, and the report is exactly right. `StatCard` was a
+`<div>`. It sat above a list where every row expands, ticks off and opens — so
+a card that did nothing did not read as a figure, it read as broken.
+
+Both are `<Link>`s now, to the pending list already filtered to their own
+window. Three things about that are decisions rather than mechanics.
+
+**They link at zero too.** "Nothing late" opens a list saying nothing matches.
+A control that is sometimes not a control teaches that the card is unreliable;
+a dead end you can see the bottom of answers the question you asked.
+
+**The window is in the URL, and the pills do not put it back.** §16's rule is
+that a place you navigate to lives in the URL and a control you adjust does
+not, and both halves apply here: arriving from a card is navigation, so
+`/b/all/pending?due=overdue` is real, shareable, and Back returns to the
+dashboard. Tapping a pill afterwards is adjusting a control on the screen you
+are standing on — making that a `router.replace` would put a server round trip
+in the middle of a filter and make Back step through pill states.
+
+**The route unwraps it, not the screen.** `useSearchParams` in a client
+component forces a Suspense boundary around the whole list, and worse, it
+breaks the split HANDOFF §5 names: a thin `page.tsx` that awaits the route's
+promises and a screen that takes plain values is what makes every screen here
+testable by passing it a literal. The due window arrives the same way the scope
+always has.
+
+### 35.2 `overdueOnly` became `due`, and that is the point
+
+The old filter was a boolean. A second boolean for the week would have been two
+flags describing four states when three are real — and §19's account of this
+build is that five of the eight bugs found on a phone were values able to hold
+a state that should not exist. `DueWindow` is `'all' | 'overdue' | 'next7'`, so
+"overdue and next 7 days at once" is unrepresentable rather than merely
+unreachable.
+
+**The window is computed by `urgencyOf`, not by a comparison that agrees with
+it.** `summariseUrgency` buckets the two cards with `urgencyOf`; the filter
+calls the same function. Two implementations that agreed on the day they were
+written would eventually disagree about a boundary day, and the list would be
+the one believed. `test/unit/select.test.ts` asserts the card total equals the
+total of the list its own link opens, in both directions, over the 200-row
+fixture — and verified in a browser at 360px: the Overdue card reads
+$18,347.88 across 5 invoices, and `?due=overdue` shows 5 rows summing to
+$18,347.88.
+
+### 35.3 Edit and Remove existed and could not be found
+
+Reported as *"Edit/Remove Supplier Options"*, which read as a request for
+something missing. Both were already there: Edit was a 14px word inside a panel
+four scrolls down, and Remove was a checkbox labelled **Active** inside the
+form that Edit opened. Neither is a control anybody finds while looking for
+one.
+
+They are two buttons under the supplier's name now, and the same two under a
+customer's. Nothing new can be done; it can be seen. The Details panel lost its
+own Edit control rather than keeping a second one — two of them is two things
+to keep in step, and the buried one was the one nobody found.
+
+**Remove still writes `active = false`, and now says so before it happens.**
+Rule 5 is not softened: every invoice references the supplier forever and a
+hole in that is unrecoverable. What changed is that the word matches the intent
+and the consequence is stated in a `ConfirmDialog` — "it stops appearing when
+anybody adds an invoice", "nothing is deleted, and you can put it back from
+here" — rather than being knowledge you had to already have about a checkbox.
+A removed supplier's page offers **Restore** in the same slot.
+
+### 35.4 A supplier's total between two dates
+
+Asked for as *"an option within suppliers to check total pending between two
+time periods"*. Two dates, a basis toggle, two figures and the invoices they
+are made of.
+
+**Two figures, not one.** Still pending and already paid, side by side. The
+question asked was about money still to go; a single total that quietly mixed
+it with money already gone would answer neither.
+
+**The basis is a visible choice.** "What falls due in October" and "what they
+billed us in October" are different questions with different answers, so due
+date and invoice date are both offered and which one is showing is written on
+the screen. Defaults to due date, because that is the question the rest of the
+app is built around.
+
+**It asks the database rather than filtering the array the page already has.**
+`useSupplierInvoices` stops at 300 rows — generous for a page, silently wrong
+for a question about 2024. A total over a truncated array is notes §3's
+trust-destroying bug arrived at by arithmetic instead of by a second query, and
+it would look right.
+
+**And it asks for one row more than it will show.** If that row comes back the
+range is wider than `SUPPLIER_RANGE_MAX`, and the panel says so instead of
+reporting a figure it knows is short. A refused answer gets narrowed; a short
+one gets written down.
+
+The figures and the list under them come from the one array, verified in the
+browser: the panel's pending figure equals the sum of the rows rendered beneath
+it, no horizontal overflow, every control at the 44px floor.
+
+This is also the first half of §33.2's export, and deliberately not the whole
+of it. What a range answers on screen is worth having before deciding what a
+file should contain.
+
+### 35.5 Where it stands
+
+- **Tests: 606**, up from 579, under `UTC`, `Australia/Sydney` and
+  `America/Los_Angeles`. `tsc` and `next build` clean.
+- **`test/preview-supplier.test.tsx`** joins the two existing previews. The
+  supplier page is the densest screen in the app now and there was no way to
+  look at it without a session and a real supplier.
+- **Not deployed.** Every release is the client's to run (HANDOFF §3).

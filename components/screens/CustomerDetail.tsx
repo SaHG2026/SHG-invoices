@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useAllCustomers, useUpdateCustomer } from '@/lib/queries/customers';
 import { useCustomerSales, useMarkReceived, useUnmarkReceived } from '@/lib/queries/sales';
 import { summariseReceivable } from '@/lib/derive/receivables';
@@ -42,6 +43,7 @@ export function CustomerDetail({ id }: { id: string }) {
   const settled = sales.filter((row) => row.status !== 'outstanding');
 
   const [editing, setEditing] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   const customer = customers.find((entry) => entry.id === id) ?? null;
 
@@ -57,28 +59,69 @@ export function CustomerDetail({ id }: { id: string }) {
     );
   }
 
+  const { id: customerId, name: customerName } = customer;
+
+  /** Remove is deactivate. Rule 5 — the sales invoices reference this row. */
+  async function setActive(active: boolean) {
+    try {
+      await updateCustomer.mutateAsync({ id: customerId, active });
+      setConfirmingRemove(false);
+      toast.show(
+        active
+          ? `${customerName} is back on the list.`
+          : `${customerName} removed. Every invoice kept.`,
+      );
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Couldn’t save that.', 'problem');
+    }
+  }
+
   return (
     <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
       <header className="mb-4">
         <h1 className="text-h1 text-ink">{customer.name}</h1>
         {!customer.active ? (
           <p className="mt-1 text-sm text-muted">
-            Deactivated. Records kept.
+            Removed from the list. Every invoice sent to them is kept.
           </p>
         ) : null}
-      </header>
 
-      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-xs uppercase tracking-widest text-muted">Details</p>
+        {/* The mirror of the supplier page, and it had the same gap: Edit was
+            buried in a panel and Remove was a checkbox called "Active". */}
+        <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setEditing((open) => !open)}
-            className="touch text-sm text-action"
+            aria-expanded={editing}
+            className="touch rounded-full border border-hairline bg-card px-4 text-sm text-ink"
           >
-            {editing ? 'Cancel' : 'Edit'}
+            {editing ? 'Cancel editing' : 'Edit details'}
           </button>
+
+          {customer.active ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingRemove(true)}
+              className="touch rounded-full border px-4 text-sm"
+              style={{ borderColor: 'var(--hairline)', color: 'var(--muted)' }}
+            >
+              Remove customer
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void setActive(true)}
+              disabled={updateCustomer.isPending}
+              className="touch rounded-full border border-action bg-action-bg px-4 text-sm text-action disabled:opacity-40"
+            >
+              {updateCustomer.isPending ? 'Restoring…' : 'Restore customer'}
+            </button>
+          )}
         </div>
+      </header>
+
+      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Details</p>
 
         {editing ? (
           <CustomerForm
@@ -223,6 +266,22 @@ export function CustomerDetail({ id }: { id: string }) {
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        title={`Remove ${customer.name}?`}
+        points={[
+          <>They stop appearing when anybody records a sales invoice.</>,
+          <>
+            Every invoice already sent to them is kept, and this page stays where it is. Nothing
+            is deleted, and you can put them back from here.
+          </>,
+        ]}
+        question="Remove them?"
+        confirmLabel="Remove customer"
+        onConfirm={() => void setActive(false)}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </AppChrome>
   );
 }
@@ -250,7 +309,6 @@ function CustomerForm({
   const [phone, setPhone] = useState(customer.contact_phone ?? '');
   const [email, setEmail] = useState(customer.contact_email ?? '');
   const [notes, setNotes] = useState(customer.notes ?? '');
-  const [active, setActive] = useState(customer.active);
 
   const field =
     'touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
@@ -265,7 +323,6 @@ function CustomerForm({
           contact_phone: phone.trim() || null,
           contact_email: email.trim() || null,
           notes: notes.trim() || null,
-          active,
         });
       }}
     >
@@ -325,16 +382,6 @@ function CustomerForm({
           rows={3}
           className="w-full rounded-sm border border-hairline bg-card px-3 py-2 text-base text-ink outline-none focus:border-action"
         />
-      </label>
-
-      <label className="mb-4 flex items-center gap-2 text-sm text-ink">
-        <input
-          type="checkbox"
-          checked={active}
-          onChange={(event) => setActive(event.target.checked)}
-          className="size-4"
-        />
-        Active
       </label>
 
       <button

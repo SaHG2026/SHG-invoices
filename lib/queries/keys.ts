@@ -45,6 +45,18 @@ export const qk = {
     detail: (id: string) => ['invoices', 'detail', id] as const,
     history: (filters: Record<string, unknown>) => ['invoices', 'history', filters] as const,
     forSupplier: (supplierId: string) => ['invoices', 'supplier', supplierId] as const,
+    /**
+     * One supplier, one date range — its own cache entry, not a filter over
+     * `forSupplier`.
+     *
+     * `forSupplier` is capped at 300 rows for the page's own lists. A range
+     * asked about two years ago would silently fall off the end of that cap and
+     * report a total missing its oldest invoices, which is notes §3's
+     * trust-destroying bug arrived at by arithmetic rather than by a second
+     * query. So the range asks the database its own question.
+     */
+    forSupplierRange: (supplierId: string, range: Record<string, unknown>) =>
+      ['invoices', 'supplier', supplierId, 'range', range] as const,
   },
   /**
    * Invoices Deli Delights has sent. A separate key from `invoices`, not a

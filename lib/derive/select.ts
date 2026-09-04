@@ -11,11 +11,44 @@
  */
 
 import { compareDates, type DateStr } from '../date';
-import { bucketByUrgency } from './urgency';
+import { bucketByUrgency, urgencyOf } from './urgency';
+import { WEEK_HORIZON_DAYS } from '../constants';
 import { sumCents } from '../money';
 import type { Business, InvoiceRow } from '../types';
 
 export type SortKey = 'due' | 'supplier' | 'amount' | 'added';
+
+/* -------------------------------------------------------------------------- *
+ * Which slice of "when is this due" a list is showing.
+ *
+ * One value, not a pair of booleans. `overdueOnly` plus the `next7` this
+ * replaces would be two flags describing four states when three are real, and
+ * §19's account of the bugs found on a real phone is that five of eight were
+ * exactly that — a value able to hold a state that should not exist. Turning
+ * the two into one makes "overdue AND next 7 days" unrepresentable rather than
+ * merely unreachable.
+ * -------------------------------------------------------------------------- */
+
+export type DueWindow = 'all' | 'overdue' | 'next7';
+
+export const DUE_WINDOW_OPTIONS: ReadonlyArray<{ key: DueWindow; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'next7', label: `Next ${WEEK_HORIZON_DAYS} days` },
+];
+
+/**
+ * A `?due=` segment from a URL, or anything at all, narrowed to a real window.
+ *
+ * Written like `parseScope`: an unrecognised value is not an error and not an
+ * empty list, it is the unfiltered default. A link somebody typed by hand, or
+ * an old link to a window that has since been renamed, shows everything rather
+ * than showing nothing and looking like an empty ledger.
+ */
+export function parseDueWindow(raw: string | undefined | null): DueWindow {
+  const value = (raw ?? '').trim().toLowerCase();
+  return value === 'overdue' || value === 'next7' ? value : 'all';
+}
 
 /**
  * The three questions people actually ask of a pending list.
@@ -42,8 +75,9 @@ export interface InvoiceFilter {
   /** Inclusive due-date range. */
   dueFrom?: DateStr | null;
   dueTo?: DateStr | null;
-  overdueOnly?: boolean;
-  /** Required when `overdueOnly` is set — urgency is never self-derived. */
+  /** Defaults to 'all'. */
+  due?: DueWindow;
+  /** Required when `due` is anything but 'all' — urgency is never self-derived. */
   today?: DateStr;
 }
 
@@ -51,10 +85,10 @@ export function filterInvoices(
   rows: ReadonlyArray<InvoiceRow>,
   filter: InvoiceFilter,
 ): InvoiceRow[] {
-  const { businessId, supplierId, dueFrom, dueTo, overdueOnly, today } = filter;
+  const { businessId, supplierId, dueFrom, dueTo, due = 'all', today } = filter;
 
-  if (overdueOnly && !today) {
-    throw new Error('filterInvoices: overdueOnly requires `today` to be passed in');
+  if (due !== 'all' && !today) {
+    throw new Error(`filterInvoices: due='${due}' requires \`today\` to be passed in`);
   }
 
   return rows.filter((row) => {
@@ -62,7 +96,22 @@ export function filterInvoices(
     if (supplierId && row.supplier_id !== supplierId) return false;
     if (dueFrom && compareDates(row.due_date, dueFrom) < 0) return false;
     if (dueTo && compareDates(row.due_date, dueTo) > 0) return false;
-    if (overdueOnly && today && compareDates(row.due_date, today) >= 0) return false;
+
+    /*
+     * `urgencyOf`, not a second comparison that happens to agree with it.
+     *
+     * The two dashboard cards are summed by `summariseUrgency`, which buckets
+     * with `urgencyOf`. Tapping a card opens this list filtered. If the window
+     * were re-derived here with its own date maths, the card and the list it
+     * opens could disagree about a boundary day — which is notes §3's
+     * trust-destroying bug, arrived at by the long way round.
+     */
+    if (due !== 'all' && today) {
+      const urgency = urgencyOf(row.due_date, today);
+      if (due === 'overdue' && urgency !== 'overdue') return false;
+      if (due === 'next7' && urgency !== 'today' && urgency !== 'week') return false;
+    }
+
     return true;
   });
 }

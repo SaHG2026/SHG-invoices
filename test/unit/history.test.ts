@@ -4,7 +4,10 @@ import {
   outstandingFor,
   spendByMonth,
   spendTotal,
+  startOfMonth,
+  summariseRange,
 } from '@/lib/derive/history';
+import { sumCents } from '@/lib/money';
 import { SUPPLIERS, makeInvoices } from '../fixtures/invoices';
 import type { Invoice, Supplier } from '@/lib/types';
 
@@ -187,5 +190,47 @@ describe('outstandingFor', () => {
 
   it('is zero rather than NaN when nothing is outstanding', () => {
     expect(outstandingFor([])).toEqual({ total_cents: 0, count: 0, oldest_due: null });
+  });
+});
+
+describe('summariseRange — the supplier date range', () => {
+  const rows = makeInvoices(60);
+
+  it('splits pending from settled and never mixes them into one figure', () => {
+    const summary = summariseRange(rows);
+    const pending = rows.filter((row) => row.status === 'unpaid');
+    const paid = rows.filter((row) => row.status === 'paid');
+
+    expect(summary.pending.total_cents).toBe(sumCents(pending));
+    expect(summary.pending.count).toBe(pending.length);
+    expect(summary.settled.total_cents).toBe(sumCents(paid));
+    expect(summary.settled.count).toBe(paid.length);
+  });
+
+  it('leaves voided invoices out of both totals, and says how many there were', () => {
+    const voided: Invoice = { ...rows[0]!, id: 'v', status: 'void', void_reason: 'wrong' };
+    const before = summariseRange(rows);
+    const after = summariseRange([...rows, voided]);
+
+    expect(after.pending.total_cents).toBe(before.pending.total_cents);
+    expect(after.settled.total_cents).toBe(before.settled.total_cents);
+    expect(after.voided_count).toBe(before.voided_count + 1);
+  });
+
+  it('is zero rather than NaN over nothing', () => {
+    const summary = summariseRange([]);
+    expect(summary.pending.total_cents).toBe(0);
+    expect(summary.settled.total_cents).toBe(0);
+    expect(summary.voided_count).toBe(0);
+  });
+});
+
+describe('startOfMonth', () => {
+  it('is string work, so it cannot drift across a timezone', () => {
+    // The whole reason it slices rather than constructing a Date: rule 2, and
+    // the previous app's worst bug was exactly this operation done with one.
+    expect(startOfMonth('2026-09-05')).toBe('2026-09-01');
+    expect(startOfMonth('2026-01-31')).toBe('2026-01-01');
+    expect(startOfMonth('2026-12-01')).toBe('2026-12-01');
   });
 });

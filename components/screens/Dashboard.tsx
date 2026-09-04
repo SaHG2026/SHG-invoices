@@ -28,6 +28,7 @@ import {
   type Urgency,
 } from '@/lib/derive/urgency';
 import { invoiceHref, pendingHref, scopeHref } from '@/lib/scope';
+import { WEEK_HORIZON_DAYS } from '@/lib/constants';
 import type { PaymentRun } from '@/lib/types';
 
 /**
@@ -159,6 +160,7 @@ export default function Dashboard() {
       <div className="mb-6 grid grid-cols-2 gap-3">
         <StatCard
           label="Overdue"
+          href={pendingHref('all', 'overdue')}
           cents={urgency?.overdue.total_cents ?? 0}
           tone="overdue"
           chars={figureChars}
@@ -173,7 +175,8 @@ export default function Dashboard() {
           }
         />
         <StatCard
-          label="Next 7 days"
+          label={`Next ${WEEK_HORIZON_DAYS} days`}
+          href={pendingHref('all', 'next7')}
           cents={urgency?.next7.total_cents ?? 0}
           tone="plain"
           chars={figureChars}
@@ -321,9 +324,28 @@ function count(n: number, noun: string): string {
  * Overdue is coloured; the week is not. Two coloured cards side by side is two
  * alarms, and an alarm that is always on stops being read — the week's money
  * is expected, and only the late money is a problem.
+ *
+ * ---------------------------------------------------------------------------
+ * It is a link, and it was not.
+ *
+ * These are the two biggest things on the screen, sitting above a list where
+ * every row does something when tapped — so a card that did nothing did not
+ * read as a figure, it read as broken. Reported as "there is no touch
+ * interaction", which is precisely what it is.
+ *
+ * It links even at zero, to a list that will say "nothing matches those
+ * filters". A control that is sometimes not a control is worse than a dead end
+ * you can see the bottom of: the first teaches that the card is unreliable,
+ * the second answers the question you asked.
+ *
+ * The total here and the list it opens are both derived from `urgencyOf` over
+ * the same array, so tapping $18,347.88 cannot land on a list adding up to
+ * anything else.
+ * ---------------------------------------------------------------------------
  */
 function StatCard({
   label,
+  href,
   cents,
   detail,
   tone,
@@ -331,6 +353,7 @@ function StatCard({
   loading,
 }: {
   label: string;
+  href: Route;
   cents: number;
   detail: string;
   tone: 'overdue' | 'plain';
@@ -358,18 +381,27 @@ function StatCard({
   const fontSize = `min(var(--text-h1), ${(100 / (Math.max(chars, 1) * 0.58)).toFixed(2)}cqw)`;
 
   return (
-    <div
-      className="rounded-sm border border-edge bg-card p-3"
+    <Link
+      href={href}
+      aria-label={loading ? label : `${label}, ${formatCents(cents)}, ${detail}`}
+      className="block rounded-sm border border-edge bg-card p-3 active:bg-pressed"
       style={{ containerType: 'inline-size' }}
     >
-      <p
-        className="text-xs uppercase tracking-widest"
-        style={{ color: isAlarm ? 'var(--spine-overdue)' : 'var(--muted)' }}
-      >
-        {label}
-      </p>
-      <p
-        className="money mt-1"
+      <span className="flex items-baseline justify-between gap-2">
+        <span
+          className="text-xs uppercase tracking-widest"
+          style={{ color: isAlarm ? 'var(--spine-overdue)' : 'var(--muted)' }}
+        >
+          {label}
+        </span>
+        {/* The one mark that says this opens something. Small, because the
+            figure is what somebody is here to read. */}
+        <span aria-hidden className="shrink-0 text-xs text-muted">
+          &rsaquo;
+        </span>
+      </span>
+      <span
+        className="money mt-1 block"
         style={{
           fontSize,
           lineHeight: 1.15,
@@ -378,9 +410,9 @@ function StatCard({
         }}
       >
         {loading ? ' ' : formatCents(cents)}
-      </p>
-      <p className="mt-0.5 text-xs text-muted">{loading ? ' ' : detail}</p>
-    </div>
+      </span>
+      <span className="mt-0.5 block text-xs text-muted">{loading ? ' ' : detail}</span>
+    </Link>
   );
 }
 

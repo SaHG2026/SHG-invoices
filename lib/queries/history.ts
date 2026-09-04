@@ -5,7 +5,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { buildHistorySearch } from '@/lib/derive/history';
-import { HISTORY_PAGE_SIZE } from '@/lib/constants';
+import { HISTORY_PAGE_SIZE, SUPPLIER_RANGE_MAX } from '@/lib/constants';
+import { compareDates, isDateStr, type DateStr } from '@/lib/date';
 import { qk } from './keys';
 import type { InvoiceRow, Supplier } from '@/lib/types';
 
@@ -72,6 +73,71 @@ export function useSupplierInvoices(supplierId: string) {
       if (error) throw error;
       return (data ?? []) as unknown as InvoiceRow[];
     },
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * One supplier, between two dates. Asked for after real use: "an option within
+ * suppliers to check total pending between two time periods."
+ *
+ * ---------------------------------------------------------------------------
+ * Two decisions worth keeping.
+ *
+ * **It asks the database rather than filtering what the page already has.**
+ * `useSupplierInvoices` stops at 300 rows, which is generous for a page and
+ * silently wrong for a question about 2024. A total computed over a truncated
+ * array is exactly the failure notes §3 names, and it would look right.
+ *
+ * **It asks for one row more than it will show.** If that row comes back, the
+ * range is wider than this can total, and the screen says so instead of
+ * reporting a figure it knows is short. A refused answer can be narrowed; a
+ * wrong one gets written down.
+ * ---------------------------------------------------------------------------
+ *
+ * The basis is the caller's choice and neither default is safe to assume:
+ * "what falls due in October" and "what they billed us in October" are
+ * different questions with different answers, and the screen labels which one
+ * it is showing rather than picking quietly.
+ */
+export type RangeBasis = 'due' | 'invoice';
+
+export interface SupplierRange {
+  rows: InvoiceRow[];
+  /** More invoices matched than can be totalled honestly. */
+  truncated: boolean;
+}
+
+export function useSupplierRange(
+  supplierId: string,
+  from: string,
+  to: string,
+  basis: RangeBasis,
+) {
+  const column = basis === 'due' ? 'due_date' : 'invoice_date';
+  const usable =
+    supplierId !== '' && isDateStr(from) && isDateStr(to) && compareDates(from, to) <= 0;
+
+  return useQuery({
+    queryKey: qk.invoices.forSupplierRange(supplierId, { from, to, basis }),
+    queryFn: async (): Promise<SupplierRange> => {
+      const { data, error } = await supabase()
+        .from('invoices')
+        .select(ROW_SELECT)
+        .eq('supplier_id', supplierId)
+        .gte(column, from as DateStr)
+        .lte(column, to as DateStr)
+        .order(column, { ascending: false })
+        .limit(SUPPLIER_RANGE_MAX + 1);
+
+      if (error) throw error;
+
+      const rows = (data ?? []) as unknown as InvoiceRow[];
+      return rows.length > SUPPLIER_RANGE_MAX
+        ? { rows: [], truncated: true }
+        : { rows, truncated: false };
+    },
+    enabled: usable,
     staleTime: 30_000,
   });
 }

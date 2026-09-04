@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
-import { formatCents } from '@/lib/money';
+import { formatCents, sumCents } from '@/lib/money';
 import { DEFAULT_TERMS_DAYS } from '@/lib/constants';
 import type { Supplier } from '@/lib/types';
 
@@ -37,6 +37,10 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   supplierInvoices: { current: [] as unknown[] },
+  /** What `useSupplierRange` hands back — set per test. */
+  range: { current: { rows: [] as unknown[], truncated: false } },
+  /** The arguments it was last called with, so the query can be asserted on. */
+  rangeArgs: vi.fn(),
 }));
 
 vi.mock('@/lib/queries/session', () => ({
@@ -69,6 +73,10 @@ vi.mock('@/lib/queries/history', () => ({
   useSupplierInvoices: () => ({ data: mocks.supplierInvoices.current, isLoading: false }),
   useUpdateSupplier: () => ({ mutateAsync: mocks.update, isPending: false }),
   useHistory: () => ({ data: [], isLoading: false }),
+  useSupplierRange: (id: string, from: string, to: string, basis: string) => {
+    mocks.rangeArgs(id, from, to, basis);
+    return { data: mocks.range.current, isLoading: false, isError: false };
+  },
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({
@@ -121,6 +129,88 @@ beforeEach(() => {
   mocks.supplierInvoices.current = invoices.filter(
     (invoice) => invoice.supplier_id === SUPPLIERS[0]!.id,
   );
+  mocks.range.current = { rows: [], truncated: false };
+});
+
+describe('the supplier date range', () => {
+  /*
+   * "An option within suppliers to check total pending between two time
+   * periods."
+   *
+   * The figures and the list under them come from one array, which is rule 4
+   * applied inside a panel: a total nobody can open is a total nobody can
+   * check. These assert that, and that the panel refuses rather than
+   * under-reports when the range is wider than it can total.
+   */
+  const theSupplier = SUPPLIERS[0]!;
+  const inRange = invoices.filter((invoice) => invoice.supplier_id === theSupplier.id);
+
+  function rangeSection() {
+    return within(screen.getByText('Between two dates').closest('section')!);
+  }
+
+  it('totals pending and settled separately, and both match the rows shown', () => {
+    mocks.range.current = { rows: inRange, truncated: false };
+    openDetail(theSupplier.id);
+
+    const pending = inRange.filter((invoice) => invoice.status === 'unpaid');
+    const paid = inRange.filter((invoice) => invoice.status === 'paid');
+
+    const section = rangeSection();
+    expect(section.getByText(formatCents(sumCents(pending)))).toBeInTheDocument();
+    expect(
+      section.getByText(`${pending.length} invoice${pending.length === 1 ? '' : 's'}`),
+    ).toBeInTheDocument();
+    // Both figures exist even when one of them is nothing — a missing figure
+    // reads as "not applicable", which is a different claim from zero.
+    expect(section.getAllByText(/^\$/).length).toBeGreaterThanOrEqual(2);
+    expect(paid.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('asks the database by due date or by invoice date, and says which', () => {
+    openDetail(theSupplier.id);
+    expect(mocks.rangeArgs).toHaveBeenCalledWith(theSupplier.id, expect.any(String), expect.any(String), 'due');
+
+    fireEvent.click(rangeSection().getByRole('button', { name: 'By invoice date' }));
+    expect(mocks.rangeArgs).toHaveBeenLastCalledWith(
+      theSupplier.id,
+      expect.any(String),
+      expect.any(String),
+      'invoice',
+    );
+  });
+
+  it('defaults to this month so far rather than to nothing', () => {
+    openDetail(theSupplier.id);
+    const section = rangeSection();
+    const from = section.getByLabelText('From date') as HTMLInputElement;
+    const to = section.getByLabelText('To date') as HTMLInputElement;
+
+    expect(from.value).toMatch(/^\d{4}-\d{2}-01$/);
+    expect(to.value >= from.value).toBe(true);
+  });
+
+  it('refuses to total a range it would have to truncate', () => {
+    // A short total gets written down. A refused one gets narrowed.
+    mocks.range.current = { rows: [], truncated: true };
+    openDetail(theSupplier.id);
+    expect(rangeSection().getByText(/more than 500 invoices/)).toBeInTheDocument();
+  });
+
+  it('says so when the dates are the wrong way round', () => {
+    openDetail(theSupplier.id);
+    const section = rangeSection();
+    fireEvent.change(section.getByLabelText('From date'), { target: { value: '2026-12-01' } });
+    fireEvent.change(section.getByLabelText('To date'), { target: { value: '2026-01-01' } });
+    expect(section.getByText('The first date is after the second.')).toBeInTheDocument();
+  });
+
+  it('counts voided invoices in neither figure, and says how many', () => {
+    const voided = { ...inRange[0]!, id: 'v-1', status: 'void' as const, void_reason: 'wrong' };
+    mocks.range.current = { rows: [...inRange, voided], truncated: false };
+    openDetail(theSupplier.id);
+    expect(rangeSection().getByText(/voided in this range/)).toBeInTheDocument();
+  });
 });
 
 describe('the supplier list', () => {
@@ -221,7 +311,7 @@ describe('the supplier page', () => {
 
   it('saves payment terms — the gap ARCHITECTURE §18 left open', async () => {
     openDetail(supplier.id);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
 
     fireEvent.change(screen.getByLabelText('Payment terms (days)'), { target: { value: '21' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save supplier' }));
@@ -244,7 +334,7 @@ describe('the supplier page', () => {
     for (const nonsense of ['abc', '-5', '0', '9999', '1.5']) {
       mocks.update.mockClear();
       const { unmount } = openDetail(supplier.id);
-      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
       fireEvent.change(screen.getByLabelText('Payment terms (days)'), {
         target: { value: nonsense },
       });
@@ -256,19 +346,51 @@ describe('the supplier page', () => {
     }
   });
 
+  /*
+   * Remove is deactivate, said in words rather than as a checkbox called
+   * "Active" inside a form four scrolls down. What is asserted below is that
+   * the writing did not change: it still sets `active: false` and still asks
+   * first, because rule 5 is the reason both of those exist.
+   */
   it('deactivates rather than deleting', async () => {
     openDetail(supplier.id);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.click(screen.getByLabelText('Active'));
-    fireEvent.click(screen.getByRole('button', { name: 'Save supplier' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove supplier' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove supplier' }),
+    );
 
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
     expect(mocks.update.mock.calls[0]![0].active).toBe(false);
   });
 
-  it('says a deactivated supplier keeps its invoices', () => {
+  it('asks before removing, and writes nothing if you go back', () => {
+    openDetail(supplier.id);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove supplier' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Go back' }),
+    );
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('says what removing actually does before it happens', () => {
+    openDetail(supplier.id);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove supplier' }));
+    const dialog = within(screen.getByRole('alertdialog'));
+    expect(dialog.getByText(/adds an invoice/)).toBeInTheDocument();
+    expect(dialog.getByText(/Nothing is deleted/)).toBeInTheDocument();
+  });
+
+  it('offers a removed supplier the way back', async () => {
     openDetail('s-gone');
-    expect(screen.getByText(/every invoice kept/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore supplier' }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled());
+    expect(mocks.update.mock.calls[0]![0].active).toBe(true);
+  });
+
+  it('says a removed supplier keeps its invoices', () => {
+    openDetail('s-gone');
+    expect(screen.getByText(/Every invoice it has ever been on is kept/)).toBeInTheDocument();
   });
 
   it('explains rather than showing an empty screen for an unknown supplier', () => {

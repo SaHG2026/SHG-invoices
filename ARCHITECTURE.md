@@ -2684,10 +2684,12 @@ in walked straight past the lock.
 
 ### 34.11 Where it stands
 
-- **Database:** `CATCH_UP_010.sql` written, **not yet run**. Every statement is
-  a no-op until a staff profile exists, and §8 of the file — creating the two
-  accounts — is commented out on purpose.
-- **App:** built. `/venue`, `VenueChrome`, `AddVenueInvoiceSheet`, `VenueGate`,
+- **Live and in use.** Deployed to production, `main` pushed, both venue
+  accounts (GMP, GMH) created, the test account deactivated. `/venue` was
+  confirmed on the deployed site: no session redirects to `/login?next=/venue`,
+  the route serves, the guard holds.
+- **Database:** `CATCH_UP_010`, `011` and `012` all run.
+- **App:** `/venue`, `VenueChrome`, `AddVenueInvoiceSheet`, `VenueGate`,
   the venue chip, `PasswordChange`.
 - **Tests:** 579, up from 532, under all three timezones. `tsc` and
   `next build` clean.
@@ -2716,3 +2718,36 @@ in walked straight past the lock.
 - **Preview:** `test/preview-venue.test.tsx` renders the venue screen and its
   sheet to standalone HTML without a session, the same way §21.6 works. It is
   the only way to see these screens until the accounts exist.
+
+### 34.12 The one open thread — a touch slower on a phone
+
+Reported at the very end of the session, and deliberately **not acted on**: the
+client was going to watch the pattern before any change, because the write
+paths carry the offline-queue correctness (§4 rule 4, notes §1.4–1.6) and a
+blind edit there is how that gets undone. Recorded so the next session starts
+from the diagnosis rather than from scratch.
+
+Measured, so the next person does not re-measure: the database is fast —
+~45ms per round trip warm, with a single ~500ms cold-start on the first hit
+after the connection has dropped. So this is network round-trips on the phone,
+not the server, and not the venue work (which never touched the members' write
+paths). Two post-deploy contributors are transient and self-clearing: the
+cold-start, and the service worker re-caching the shell once after any deploy.
+
+The mechanism, per path:
+
+- **Mark paid** is already optimistic — `useMarkPaid.onMutate` strikes the row
+  through before any network, so the tick itself is instant; only the
+  confirmation toast waits a round trip. If the *strike* is what lags, that is
+  a real regression to chase. If only the toast lags, it is inherent.
+- **New invoice** closes the sheet and shows the optimistic row instantly —
+  UNLESS an invoice number was typed, in which case `collectWarnings` runs the
+  duplicate-check RPC *before* `onClose`, one blocking round trip with
+  "Saving…" on screen. Spec §6 wants that warning before the commit, so making
+  it non-blocking is a design change, not a perf tweak — do not do it silently.
+
+The three observations that localise it are in HANDOFF's "Open thread". The
+likely safe fixes, depending on which it is: warm the Supabase connection on
+app open (helps only the cold-start, first-action case), or leave it (inherent
+mobile latency). Do not reach for the write paths without the client's report
+of which pattern it actually follows.

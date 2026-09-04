@@ -41,9 +41,11 @@ were "it feels instantaneous". Every feature decision defers to it.
 **Everything through Phase 7 is built, deployed and in use.** Phases 1–7, the
 client-driven revisions between 6 and 7, push, and the go-live reset.
 
-**The venue staff accounts (§34) are built and NOT deployed.** `CATCH_UP_010.sql`
-has not been run and the two logins do not exist. Read §34.11 before touching any
-of it — the SQL has never been executed against a real database. §33 is the state at
+**The venue staff accounts (§34) are live and in use.** `CATCH_UP_010`–`012`
+are run, both shop logins exist, the boundary was verified against the live
+database. Read §34 before touching any of the staff policies or the
+`staff_invoices` view. The only open thread is a phone-speed observation, not
+yet diagnosed — see "Open thread" below. §33 is the state at
 handover and the list of audit findings that were accepted rather than fixed —
 read it before concluding anything looks wrong.
 
@@ -265,28 +267,51 @@ notification audiences, access untouched. Logos and photographs are his to
 change from `/brand` without a deploy. The go-live reset has been run and the
 ledger started empty.
 
-### In flight: venue staff accounts (§34)
+### Shipped this session: venue staff accounts (§34)
 
-Built, tested, and **not shipped**. Three things stand between here and live,
-in order:
+**Live and in use.** GroceryMate Parramatta and Hurstville each have a shared
+login that sees its own venue's invoices, adds to them, and corrects one for
+five minutes after entry — and is told nothing about payment. Deployed to
+production, `main` pushed, both accounts created, the test account deactivated.
 
-1. **Run `db/CATCH_UP_010.sql`.** Safe on its own — every statement is a no-op
-   until a staff profile row exists, and creating those is §8 of the file,
-   commented out. Section 7 prints one row per person; `still_a_member` must be
-   true for all four. If it is not, three people are locked out of a live app.
-2. **Verified.** `db/verify_staff.mjs` was run as a real staff account against
-   the live project — all green. It proves the view hides payment columns on a
-   real row, every fenced table is refused, and the insert policy refuses a
-   paid-injection and a forged author. It needs `STAFF_EMAIL` / `STAFF_PASSWORD`
-   in `.env.local` (removed after use). Re-run it after any change to the staff
-   policies or the view. CATCH_UP_011 and 012 came out of that run — read their
-   headers.
-3. **Deploy, then create the two real accounts.** In that order. An account that
-   exists before the screens do can sign in and land on a dashboard built for
-   somebody else.
+What was done, so nobody redoes it:
+
+- **`CATCH_UP_010`, `011`, `012` are all run** against the live project. 010 is
+  the feature; 011 and 012 closed two holes that running the verification —
+  not reading it — turned up. Read their headers before touching the staff
+  policies.
+- **Verified live.** `db/verify_staff.mjs` signs in as a real staff account and
+  proves the boundary: the view hides every payment column (checked on a real
+  row), every fenced table is refused, and the insert policy — not a foreign
+  key — refuses a paid-injection and a forged author with `42501`. It needs
+  `STAFF_EMAIL` / `STAFF_PASSWORD` in `.env.local`; both were removed after use.
+  **Re-run it after any change to the staff policies or the `staff_invoices`
+  view** — that view runs with its owner's rights, so its `WHERE` is the whole
+  boundary and a bad edit leaks silently.
+- **The four are unaffected.** `is_member()` was narrowed to exclude staff, and
+  the members' add/mark-paid paths were not touched.
 
 `test/preview-venue.test.tsx` renders both venue screens to standalone HTML
-without a session — the only way to see them until step 3.
+without a session, the same way §21.6 works — the way to look at them without a
+venue password.
+
+### Open thread: the app feels a touch slower on a phone
+
+Reported at the end of the session, **not yet diagnosed** — the client was going
+to watch which pattern it follows before anything is changed. Do not edit the
+write paths until that report comes back; they carry the offline-queue
+correctness from §4 rule 4 and notes §1.4–1.6, and a blind change there is how
+that gets undone.
+
+What was already established: the database is fast (~45ms warm, one ~500ms
+cold-start on the first hit), so this is network round-trips, not the server,
+and not the venue work. The three things to localise — written up in §34.12:
+
+1. First action after opening vs every time (cold connection vs plain latency).
+2. Whether a typed invoice number makes a save slower (the duplicate check runs
+   before the sheet closes — spec §6, one blocking round trip).
+3. Whether the mark-paid strikethrough is instant and only the toast lags (it
+   is optimistic, so it should be) or the strike itself waits.
 
 ### The next piece of work, deliberately not yet
 

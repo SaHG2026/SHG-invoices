@@ -107,7 +107,7 @@ export function useTeam() {
  * and looks like the setting "not saving".
  */
 const PROFILE_COLUMNS =
-  'id, display_name, initials, accent, role, notify_on_new_invoice, reminder_time, active, business_id';
+  'id, display_name, initials, accent, role, notify_on_new_invoice, reminder_time, title, active, business_id';
 
 /**
  * The one field a person may change about themselves.

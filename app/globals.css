@@ -185,15 +185,26 @@
   --tracking-display: -0.02em;
 
   /* ---- form ------------------------------------------------------------ */
-  /* 4px. Not 12, not pill. Every radius utility resolves to the same value
-     on purpose — an accidental `rounded-lg` cannot drift the visual
-     direction. Spec §9: "Border radius 4px."                              */
-  --radius-xs: 4px;
-  --radius-sm: 4px;
-  --radius-md: 4px;
-  --radius-lg: 4px;
-  --radius-xl: 4px;
-  --radius-2xl: 4px;
+  /*
+   * 10px, and still ONE value.
+   *
+   * Spec §9 said 4px and this was 4px until the client asked for something
+   * softer — "could we have a little more rounded boxes than sharp edges".
+   * His call, and it is a visual preference the spec has no better claim on
+   * than he does.
+   *
+   * What has NOT changed is that every radius utility resolves to the same
+   * number. That was never about the number: it is what stops an accidental
+   * `rounded-lg` in one component drifting the whole visual direction, and it
+   * means this line is the only place the answer lives. Turning these six into
+   * a scale would soften the corners and lose that in the same commit.
+   */
+  --radius-xs: 10px;
+  --radius-sm: 10px;
+  --radius-md: 10px;
+  --radius-lg: 10px;
+  --radius-xl: 10px;
+  --radius-2xl: 10px;
 
   /*
    * Buttons are the exception, at the client's request: pill, not square.

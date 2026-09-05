@@ -344,6 +344,30 @@ check('cannot create a supplier — the policy, not an FK',
  */
 const ownInvoice = view.error ? null : (view.data ?? [])[0]?.id ?? null;
 
+/*
+ * The building block the note policy stands on, checked without writing.
+ *
+ * CATCH_UP_013's version of that policy read `invoices` directly inside its
+ * own `exists`, and a policy expression runs as the CALLER — so RLS applied,
+ * a venue has no select policy on `invoices`, and the check was false for
+ * every invoice including the shop's own. Notes were refused every time, and
+ * silently, because the note is a second queued write that nothing waits on.
+ *
+ * CATCH_UP_016 moved the question into a SECURITY DEFINER function. If this
+ * returns false for a venue's own invoice, that policy cannot succeed — and
+ * asking is free, where proving it by writing a note leaves a row on a real
+ * invoice that nothing can remove.
+ */
+if (ownInvoice) {
+  const ownVenue = await client.rpc('invoice_is_own_venue', { p_invoice_id: ownInvoice });
+  check('can be asked whether an invoice is its own — the note policy needs this',
+    ownVenue.data === true,
+    ownVenue.error ? `refused: ${ownVenue.error.code}` : String(ownVenue.data));
+} else {
+  check('can be asked whether an invoice is its own — the note policy needs this', false,
+    'SKIPPED — this venue has no invoice; add one and re-run');
+}
+
 if (ownInvoice) {
   const forgedNote = await client.from('invoice_notes').insert({
     invoice_id: ownInvoice,

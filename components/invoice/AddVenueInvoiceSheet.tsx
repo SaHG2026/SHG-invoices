@@ -16,7 +16,6 @@ import {
 } from '@/lib/queries/venue';
 import { useCurrentProfile } from '@/lib/queries/session';
 import {
-  activePreset,
   buildInvoicePayload,
   invoiceFormSchema,
   resolveDueDate,
@@ -24,7 +23,6 @@ import {
 } from '@/lib/invoice-form';
 import { compareDates, formatDay, formatDayWithYear, sydneyToday } from '@/lib/date';
 import { centsToInputValue, formatCents } from '@/lib/money';
-import { DUE_PRESETS_DAYS } from '@/lib/constants';
 import type { StaffInvoice, Supplier } from '@/lib/types';
 
 /**
@@ -127,6 +125,25 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
     editing?.due_date ?? null,
   );
 
+  /*
+   * The due date is derived and never shown. Asked for after real use:
+   * "remove due date options from GMP and GMH".
+   *
+   * It is right, and it is not only a tidy-up. When a bill has to be paid is a
+   * fact about the group's arrangement with that supplier — the terms — and
+   * the shop is not party to it. Offering the field invited a guess at
+   * something head office already knows, and a guess that lands in the same
+   * column the whole Overdue screen is built from.
+   *
+   * So it follows the supplier's own `default_terms_days`, set by one of the
+   * four on the supplier page, and falls back to DEFAULT_TERMS_DAYS. The
+   * column is `not null`, so it still has to be filled — by the same function
+   * that fills it for everybody else, from a term rather than from a keyboard.
+   *
+   * `termDays` is still state because `chooseSupplier` sets it: picking a
+   * supplier re-dates the invoice to that supplier's terms. Nothing on this
+   * sheet can set it directly any more.
+   */
   const dueDate = resolveDueDate({ invoiceDate, termDays, explicitDueDate });
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -153,7 +170,6 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
     note,
   };
 
-  const chosenPreset = activePreset(dueDate, invoiceDate, DUE_PRESETS_DAYS);
 
   const chooseSupplier = useCallback((next: Supplier) => {
     setSupplier(next);
@@ -485,7 +501,7 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
           ) : null}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div>
           <div>
             <div className="mb-1 flex items-center justify-between gap-1.5">
               <label
@@ -517,51 +533,6 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
             <p className="figure-date mt-1 text-xs text-muted">{formatDay(invoiceDate)}</p>
           </div>
 
-          <div>
-            <div className="mb-1 flex items-center justify-between gap-1.5">
-              <label
-                className="text-xs uppercase tracking-widest text-muted"
-                htmlFor="venue-due-date"
-              >
-                Due
-              </label>
-              <div className="flex gap-1">
-                {DUE_PRESETS_DAYS.map((days) => {
-                  const isChosen = chosenPreset === days;
-                  const isSupplierTerm = supplier?.default_terms_days === days;
-                  return (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => {
-                        setTermDays(days);
-                        setExplicitDueDate(null);
-                      }}
-                      aria-pressed={isChosen}
-                      aria-label={`Due in ${days} days`}
-                      className={`${SHORTCUT} ${
-                        isChosen
-                          ? 'border-action bg-action text-action-text'
-                          : isSupplierTerm
-                            ? 'border-action bg-action-bg text-action'
-                            : 'border-hairline bg-card text-muted'
-                      }`}
-                    >
-                      {days}d
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <input
-              id="venue-due-date"
-              type="date"
-              value={dueDate}
-              onChange={(event) => setExplicitDueDate(event.target.value)}
-              className={`figure-date ${fieldClass} ${errors.due_date ? 'border-overdue' : 'border-hairline'}`}
-            />
-            <p className="figure-date mt-1 text-xs text-muted">{formatDay(dueDate)}</p>
-          </div>
         </div>
 
         {/*

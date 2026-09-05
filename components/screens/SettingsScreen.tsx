@@ -180,7 +180,17 @@ export function SettingsScreen() {
             */}
             {isStaff(profile)
               ? 'Shop login · shared'
-              : `Sagarmatha Holdings${profile.role === 'owner' ? ' · owner' : ''}`}
+              : /*
+                 * The title, not the role.
+                 *
+                 * `role` said "owner" for two of the four and nothing for the
+                 * other two, which is a permission leaking into a place that
+                 * wanted a job. `profiles.title` is the fact being asked for
+                 * (CATCH_UP_016 §4), and it falls back to the company name
+                 * alone rather than to a role — a person with no title yet
+                 * should read as unremarkable, not as less senior.
+                 */
+                `Sagarmatha Holdings${profile.title ? ` · ${profile.title}` : ''}`}
           </span>
         </span>
       </section>

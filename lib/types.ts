@@ -68,6 +68,17 @@ export interface Profile {
    * send again.
    */
   reminder_time: TimeStr | null;
+  /**
+   * Job title, shown under the name in Settings. Null for the shops.
+   *
+   * Not derived from `role`, which cannot tell Milan from Sujan — both are
+   * `member`, and `role` decides what a screen shows and what a policy allows,
+   * not what somebody's job is.
+   *
+   * Not in the `self_update` grant either: a title is a fact about the company
+   * and nobody appoints themselves.
+   */
+  title: string | null;
   active: boolean;
   /**
    * The venue a `staff` profile belongs to, and null for everybody else.

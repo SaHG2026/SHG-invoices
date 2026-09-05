@@ -24,6 +24,7 @@ const profile: Profile = {
   role: 'owner',
   notify_on_new_invoice: true,
   reminder_time: null,
+  title: 'Builder',
   active: true,
   business_id: null,
 };

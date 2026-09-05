@@ -122,12 +122,19 @@ export function VenueInvoices() {
                         {formatDay(invoice.invoice_date)}
                         {invoice.invoice_number ? ` · ${invoice.invoice_number}` : ''}
                         {/*
-                          The reference is stamped by a database trigger, so a
-                          row that has just been entered and not yet sent has
-                          none. Showing an invented one would be a lie that
-                          changes under whoever read it.
+                          The internal reference is NOT shown, and this is the
+                          second time that call has been made — §24 took it off
+                          the four's screens for the same reason. It is a handle
+                          for the database, not a thing anybody in a shop reads,
+                          and beside a real supplier's invoice number it reads
+                          as a second, competing number.
+
+                          What replaces it is nothing: the supplier, the date
+                          and the amount are how a shift recognises the delivery
+                          it just logged. The reference is still stamped, still
+                          unique, still searchable by the four, and still on the
+                          full record.
                         */}
-                        {invoice.internal_ref ? ` · ${invoice.internal_ref}` : ''}
                       </span>
                     </span>
                     <span className="money shrink-0 text-base text-ink">

@@ -123,10 +123,23 @@ beforeEach(() => {
 });
 
 describe('who you are', () => {
-  it('names the person and their role', () => {
+  it('names the person and their job, not their role', () => {
+    /*
+     * It said "owner" for two of the four and nothing for the other two —
+     * a permission leaking into a place that wanted a job title. `role`
+     * could never have carried this: Milan and Sujan are both `member`.
+     */
     open();
     expect(screen.getByText('Mani')).toBeInTheDocument();
-    expect(screen.getByText(/owner/)).toBeInTheDocument();
+    expect(screen.getByText(/CEO/)).toBeInTheDocument();
+    expect(screen.queryByText(/owner/)).not.toBeInTheDocument();
+  });
+
+  it('says only the company when somebody has no title yet', () => {
+    // Unremarkable, not junior. A missing title must not read as a demotion.
+    mocks.who = { ...profile, title: null };
+    open();
+    expect(screen.getByText('Sagarmatha Holdings')).toBeInTheDocument();
   });
 });
 

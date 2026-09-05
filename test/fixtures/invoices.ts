@@ -34,15 +34,19 @@ export const BUSINESSES: Business[] = [
 
 export const PROFILES: Profile[] = [
   { id: 'p-mani', display_name: 'Mani', initials: 'MA', accent: 'person-2', role: 'owner', notify_on_new_invoice: true,
-  reminder_time: null, active: true, business_id: null },
+  reminder_time: null,
+  title: 'CEO', active: true, business_id: null },
   { id: 'p-milan', display_name: 'Milan', initials: 'MI', accent: 'person-3', role: 'member', notify_on_new_invoice: false,
-  reminder_time: null, active: true, business_id: null },
+  reminder_time: null,
+  title: 'COO', active: true, business_id: null },
   { id: 'p-sujan', display_name: 'Sujan', initials: 'SU', accent: 'person-4', role: 'member', notify_on_new_invoice: false,
-  reminder_time: null, active: true, business_id: null },
+  reminder_time: null,
+  title: 'General Manager', active: true, business_id: null },
   // The builder: full access, not one of the people running the businesses,
   // and never a notification target. ARCHITECTURE §28.2 / CATCH_UP_007.
   { id: 'p-rabindra', display_name: 'Rabindra', initials: 'RA', accent: 'person-1', role: 'builder', notify_on_new_invoice: false,
-  reminder_time: null, active: true, business_id: null },
+  reminder_time: null,
+  title: 'Builder', active: true, business_id: null },
 ];
 
 /**
@@ -66,6 +70,7 @@ export const VENUE_PROFILE: Profile = {
   role: 'staff',
   notify_on_new_invoice: false,
   reminder_time: null,
+  title: null,
   active: true,
   business_id: 'b-gmp',
 };

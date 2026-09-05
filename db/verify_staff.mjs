@@ -23,6 +23,11 @@
  *   STAFF_EMAIL=...
  *   STAFF_PASSWORD=...
  *
+ * Re-run this after ANY change to the staff policies, the `staff_invoices`
+ * view, or `pin_invoice_facts`. Round B (ARCHITECTURE §36) changed the staff
+ * surface three ways without touching the view, and the checks for all three
+ * are below — the supplier lockdown, notes, and approval.
+ *
  * Add `--write` to also test that inserting is allowed. OFF BY DEFAULT, because
  * it puts a real invoice into a live ledger that nothing in the app can delete.
  * The refusal tests below need no such thing — a refused insert writes nothing —
@@ -117,7 +122,26 @@ fenced('invoices — the base table, with its status columns', await client.from
 fenced('activity_log — every payment event, all four venues', await client.from('activity_log').select('id'));
 fenced('customers — Deli Delights', await client.from('customers').select('id'));
 fenced('sales_invoices — the receivables', await client.from('sales_invoices').select('id'));
-fenced('invoice_notes', await client.from('invoice_notes').select('id'));
+/*
+ * NOT fenced any more, and the change is deliberate (CATCH_UP_013 §6).
+ *
+ * A venue writes notes now — it is the only channel it has for "this delivery
+ * is from somebody not on the list, here is who". So it can read its own back.
+ * What it must never read is anybody else's: notes are free text about money
+ * and one of them will eventually say "paid this on Friday".
+ *
+ * So the test is not "zero rows", it is "every row is yours".
+ */
+const notes = await client.from('invoice_notes').select('id, author_id');
+check(
+  'invoice_notes — its own notes only, never anybody else’s',
+  !notes.error && (notes.data ?? []).every((n) => n.author_id === auth.user.id),
+  notes.error
+    ? `refused: ${notes.error.code}`
+    : (notes.data ?? []).length === 0
+      ? '0 rows — nothing written yet, so this proved little'
+      : `${notes.data.length} rows, all authored here`,
+);
 fenced('invoice_ref_counters', await client.from('invoice_ref_counters').select('business_id'));
 fenced('push_targets — other people’s push endpoints', await client.from('push_targets').select('endpoint'));
 
@@ -146,7 +170,18 @@ if (!view.error) {
    * The columns are the point. `status` absent is what the whole feature is
    * for, and a widened view would hand it over without any error anywhere.
    */
-  const banned = ['status', 'paid_at', 'paid_by', 'payment_ref', 'void_reason'];
+  /*
+   * `approved_at` and `approved_by` join the list (CATCH_UP_013 §1).
+   *
+   * The decision in §36 was that the venue screen does not change at all, so
+   * the view was not edited — these are here to prove that stayed true. A
+   * shop learning it has been approved is not a payment leak, but it is a
+   * change nobody agreed to, and a widened view says nothing when it widens.
+   */
+  const banned = [
+    'status', 'paid_at', 'paid_by', 'payment_ref', 'void_reason',
+    'approved_at', 'approved_by',
+  ];
   const present = rows.length
     ? banned.filter((c) => c in rows[0])
     : banned.filter(() => false);
@@ -280,6 +315,79 @@ const otherVenue = await client.from('invoices').insert({
 check('cannot file an invoice against another venue',
   otherVenue.error !== null,
   otherVenue.error ? `refused: ${otherVenue.error.code}` : 'IT WAS ACCEPTED');
+
+/* ------------------------------------------- what Round B took away and added */
+
+console.log('\nRound B — the supplier lockdown, notes, and approval:\n');
+
+/*
+ * A venue can no longer CREATE a supplier (CATCH_UP_013 §5). One dropped
+ * policy is the whole enforcement, and the app's hidden button is a courtesy
+ * on top of it — so this is the check that matters.
+ *
+ * A real `created_by` is used, so the only thing wrong with the row is who is
+ * sending it. A 42501 therefore proves the POLICY refused it, not a foreign
+ * key — the same false-pass CATCH_UP_012 was written to close.
+ */
+const madeSupplier = await client.from('suppliers').insert({
+  name: `Verify Should Not Exist ${Date.now()}`,
+  created_by: auth.user.id,
+});
+check('cannot create a supplier — the policy, not an FK',
+  RLS(madeSupplier.error),
+  madeSupplier.error ? `refused: ${madeSupplier.error.code}` : 'IT WAS ACCEPTED');
+
+/*
+ * Nor sign a note as somebody else. `staff_insert` on invoice_notes requires
+ * `author_id = auth.uid()`, and leaving that half out is how a shop files a
+ * note as Mani.
+ */
+const ownInvoice = view.error ? null : (view.data ?? [])[0]?.id ?? null;
+
+if (ownInvoice) {
+  const forgedNote = await client.from('invoice_notes').insert({
+    invoice_id: ownInvoice,
+    author_id: '2da43dcf-8b0f-4229-bf5c-e5af68210045', // a real member (Rabindra)
+    body: 'verify — should not exist',
+  });
+  check('cannot sign a note as one of the four',
+    RLS(forgedNote.error),
+    forgedNote.error ? `refused: ${forgedNote.error.code}` : 'IT WAS ACCEPTED');
+} else {
+  check('cannot sign a note as one of the four', false,
+    'SKIPPED — this venue has no invoice to attach a note to; add one and re-run');
+}
+
+/*
+ * And cannot approve its own work.
+ *
+ * Two independent mechanisms should stop this, which is the point of testing
+ * it rather than reasoning about it: `pin_invoice_facts` puts the columns back
+ * when the caller is staff, and `RETURNING` applies SELECT policies that a
+ * venue does not have. Either alone would do; both is what makes it hard to
+ * undo by accident.
+ *
+ * The update can only MATCH a row inside the five-minute window, so with
+ * nothing recent this proves the request was refused and not that the trigger
+ * did the refusing. Said out loud rather than reported as a clean pass.
+ */
+if (ownInvoice) {
+  const selfApprove = await client
+    .from('invoices')
+    .update({ approved_at: new Date().toISOString(), approved_by: auth.user.id })
+    .eq('id', ownInvoice);
+
+  const stillWaiting = await client.rpc('approve_invoices', { p_ids: [ownInvoice] });
+
+  check('cannot approve its own invoice',
+    selfApprove.error !== null || (stillWaiting.data?.length ?? 0) === 0,
+    selfApprove.error
+      ? `refused: ${selfApprove.error.code}`
+      : 'update matched nothing, or the trigger put the columns back');
+} else {
+  check('cannot approve its own invoice', false,
+    'SKIPPED — this venue has no invoice; add one and re-run');
+}
 
 if (TEST_WRITES) {
   console.log('\n  --write given: putting one real invoice into the ledger.\n');

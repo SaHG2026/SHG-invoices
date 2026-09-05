@@ -215,3 +215,26 @@ describe('countUnseen', () => {
     expect(countUnseen(activity, null, 'p-rabindra')).toBe(3);
   });
 });
+
+describe('approving', () => {
+  /*
+   * The action exists because the audit trigger would otherwise discard it:
+   * an approval moves none of the fields it diffs, so an 'edited' with an
+   * empty detail returns early and the one thing people will look up — who let
+   * this in — would be the only action leaving no trace.
+   */
+  it('is named rather than described as an edit', () => {
+    const description = describeActivity({
+      id: 1,
+      entity_type: 'invoice',
+      entity_id: 'i-1',
+      action: 'approved',
+      actor_id: 'p-1',
+      detail: {},
+      created_at: '2026-09-05T02:00:00Z',
+    });
+
+    expect(description.summary).toBe('approved this invoice');
+    expect(description.changes).toEqual([]);
+  });
+});

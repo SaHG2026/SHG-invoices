@@ -68,6 +68,7 @@ const SALES: SalesInvoiceRow[] = [
     created_by: 'p-mani',
     created_at: '2026-08-01T00:00:00Z',
     updated_at: '2026-08-01T00:00:00Z',
+    note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
   },
   {
@@ -86,6 +87,7 @@ const SALES: SalesInvoiceRow[] = [
     created_by: 'p-mani',
     created_at: '2026-08-20T00:00:00Z',
     updated_at: '2026-08-20T00:00:00Z',
+    note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
   },
 ];
@@ -146,6 +148,19 @@ vi.mock('@/lib/queries/invoices', () => ({
 
 vi.mock('@/lib/queries/detail', () => ({
   useRecentActivity: () => ({ data: [] }),
+}));
+
+/*
+ * The sixth mock. HANDOFF §5's "mock all five" is now six: the drawer's Review
+ * badge and the dashboard's Review card both read `useAwaitingReview`, and
+ * AppChrome puts the drawer within reach of every screen — so a file that
+ * mocks only what it thinks it needs passes alone and fails in the suite.
+ */
+vi.mock('@/lib/queries/review', () => ({
+  useAwaitingReview: () => ({ data: [], isLoading: false }),
+  useReviewNotes: () => ({ data: {} }),
+  useApproveInvoices: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReassignSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 /*

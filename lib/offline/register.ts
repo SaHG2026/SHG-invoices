@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { registerInvoiceMutations } from '@/lib/queries/invoices';
 import { registerPaymentMutations } from '@/lib/queries/payments';
 import { registerNoteMutations } from '@/lib/queries/detail';
+import { registerReassignMutations, registerReviewMutations } from '@/lib/queries/review';
 import { registerSupplierMutations } from '@/lib/queries/reference';
 import { registerSupplierEditMutations } from '@/lib/queries/history';
 import { registerCustomerMutations } from '@/lib/queries/customers';
@@ -35,6 +36,8 @@ export function registerMutationDefaults(queryClient: QueryClient) {
   registerInvoiceMutations(queryClient);
   registerPaymentMutations(queryClient);
   registerNoteMutations(queryClient);
+  registerReviewMutations(queryClient);
+  registerReassignMutations(queryClient);
   registerSupplierMutations(queryClient);
   registerSupplierEditMutations(queryClient);
   registerCustomerMutations(queryClient);

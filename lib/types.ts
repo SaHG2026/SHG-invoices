@@ -97,6 +97,20 @@ export interface Supplier {
   contact_phone: string | null;
   notes: string | null;
   active: boolean;
+  /**
+   * The single "Supplier not listed" row, and nothing else.
+   *
+   * A venue can no longer create a supplier (CATCH_UP_013 §5), so when a
+   * delivery arrives from somebody not yet on the list it files the invoice
+   * against this row and writes the real name in the note. Review picks those
+   * up first and moving the invoice onto a real supplier is part of approving
+   * it.
+   *
+   * A flag rather than a match on the name: a name is a string somebody can
+   * edit, and renaming this row must not quietly turn it into an ordinary
+   * supplier that four businesses start filing against.
+   */
+  is_placeholder: boolean;
 }
 
 /**
@@ -141,6 +155,23 @@ export interface Invoice {
   payment_ref: string | null;
   void_reason: string | null;
 
+  /**
+   * When one of the four accepted this invoice into the ledger.
+   *
+   * Null means it is waiting for review, which happens only to invoices a
+   * venue entered — `stamp_approval` approves everybody else's on insert, so
+   * there is no path where one of the four's own entry arrives unapproved.
+   *
+   * Deliberately not a fourth value on `status`. That column means where the
+   * money is; this is a different fact about the same row, and one enum
+   * holding both would have twelve combinations where four are real.
+   *
+   * **Nothing unapproved reaches an owed total.** `onlyOwed` in
+   * lib/derive/select.ts is the single place that rule lives.
+   */
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+
   created_by: string;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -176,6 +207,16 @@ export interface SalesInvoice {
   received_by: string | null;
   payment_ref: string | null;
   void_reason: string | null;
+
+  /**
+   * A column, not a second notes table.
+   *
+   * A payables invoice is something several people talk about over a
+   * fortnight, which is what `invoice_notes` is for. A sales invoice is a
+   * document you issue once, and giving it a thread would be symmetry for its
+   * own sake.
+   */
+  note: string | null;
 
   created_by: string;
   created_at: Timestamp;
@@ -234,7 +275,20 @@ export interface PaymentRun {
 /* -------------------------------------------------------------------------- */
 
 /** What the audit trigger records. Spec §5. */
-export type ActivityAction = 'created' | 'edited' | 'paid' | 'unpaid' | 'voided';
+export type ActivityAction =
+  | 'created'
+  | 'edited'
+  | 'paid'
+  | 'unpaid'
+  | 'voided'
+  /**
+   * One of the four let a venue's invoice into the ledger.
+   *
+   * A named action rather than an 'edited' with a diff, because "who let this
+   * in" is the thing people will look up, and the audit trigger discards an
+   * edit whose tracked fields did not move — which an approval's never do.
+   */
+  | 'approved';
 
 export interface ActivityEntry {
   id: number;

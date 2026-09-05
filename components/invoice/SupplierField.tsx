@@ -45,6 +45,20 @@ interface SupplierFieldProps {
   onCreate: (name: string) => void;
   creating?: boolean;
   error?: string;
+  /**
+   * Whether `+ Add "bid" as a new supplier` is offered at all.
+   *
+   * False for a venue, where the database refuses the insert (CATCH_UP_013 §5
+   * drops `staff_insert` on suppliers). The field is not the enforcement — the
+   * dropped policy is — but offering a control that would come back `42501` is
+   * the interface promising what it cannot do, which ARCHITECTURE §34.6 names
+   * as the reason the venue sheet has no business picker either.
+   */
+  allowCreate?: boolean;
+  /** Offer "Supplier not listed". Only ever true on the venue sheet. */
+  includePlaceholder?: boolean;
+  /** Shown under the field when creating is not on offer. */
+  hint?: React.ReactNode;
 }
 
 export function SupplierField({
@@ -54,6 +68,9 @@ export function SupplierField({
   onCreate,
   creating = false,
   error,
+  allowCreate = true,
+  includePlaceholder = false,
+  hint,
 }: SupplierFieldProps) {
   const [query, setQuery] = useState('');
   const [typing, setTyping] = useState(false);
@@ -71,11 +88,12 @@ export function SupplierField({
         recentIds,
         // Browsing shows everything, scrollable. Searching shows the best few.
         limit: browsing ? suppliers.length : 5,
+        includePlaceholder,
       }),
-    [suppliers, query, recentIds, browsing],
+    [suppliers, query, recentIds, browsing, includePlaceholder],
   );
 
-  const offerCreate = !browsing && canCreateSupplier(suppliers, query);
+  const offerCreate = allowCreate && !browsing && canCreateSupplier(suppliers, query);
 
   function choose(supplier: Supplier) {
     onSelect(supplier);
@@ -139,6 +157,8 @@ export function SupplierField({
         </p>
       ) : null}
 
+      {hint && !error ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+
       {listOpen ? (
         <ul className="mt-1 max-h-[40dvh] overflow-y-auto overscroll-contain border border-hairline bg-card">
           {matches.map((supplier) => (
@@ -165,9 +185,11 @@ export function SupplierField({
 
           {matches.length === 0 && !offerCreate ? (
             <li className="px-3 py-3 text-sm text-muted">
-              {browsing
-                ? 'No suppliers yet. Type a name to add the first one.'
-                : 'No supplier matches that. Keep typing to add a new one.'}
+              {!allowCreate
+                ? 'No supplier matches that.'
+                : browsing
+                  ? 'No suppliers yet. Type a name to add the first one.'
+                  : 'No supplier matches that. Keep typing to add a new one.'}
             </li>
           ) : null}
 

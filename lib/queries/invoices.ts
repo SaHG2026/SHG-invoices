@@ -18,13 +18,26 @@ const ROW_SELECT =
   '*, supplier:suppliers!inner(id, name), business:businesses!inner(id, code, name)';
 
 /**
- * Every unpaid invoice, unfiltered.
+ * Every unpaid invoice that has been accepted into the ledger.
  *
  * Architecture §2: this is the ONE query behind Home, Pending, the payment
  * runs, all four sorts and every total. Business and supplier filters are
  * applied client-side over this array rather than in the query, which is what
  * makes it impossible for a filtered total to disagree with the filtered list
  * it sits under (notes §3).
+ *
+ * ---------------------------------------------------------------------------
+ * `approved_at is not null` is in the QUERY, not in a filter over the result.
+ *
+ * It is the one condition that must never be a client-side choice, because
+ * this array is what every owed figure in the app is made of. Filtering it
+ * here means an invoice waiting for review cannot reach a total by any route,
+ * including a route somebody writes next year that forgets `onlyOwed`.
+ *
+ * The review queue is its own query over the other half, and it is the
+ * architecture §2 exception that History already is: it feeds a count and a
+ * total that no other screen has to agree with.
+ * ---------------------------------------------------------------------------
  */
 export function useUnpaidInvoices() {
   const query = useQuery({
@@ -34,6 +47,7 @@ export function useUnpaidInvoices() {
         .from('invoices')
         .select(ROW_SELECT)
         .eq('status', 'unpaid')
+        .not('approved_at', 'is', null)
         .order('due_date');
 
       if (error) throw error;
@@ -50,7 +64,7 @@ export function useUnpaidInvoices() {
    * with it. lib/recently-paid.ts has the full account of that bug.
    *
    * They arrive carrying `status: 'paid'`, and every summary calls
-   * `onlyUnpaid` (lib/derive/select.ts), so none of them can reach a total.
+   * `onlyOwed` (lib/derive/select.ts), so none of them can reach a total.
    */
   const remembered = useRecentlyPaid();
   const data = useMemo(
@@ -133,6 +147,15 @@ export function registerInvoiceMutations(queryClient: QueryClient) {
         paid_by: null,
         payment_ref: null,
         void_reason: null,
+        /*
+         * Approved, because `stamp_approval` will approve it: this path is
+         * only ever one of the four, and the trigger does not consult what the
+         * client sent. Saying null here would put the row in the unpaid array
+         * carrying the one value that means "not in the unpaid array", and it
+         * would vanish on the first refetch.
+         */
+        approved_at: now,
+        approved_by: input.payload.created_by,
         created_at: now,
         updated_at: now,
         supplier: input.supplier,

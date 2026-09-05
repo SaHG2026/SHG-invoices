@@ -68,6 +68,14 @@ export interface CreateSalesInvoiceInput {
   invoice_date: string;
   due_date: string;
   amount_cents: number;
+  /**
+   * A column on the row, not a second notes table.
+   *
+   * A payables invoice is something several people talk about over a
+   * fortnight; a sales invoice is a document you issue once. Giving this one a
+   * thread would be symmetry for its own sake.
+   */
+  note: string | null;
   created_by: string;
 }
 

@@ -44,6 +44,15 @@ export const qk = {
     unpaid: ['invoices', 'unpaid'] as const,
     detail: (id: string) => ['invoices', 'detail', id] as const,
     history: (filters: Record<string, unknown>) => ['invoices', 'history', filters] as const,
+    /**
+     * The other half of `unpaid`: entered by a venue, not yet accepted.
+     *
+     * Disjoint from `unpaid` by construction — one query asks for
+     * `approved_at is not null`, the other for `is null` — so no invoice can
+     * be in both, and nothing here can reach an owed total.
+     */
+    review: ['invoices', 'review'] as const,
+    reviewNotes: (ids: string) => ['invoices', 'review', 'notes', ids] as const,
     forSupplier: (supplierId: string) => ['invoices', 'supplier', supplierId] as const,
     /**
      * One supplier, one date range — its own cache entry, not a filter over

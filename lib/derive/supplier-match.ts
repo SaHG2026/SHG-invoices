@@ -18,6 +18,20 @@ export interface RankOptions {
   recentIds?: readonly string[];
   /** How many to show. The list has to fit above the keyboard. */
   limit?: number;
+  /**
+   * Offer "Supplier not listed".
+   *
+   * Off everywhere by default, and on in exactly one place: the sheet a venue
+   * enters an invoice from. A shop can no longer create a supplier
+   * (CATCH_UP_013 §5), so it needs somewhere to put a delivery from somebody
+   * new — but it is meaningless to the four, who can simply make the supplier,
+   * and an invoice one of them files against it is one nobody will ever find.
+   *
+   * Default-off rather than default-on, because the cost of the two mistakes
+   * is not symmetrical: a shop that cannot see it is stuck for a minute, and a
+   * member who files against it loses an invoice in plain sight.
+   */
+  includePlaceholder?: boolean;
 }
 
 /** Higher is better. Ordering matters more than the absolute values. */
@@ -58,9 +72,11 @@ function score(name: string, query: string): number {
 export function rankSuppliers(
   suppliers: readonly Supplier[],
   query: string,
-  { recentIds = [], limit = 5 }: RankOptions = {},
+  { recentIds = [], limit = 5, includePlaceholder = false }: RankOptions = {},
 ): Supplier[] {
-  const active = suppliers.filter((supplier) => supplier.active);
+  const active = suppliers.filter(
+    (supplier) => supplier.active && (includePlaceholder || !supplier.is_placeholder),
+  );
   const recencyOf = (id: string) => {
     const index = recentIds.indexOf(id);
     return index === -1 ? Number.MAX_SAFE_INTEGER : index;
@@ -103,4 +119,9 @@ export function canCreateSupplier(suppliers: readonly Supplier[], query: string)
   return !suppliers.some(
     (supplier) => supplier.active && supplier.name.toLowerCase() === trimmed.toLowerCase(),
   );
+}
+
+/** The one placeholder row, if this list has it. */
+export function placeholderSupplier(suppliers: readonly Supplier[]): Supplier | null {
+  return suppliers.find((supplier) => supplier.active && supplier.is_placeholder) ?? null;
 }

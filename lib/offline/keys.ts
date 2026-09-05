@@ -30,6 +30,26 @@ export const mk = {
   notes: {
     add: ['notes', 'add'] as const,
   },
+  /**
+   * Accepting a venue's invoice into the ledger.
+   *
+   * Queueable like every other write. The variables are the ids and nothing
+   * else, which is the whole of what the RPC needs — HANDOFF §2 rule 4: a
+   * write resumed by key from a cold start has no component left holding
+   * anything it captured.
+   */
+  review: {
+    approve: ['review', 'approve'] as const,
+    /**
+     * Moving a venue's invoice off "Supplier not listed" onto a real one.
+     *
+     * Its own key rather than a general invoice edit, because this is the only
+     * update to an invoice the app performs outside the venue's five-minute
+     * window, and naming it that way means the offline queue's inventory says
+     * what the app can actually do rather than "edit an invoice, somehow".
+     */
+    reassign: ['review', 'reassign'] as const,
+  },
   suppliers: {
     create: ['suppliers', 'create'] as const,
     update: ['suppliers', 'update'] as const,
@@ -92,6 +112,8 @@ export const QUEUEABLE_KEYS: readonly (readonly string[])[] = [
   mk.payments.unmarkPaid,
   mk.payments.voidInvoice,
   mk.notes.add,
+  mk.review.approve,
+  mk.review.reassign,
   mk.suppliers.create,
   mk.suppliers.update,
   mk.customers.create,

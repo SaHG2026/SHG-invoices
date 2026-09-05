@@ -238,11 +238,18 @@ dynamic route is a two-file pair: a thin `page.tsx` that awaits the params, and
 a screen component in `components/screens/` that takes a plain value. Keep that
 split — it is what makes the screens testable.
 
-**Component tests need the full mock set.** Anything rendering `AppChrome`
-reaches `useRecentActivity` via the header bell, and marking paid is reachable
-from every list. A test file that mocks only what it thinks it needs passes
-alone and fails in the suite. Mock all five: `session`, `invoices`,
-`reference`, `detail`, `payments`.
+**Component tests need the full mock set — all six.** Anything rendering
+`AppChrome` reaches `useRecentActivity` via the header bell and
+`useAwaitingReview` via the drawer's Review badge, and marking paid is
+reachable from every list. A test file that mocks only what it thinks it needs
+passes alone and fails in the suite. Mock all six: `session`, `invoices`,
+`reference`, `detail`, `payments`, `review`.
+
+It was five until the review queue landed, and going from five to six broke
+three test files that had nothing to do with reviewing. That is the cost of a
+shared shell and it is worth paying, but it means the number in this sentence
+is load-bearing: check it against `lib/offline/register.ts` if a test fails
+with "No QueryClient set".
 
 **Testing Library cleanup is registered manually** in `test/setup.ts`, because
 Vitest runs without globals. Without it renders stack up and queries find

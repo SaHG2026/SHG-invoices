@@ -168,3 +168,25 @@ describe('which way a screen arrives', () => {
     expect(navDirection('/b/gmh', '/b/gmh')).toBe('level');
   });
 });
+
+describe('the review section', () => {
+  /*
+   * Tested before the invoice rule, the same way history is. `/review` is not
+   * under `/b/` or `/invoices/`, so it would fall through to null rather than
+   * being claimed by the wrong row — but the ordering is what makes that true
+   * and it is worth an assertion rather than a comment.
+   */
+  it('lights its own row', () => {
+    expect(activeSection('/review')).toBe('review');
+    expect(activeSection('/review/')).toBe('review');
+  });
+
+  it('does not light Invoices', () => {
+    expect(activeSection('/review')).not.toBe('invoices');
+  });
+
+  it('is in the menu, directly under Invoices', () => {
+    const order = NAV_ITEMS.map((item) => item.section);
+    expect(order.indexOf('review')).toBe(order.indexOf('invoices') + 1);
+  });
+});

@@ -14,6 +14,7 @@ import {
 } from '@/lib/queries/reference';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { findDuplicates, useCreateInvoice } from '@/lib/queries/invoices';
+import { useAddNote } from '@/lib/queries/detail';
 import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
 import {
   activePreset,
@@ -90,6 +91,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const { data: suppliers = [] } = useSuppliers();
   const createInvoice = useCreateInvoice();
   const createSupplier = useCreateSupplier();
+  const addNote = useAddNote();
 
   const pathname = usePathname();
   const today = useMemo(() => sydneyToday(), []);
@@ -116,6 +118,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [invoiceDate, setInvoiceDate] = useState<string>(today);
 
   /*
@@ -150,7 +153,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     due_date: dueDate,
     invoice_date: invoiceDate,
     invoice_number: invoiceNumber,
-    note: '',
+    note,
   };
 
   const chosenPreset = activePreset(dueDate, invoiceDate, DUE_PRESETS_DAYS);
@@ -301,16 +304,39 @@ function SheetBody({ onClose }: { onClose: () => void }) {
      * write never reached the catch at all, and everything that did reach it
      * — an RLS refusal, a bad payload — was told it had been saved.
      */
-    if (outcome.kind === 'queued') {
-      toast.show('Saved — will send when you’re back online.', 'queued');
-      return;
-    }
-
     if (outcome.kind === 'failed') {
       toast.show(
         writeFailureMessage(outcome.error, 'Couldn’t save that invoice. Nothing was written.'),
         'problem',
       );
+      return;
+    }
+
+    /*
+     * The note, after the invoice and only if the invoice went.
+     *
+     * Second, because `invoice_notes.invoice_id` is a foreign key — a note
+     * sent first has nothing to point at. Queued the same way, so offline the
+     * two travel in the order they were made, which is the ordering the
+     * supplier-then-invoice path has relied on since Phase 7.
+     *
+     * Not awaited, and nothing waits on it. The sheet is already closed and
+     * the fifteen seconds (spec §1) is measured through this function; a note
+     * is a courtesy on top of a record that is already safe. If it is refused,
+     * the invoice is still there and the toast has already told the truth
+     * about the thing that matters.
+     */
+    if (note.trim() !== '') {
+      void submitWrite(addNote, {
+        id: crypto.randomUUID(),
+        invoiceId: id,
+        body: note.trim(),
+        authorId: profile.id,
+      });
+    }
+
+    if (outcome.kind === 'queued') {
+      toast.show('Saved — will send when you’re back online.', 'queued');
       return;
     }
 
@@ -502,6 +528,32 @@ function SheetBody({ onClose }: { onClose: () => void }) {
             />
             <p className="figure-date mt-1 text-xs text-muted">{formatDay(dueDate)}</p>
           </div>
+        </div>
+
+        {/*
+          The note. Asked for after real use: "add a note section on every new
+          entry, if to let know about any irregularities."
+
+          Last, and optional, and it costs the fifteen seconds nothing — it is
+          written after the sheet has closed, as a second queued write. A
+          textarea rather than an input because an irregularity is a sentence,
+          and a single-line field that scrolls sideways invites one word.
+        */}
+        <div className="mt-4">
+          <label
+            className="mb-1 block text-xs uppercase tracking-widest text-muted"
+            htmlFor="invoice-note"
+          >
+            Note
+          </label>
+          <textarea
+            id="invoice-note"
+            rows={2}
+            placeholder="Anything odd about this one? Optional."
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            className="w-full rounded-sm border border-hairline bg-card px-3 py-2 text-base text-ink outline-none focus:border-action"
+          />
         </div>
       </Sheet>
 

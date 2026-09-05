@@ -7,7 +7,7 @@ import {
   rememberPaid,
 } from '@/lib/recently-paid';
 import { groupIntoRuns } from '@/lib/derive/runs';
-import { onlyUnpaid, summarise } from '@/lib/derive/select';
+import { onlyOwed, summarise } from '@/lib/derive/select';
 import { FIXTURE_TODAY, makeInvoices } from '../fixtures/invoices';
 import type { InvoiceRow } from '@/lib/types';
 
@@ -86,13 +86,13 @@ describe('a paid row on screen reaches no figure', () => {
     );
   });
 
-  it('onlyUnpaid drops every non-unpaid status', () => {
+  it('onlyOwed drops every non-unpaid status', () => {
     const rows = [
       supplierRun[0]!,
       paid(supplierRun[1]!),
       { ...supplierRun[1]!, id: 'v', status: 'void' as const },
     ];
-    expect(onlyUnpaid(rows).map((r) => r.id)).toEqual([supplierRun[0]!.id]);
+    expect(onlyOwed(rows).map((r) => r.id)).toEqual([supplierRun[0]!.id]);
   });
 });
 

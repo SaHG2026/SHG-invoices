@@ -28,6 +28,7 @@ const profile: Profile = {
 };
 
 const mocks = vi.hoisted(() => ({
+  addNoteMutate: vi.fn(),
   createInvoiceMutate: vi.fn(),
   createSupplierMutate: vi.fn(),
   findDuplicates: vi.fn(),
@@ -37,6 +38,19 @@ vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: profile, isLoading: false, isError: false }),
   useProfiles: () => ({ data: [profile] }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+/*
+ * The note write. It goes out AFTER the invoice and nothing waits on it — but
+ * it is a real mutation, so without this the sheet reaches a hook with no
+ * QueryClient above it.
+ */
+vi.mock('@/lib/queries/detail', () => ({
+  useAddNote: () => ({ mutateAsync: mocks.addNoteMutate, mutate: mocks.addNoteMutate, isPending: false }),
+  useRecentActivity: () => ({ data: [] }),
+  useInvoice: () => ({ data: null, isLoading: false }),
+  useInvoiceActivity: () => ({ data: [] }),
+  useInvoiceNotes: () => ({ data: [] }),
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
@@ -536,5 +550,67 @@ describe('business selection', () => {
         BUSINESSES.find((b) => b.code === 'DDL')!.id,
       ),
     );
+  });
+});
+
+describe('the note', () => {
+  /*
+   * "Add a note section on every new entry, if to let know about any
+   * irregularities."
+   *
+   * The note is a second write, sent after the invoice and awaited by nothing
+   * — the sheet is already closed and spec §1's fifteen seconds is measured
+   * through this path. What these assert is the ordering and the id, because
+   * `invoice_notes.invoice_id` is a foreign key: a note that went first would
+   * have nothing to point at.
+   */
+  it('goes out after the invoice, carrying its id', async () => {
+    mocks.createInvoiceMutate.mockResolvedValue({ internal_ref: 'GMH-260828-01' });
+    mocks.findDuplicates.mockResolvedValue([]);
+    open();
+
+    enterAmount('120.00');
+    pickSupplier(SUPPLIERS[0]!.name);
+    fireEvent.change(screen.getByLabelText('Note'), {
+      target: { value: 'Two crates short — credit expected' },
+    });
+    save();
+
+    await waitFor(() => expect(mocks.addNoteMutate).toHaveBeenCalled());
+    const note = mocks.addNoteMutate.mock.calls[0]![0] as { invoiceId: string; body: string };
+    const invoice = mocks.createInvoiceMutate.mock.calls[0]![0] as { payload: { id: string } };
+
+    expect(note.invoiceId).toBe(invoice.payload.id);
+    expect(note.body).toBe('Two crates short — credit expected');
+  });
+
+  it('sends nothing when nothing was written', async () => {
+    mocks.createInvoiceMutate.mockResolvedValue({ internal_ref: 'GMH-260828-01' });
+    mocks.findDuplicates.mockResolvedValue([]);
+    open();
+
+    enterAmount('120.00');
+    pickSupplier(SUPPLIERS[0]!.name);
+    save();
+
+    await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalled());
+    expect(mocks.addNoteMutate).not.toHaveBeenCalled();
+  });
+
+  it('sends no note when the invoice itself was refused', async () => {
+    // The note points at a row that does not exist. Sending it would be one
+    // failed write chasing another, and the toast has already told the truth
+    // about the thing that matters.
+    mocks.createInvoiceMutate.mockRejectedValue(new Error('row-level security'));
+    mocks.findDuplicates.mockResolvedValue([]);
+    open();
+
+    enterAmount('120.00');
+    pickSupplier(SUPPLIERS[0]!.name);
+    fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'anything' } });
+    save();
+
+    await waitFor(() => expect(mocks.createInvoiceMutate).toHaveBeenCalled());
+    expect(mocks.addNoteMutate).not.toHaveBeenCalled();
   });
 });

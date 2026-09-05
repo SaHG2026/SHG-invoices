@@ -323,9 +323,17 @@ export function SupplierDetail({ id }: { id: string }) {
               </div>
             </dl>
 
-            {rangeSummary.voided_count > 0 ? (
+            {rangeSummary.voided_count > 0 || rangeSummary.awaiting_count > 0 ? (
               <p className="mt-2 text-xs text-muted">
-                {rangeSummary.voided_count} voided in this range, counted in neither figure.
+                {[
+                  rangeSummary.voided_count > 0 ? `${rangeSummary.voided_count} voided` : '',
+                  rangeSummary.awaiting_count > 0
+                    ? `${rangeSummary.awaiting_count} waiting for review`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {' in this range, counted in neither figure.'}
               </p>
             ) : null}
 
@@ -354,7 +362,9 @@ export function SupplierDetail({ id }: { id: string }) {
                         {' · '}
                         {invoice.business.code}
                         {invoice.status === 'unpaid'
-                          ? ' · pending'
+                          ? invoice.approved_at === null
+                            ? ' · waiting for review'
+                            : ' · pending'
                           : invoice.status === 'paid'
                             ? ' · paid'
                             : ' · void'}

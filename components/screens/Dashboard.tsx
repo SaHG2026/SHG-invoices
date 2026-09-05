@@ -6,11 +6,12 @@ import { useMemo, useState } from 'react';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useBusinesses } from '@/lib/queries/reference';
+import { useAwaitingReview } from '@/lib/queries/review';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { greet } from '@/lib/greeting';
 import { formatDayWithYear, type DateStr } from '@/lib/date';
-import { formatCents } from '@/lib/money';
+import { formatCents, sumCents } from '@/lib/money';
 import {
   SORT_OPTIONS,
   sortInvoices,
@@ -67,6 +68,7 @@ export default function Dashboard() {
   const { data: profile } = useCurrentProfile();
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
   const { data: businesses = [] } = useBusinesses();
+  const { data: waiting = [] } = useAwaitingReview();
   const today = useSydneyToday();
 
   const [sort, setSort] = useState<SortKey>('due');
@@ -156,6 +158,59 @@ export default function Dashboard() {
           {today ? formatDayWithYear(today) : ' '}
         </p>
       </header>
+
+      {/*
+        Above the money, and present at zero.
+
+        This is the failure mode of the whole review feature stated as a
+        control: an invoice a shop entered, never looked at, and therefore in
+        no total on any screen. Everything else in the app excludes it by
+        construction, which is correct and which is also exactly how it would
+        stay invisible. So the count sits above the two figures it is missing
+        from, and it says "Nothing to review" rather than disappearing — a card
+        that vanishes when empty is one nobody notices is missing when it is
+        not.
+      */}
+      <Link
+        href={'/review' as Route}
+        aria-label={
+          waiting.length === 0
+            ? 'Review, nothing waiting'
+            : `Review, ${count(waiting.length, 'invoice')} waiting, ${formatCents(
+                sumCents(waiting),
+              )}`
+        }
+        className="mb-3 flex items-center gap-3 rounded-sm border bg-card px-3 py-2.5 active:bg-pressed"
+        style={
+          waiting.length > 0
+            ? { borderColor: 'var(--spine-today)', backgroundColor: 'var(--spine-today-bg)' }
+            : { borderColor: 'var(--edge)' }
+        }
+      >
+        <span className="min-w-0 flex-1">
+          <span
+            className="block text-sm font-medium"
+            style={{ color: waiting.length > 0 ? 'var(--spine-today)' : 'var(--muted)' }}
+          >
+            {waiting.length === 0
+              ? 'Nothing to review'
+              : `${count(waiting.length, 'invoice')} to review`}
+          </span>
+          <span className="block truncate text-xs text-muted">
+            {waiting.length === 0
+              ? 'The shops’ entries appear here first'
+              : 'Entered by the shops · in no total until approved'}
+          </span>
+        </span>
+        {waiting.length > 0 ? (
+          <span className="money shrink-0 text-sm" style={{ color: 'var(--spine-today)' }}>
+            {formatCents(sumCents(waiting))}
+          </span>
+        ) : null}
+        <span aria-hidden className="shrink-0 text-xs text-muted">
+          &rsaquo;
+        </span>
+      </Link>
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         <StatCard

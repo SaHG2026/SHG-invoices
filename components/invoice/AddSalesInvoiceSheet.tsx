@@ -57,6 +57,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(() => addDays(today, DEFAULT_TERMS_DAYS));
   const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   /*
@@ -122,6 +123,7 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         invoice_date: invoiceDate,
         due_date: dueDate,
         amount_cents: amountCents,
+        note: note.trim() || null,
         created_by: profile.id,
       });
 
@@ -279,9 +281,28 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         ))}
       </div>
 
+      {/* The same note as every other entry sheet, so "add a note section on
+          every new entry" means every one. */}
+      <div className="mt-4">
+        <label
+          className="mb-1 block text-xs uppercase tracking-widest text-muted"
+          htmlFor="sales-note"
+        >
+          Note
+        </label>
+        <textarea
+          id="sales-note"
+          rows={2}
+          placeholder="Anything odd about this one? Optional."
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          className="w-full rounded-sm border border-hairline bg-card px-3 py-2 text-base text-ink outline-none focus:border-action"
+        />
+      </div>
+
       {error ? (
         <p
-          className="rounded-sm px-3 py-2 text-sm"
+          className="mt-3 rounded-sm px-3 py-2 text-sm"
           style={{ backgroundColor: 'var(--spine-overdue-bg)', color: 'var(--spine-overdue)' }}
         >
           {error}

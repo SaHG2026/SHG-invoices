@@ -2872,3 +2872,206 @@ file should contain.
   supplier page is the densest screen in the app now and there was no way to
   look at it without a session and a real supplier.
 - **Not deployed.** Every release is the client's to run (HANDOFF §3).
+
+---
+
+## 36. Round B — a shop's invoice waits to be let in
+
+The client's instruction, in his words: *"whenever gmh or gmp adds an invoice,
+then it has to be approved by one of the managements before it shows in the
+pending or overdue"*.
+
+Three more things ride along, because each database file is a round trip
+through a person and all four belong to the same change: a venue can no longer
+create a supplier, every entry sheet gets a note, and a sales invoice gets one
+too. `CATCH_UP_013.sql` is the whole of it in one paste.
+
+### 36.1 Approval is two columns, not a fourth status
+
+`status` is unpaid/paid/void and it means **where the money is**. Review is a
+different fact about the same row. One enum holding both has twelve
+combinations where four are real, and §19's account of this build is that five
+of the eight bugs found on a phone were values able to hold a state that should
+not exist.
+
+So `approved_at` and `approved_by`, and two constraints that make the nonsense
+unwritable rather than merely unwritten:
+
+- `approval_fields_consistent` — both or neither, the same shape
+  `paid_fields_consistent` has had since migration 001
+- `paid_needs_approval` — nothing unreviewed can be paid
+
+The second is a **constraint and not a check inside `mark_invoices_paid`**,
+because a constraint cannot be gone around. A check in the RPC is correct until
+the day somebody writes a second way to mark something paid.
+
+### 36.2 Who arrives approved is a trigger's decision
+
+`stamp_approval` overwrites whatever the client sent, in both directions: an
+invoice from one of the four is approved even if the app forgets to say so, and
+one from a shop is not approved even if the app insists. Same reasoning as
+`set_internal_ref` — if the client can send it, the client can send it wrong,
+and a venue able to pre-approve its own entry would make the feature
+decorative.
+
+**The hole a policy could not close, and the trigger that already existed for
+it.** `staff_update` lets a venue change its own invoice for five minutes, and
+RLS lets an update write any column the role may write — so a crafted
+correction could approve itself. `pin_invoice_facts` gained two lines. That
+trigger exists because nothing stopped `created_at` being reset to keep the
+five-minute window open forever (§34.8); it is the same class of problem and
+the same answer. Two independent mechanisms now stop a venue approving its own
+work — that trigger, and the fact that `RETURNING` applies SELECT policies,
+which staff have none of.
+
+### 36.3 The rule lives in one function, and the function was renamed
+
+`onlyUnpaid` became **`onlyOwed`**, and the rename is the point. It now filters
+on two conditions — unpaid, and approved — and a function called `onlyUnpaid`
+that also checks approval is a function whose name is a lie. The next person
+needing "just the unpaid ones" would have written their own filter rather than
+reading this one.
+
+**And `approved_at is not null` is in the query, not in a filter over the
+result.** `useUnpaidInvoices` is what every owed figure in the app is made of;
+filtering there means an invoice waiting for review cannot reach a total by any
+route, including one somebody writes next year having never read this section.
+
+The review queue is its own query over the other half, and it is the same
+architecture §2 exception History already is: it feeds a count and a total that
+no other screen has to agree with. Two disjoint queries, `status = unpaid`
+split by whether `approved_at` is null — so no invoice can be in both.
+
+### 36.4 The failure mode, and the card that exists because of it
+
+This feature's failure is not a broken screen. It is an invoice a shop entered,
+nobody reviewed, and which therefore appears in **no total anywhere** — money
+the group owes that the app has quietly stopped mentioning. Every exclusion
+above is deliberate and every one of them is a way that invisibility could
+become permanent.
+
+So the Review card sits on Home **above** the two figures it is missing from,
+and it is present at zero saying "Nothing to review". A card that disappears
+when empty is one nobody notices is missing when it should be there, and what
+it would be hiding is somebody's invoice. The drawer's badge is the opposite —
+drawn only when there is something, because a badge showing 0 is a badge people
+learn to stop reading.
+
+`test/unit/review.test.tsx` asserts the exclusion over the derive layer rather
+than over a screen: the group total, both dashboard cards and every
+per-business total are unchanged by adding four waiting invoices to the array.
+
+### 36.5 Rejecting is voiding, and it needs nothing new
+
+`void_invoice(p_id, p_reason)` already existed and already demanded a reason. A
+rejected entry is a wrong entry, which is what void means, and rule 5 holds —
+the row stays with the reason on it forever.
+
+**The cost, accepted rather than missed:** `staff_invoices` excludes voided
+rows, so a rejected invoice disappears from the shop's list with no explanation
+the app will give. Somebody has to tell them or they will enter it again.
+Showing them means editing the view whose `WHERE` is the entire venue boundary,
+and §34's decision was to leave that alone. Reversible later without redoing
+anything else.
+
+### 36.6 The log learns the word
+
+Without a named action, approving would have logged **nothing at all**: the
+audit trigger records an update as `edited` with a diff of the fields it
+tracks, `approved_at` is not one of them, the diff comes out empty and the
+trigger returns early. The one action people will want to look up — who let
+this in — would have been the only one leaving no trace.
+
+Checked before `edited` and only in the null-to-set direction. Approval is not
+reversible anywhere in the app or in these functions, and if that ever changes
+it needs its own word rather than quietly reading as an approval.
+
+### 36.7 A shop picks a supplier; it does not make one
+
+*"Not allow staffs to create a new supplier... however if there genuinely is a
+new supplier then they can at least leave a note."*
+
+One dropped policy is the whole enforcement. What replaces the Add control is
+**one placeholder row**, `Supplier not listed`, flagged by a column rather than
+matched by name — a name is a string somebody can edit, and renaming that row
+must not quietly turn it into an ordinary supplier four businesses start filing
+against.
+
+**Why a placeholder rather than "pick the closest real one".** A wrong
+attribution is far harder to find later than a missing one. Nobody goes looking
+for an invoice sitting under Bidfood.
+
+Two consequences, both deliberate:
+
+- **The note becomes required**, and it is the one blocking check in a sheet
+  whose every other check is a warning. Spec §6 is emphatic that warnings never
+  block — this is not a warning. An invoice against the placeholder with
+  nothing written down is a record saying it arrived from nobody, and the shop
+  is the only place that knowledge exists. This is the moment it is in the room.
+- **It cannot be approved as it stands.** The review card opens a supplier
+  picker instead, and Approve stays disabled. `Approve all` counts only the
+  ones that are ready and says so.
+
+`includePlaceholder` defaults to **off** everywhere and is true in exactly one
+place, the venue sheet. The two mistakes are not symmetrical: a shop that
+cannot see it is stuck for a minute; a member who files against it loses an
+invoice in plain sight.
+
+### 36.8 A note on every entry
+
+`invoice_notes` has existed since migration 001 — table, index, RLS, hooks, an
+offline key, and a `note` field in `invoiceFormSchema` since Phase 1. It was
+never wired to the entry sheets. So most of this was connecting what was there.
+
+**It costs the fifteen seconds nothing.** The note is a second queued write
+sent *after* the invoice and awaited by nothing; the sheet is already closed.
+Second because `invoice_notes.invoice_id` is a foreign key — a note sent first
+has nothing to point at — and it queues behind the invoice offline, the same
+ordering the supplier-then-invoice path has relied on since Phase 7. If the
+invoice was refused, no note is sent: one failed write chasing another, and the
+toast has already told the truth about the thing that matters.
+
+**Staff may read only their own notes.** Deliberately not "every note on their
+venue's invoices". Notes are free text written by people talking about money,
+and one of them will eventually say "paid this on Friday". The whole venue
+boundary exists to keep that sentence away from a shop; a notes policy is not
+the place to hand it back.
+
+A sales invoice gets a `note` **column**, not a second notes table. A payables
+invoice is something several people discuss over a fortnight; a sales invoice
+is a document you issue once.
+
+### 36.9 What the browser found that the assertions did not
+
+Both worth recording, because both were invisible to the DOM checks that passed
+first.
+
+The venue heading read **"GroceryMate Hu…"** beside a full-width "Approve all
+2" at 360px — the one thing on the row that has to be read, losing to the
+button. `min-w-0` was doing exactly what it was told. Fixed by shortening the
+button's wording and dropping the heading to body size: it is a group label
+above a list, not the heading of the page, and display size was costing 40px to
+say something the name already says.
+
+And the card's meta line ran off the end, taking the **due date** with it — the
+field somebody reviewing is actually checking. Split into two lines, which then
+left "Dated … · entered …" truncating mid-word, so the invoice date came off
+the card entirely. It is on the full record. Review asks "is this real, who is
+it from, and when is it out of the account", and the note, the due date and the
+entry time answer all three.
+
+### 36.10 Where it stands
+
+- **Tests: 639**, up from 606, under all three timezones. `tsc` and
+  `next build` clean.
+- **`CATCH_UP_013.sql` has not been run.** Everything above is inert until it
+  is: the columns do not exist, so the app's `approved_at` filters return
+  nothing and the unpaid list would come back empty. **The file and the deploy
+  go together, database first.**
+- **`db/verify_staff.mjs` has not been re-run** and must be, after the file is
+  applied. The `staff_invoices` view is untouched, but the staff surface
+  changed three other ways: the supplier insert policy is dropped, two note
+  policies are added, and `pin_invoice_facts` gained two lines.
+- **`test/preview-review.test.tsx`** joins the previews. This screen cannot
+  otherwise be seen until a shop has entered something nobody has approved,
+  which is a state that exists only in production and only briefly.

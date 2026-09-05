@@ -217,11 +217,26 @@ describe('summariseRange — the supplier date range', () => {
     expect(after.voided_count).toBe(before.voided_count + 1);
   });
 
+  it('leaves an invoice awaiting review out of both totals, and counts it', () => {
+    // The same rule as `onlyOwed`. A supplier's pending figure and the group's
+    // pending figure are the same money counted twice, so a shop's unreviewed
+    // entry appearing here would make this panel disagree with Home.
+    const waiting: Invoice = { ...rows[0]!, id: 'w', status: 'unpaid', approved_at: null, approved_by: null };
+    const before = summariseRange(rows);
+    const after = summariseRange([...rows, waiting]);
+
+    expect(after.pending.total_cents).toBe(before.pending.total_cents);
+    expect(after.pending.count).toBe(before.pending.count);
+    expect(after.settled.total_cents).toBe(before.settled.total_cents);
+    expect(after.awaiting_count).toBe(before.awaiting_count + 1);
+  });
+
   it('is zero rather than NaN over nothing', () => {
     const summary = summariseRange([]);
     expect(summary.pending.total_cents).toBe(0);
     expect(summary.settled.total_cents).toBe(0);
     expect(summary.voided_count).toBe(0);
+    expect(summary.awaiting_count).toBe(0);
   });
 });
 

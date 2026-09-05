@@ -27,6 +27,7 @@ function sale(over: Partial<SalesInvoiceRow> & { id: string }): SalesInvoiceRow 
     invoice_number: null,
     invoice_date: '2026-08-01',
     due_date: '2026-09-15',
+    note: null,
     amount_cents: 10_000,
     status: 'outstanding',
     received_at: null,

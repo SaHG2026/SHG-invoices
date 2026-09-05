@@ -2,24 +2,65 @@ import { describe, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { ToastProvider } from '@/components/ui/Toast';
-import { BUSINESSES, FIXTURE_TODAY, PROFILES, SUPPLIERS, makeInvoices } from './fixtures/invoices';
+import {
+  BUSINESSES,
+  FIXTURE_TODAY,
+  PROFILES,
+  SUPPLIERS,
+  makeAwaitingReview,
+  makeInvoices,
+} from './fixtures/invoices';
 
 /**
- * Not a test — a way to look at the dashboard.
+ * Not a test — a way to look at the supplier page.
  *
- * The app is behind a sign-in, so the real screen cannot be opened without a
- * session. This renders the actual component against the actual fixture and
- * writes the markup out with the built stylesheet, so what gets looked at is
- * the component's own output rather than a drawing of it.
+ * The same device as `preview-dashboard` and `preview-venue`, for the same
+ * reason: the app is behind a sign-in, so this renders the real component
+ * against the real fixture and writes the markup out with the built
+ * stylesheet. What gets looked at is the component's own output.
  *
- * Skipped by default. Run it deliberately:
- *   npx vitest run test/preview-dashboard.test.tsx -t snapshot
+ * This screen earned one on the day it was written: it cannot be seen at all
+ * until a shop has entered an invoice and nobody has approved it, which is a
+ * state that only exists in production and only for a few minutes at a time.
+ *
+ * Skipped by default:
+ *   PREVIEW_OUT=… PREVIEW_CSS=… npx vitest run test/preview-supplier.test.tsx
  */
 
 const invoices = makeInvoices(40).map((invoice, i) => ({
   ...invoice,
   created_by: PROFILES[i % PROFILES.length]!.id,
 }));
+
+const supplier = SUPPLIERS[0]!;
+
+/** The row a shop picks when the supplier is not on the list. */
+const PLACEHOLDER = {
+  id: 's-unlisted',
+  name: 'Supplier not listed',
+  default_terms_days: null,
+  contact_name: null,
+  contact_phone: null,
+  notes: null,
+  active: true,
+  is_placeholder: true,
+};
+
+/** Two shops' morning: one ordinary entry, one from somebody new. */
+const waiting = makeAwaitingReview(3).map((invoice, i) => ({
+  ...invoice,
+  business_id: BUSINESSES[i % 2]!.id,
+  business: BUSINESSES[i % 2]!,
+  supplier:
+    i === 1
+      ? { id: PLACEHOLDER.id, name: PLACEHOLDER.name, is_placeholder: true }
+      : { id: supplier.id, name: supplier.name, is_placeholder: false },
+}));
+
+const NOTES: Record<string, string[]> = {
+  [waiting[1]!.id]: ['From Riverina Meats — new supplier, first delivery today'],
+  [waiting[0]!.id]: ['Two crates short, credit expected'],
+};
 
 vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => FIXTURE_TODAY }));
 
@@ -39,7 +80,7 @@ vi.mock('@/lib/queries/invoices', () => ({
 
 vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
-  useSuppliers: () => ({ data: SUPPLIERS }),
+  useSuppliers: () => ({ data: [...SUPPLIERS, PLACEHOLDER] }),
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -58,8 +99,8 @@ vi.mock('@/lib/queries/detail', () => ({
  * mocks only what it thinks it needs passes alone and fails in the suite.
  */
 vi.mock('@/lib/queries/review', () => ({
-  useAwaitingReview: () => ({ data: [], isLoading: false }),
-  useReviewNotes: () => ({ data: {} }),
+  useAwaitingReview: () => ({ data: waiting, isLoading: false }),
+  useReviewNotes: () => ({ data: NOTES }),
   useApproveInvoices: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReassignSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -73,67 +114,32 @@ vi.mock('@/lib/queries/payments', () => ({
   useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-const pathname = { current: '/' };
-vi.mock('next/navigation', () => ({ usePathname: () => pathname.current }));
+vi.mock('next/navigation', () => ({ usePathname: () => '/review' }));
 
 const OUT = process.env.PREVIEW_OUT ?? '';
 const CSS = process.env.PREVIEW_CSS ?? '';
 
 describe('preview', () => {
   it.skipIf(!OUT)('snapshot', async () => {
-    const Dashboard = (await import('@/app/(app)/page')).default;
-    const { NavDrawer } = await import('@/components/app/NavDrawer');
-    const { AddInvoiceSheet } = await import('@/components/invoice/AddInvoiceSheet');
+    const { ReviewList } = await import('@/components/screens/ReviewList');
 
-    const closed = render(
+    const page = render(
       <ToastProvider>
-        <Dashboard />
+        <ReviewList />
       </ToastProvider>,
     );
-    const dashboardHtml = closed.container.innerHTML;
-    closed.unmount();
-
-    const open = render(
-      <ToastProvider>
-        <Dashboard />
-        <NavDrawer onClose={() => {}} />
-      </ToastProvider>,
-    );
-    const drawerHtml = open.container.innerHTML;
-
-    // The add-invoice sheet, which is the screen that has to survive a
-    // keyboard. Rendered inside the dashboard so it sits over a real page.
-    const sheet = render(
-      <ToastProvider>
-        <Dashboard />
-        <AddInvoiceSheet open onClose={() => {}} />
-      </ToastProvider>,
-    );
-    const sheetHtml = sheet.container.innerHTML;
+    const html = page.container.innerHTML;
 
     const css = CSS ? readFileSync(CSS, 'utf8') : '';
-
-    /*
-     * One page per state, not two frames side by side.
-     *
-     * The drawer and the New invoice bar are position:fixed, so inside a
-     * shrunk preview frame they anchor to the viewport and cover the other
-     * frame. Separate pages let each state be looked at as it actually sits
-     * on a phone.
-     */
-    const page = (body: string) =>
+    const wrap = (body: string) =>
       `<!doctype html><html lang="en-AU"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dashboard preview</title>
+<title>Review preview</title>
 <style>${css}</style>
 <style>body{background:var(--page);margin:0}</style>
 </head><body>${body}</body></html>`;
 
-    writeFileSync(OUT, page(dashboardHtml), 'utf8');
-    writeFileSync(OUT.replace(/\.html$/, '-menu.html'), page(drawerHtml), 'utf8');
-    writeFileSync(OUT.replace(/\.html$/, '-sheet.html'), page(sheetHtml), 'utf8');
-
-    open.unmount();
-    sheet.unmount();
+    writeFileSync(OUT, wrap(html), 'utf8');
+    page.unmount();
   });
 });

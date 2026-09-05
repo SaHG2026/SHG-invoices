@@ -4,8 +4,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { Sheet } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
+import { useAddNote } from '@/lib/queries/detail';
+import { placeholderSupplier } from '@/lib/derive/supplier-match';
 import { useToast } from '@/components/ui/Toast';
-import { optimisticSupplier, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
+import { useSuppliers } from '@/lib/queries/reference';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import {
   findVenueDuplicates,
@@ -97,8 +99,8 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
   const { data: profile } = useCurrentProfile();
   const { data: suppliers = [] } = useSuppliers();
   const createInvoice = useCreateVenueInvoice();
+  const addNote = useAddNote();
   const updateInvoice = useUpdateVenueInvoice();
-  const createSupplier = useCreateSupplier();
 
   const today = useMemo(() => sydneyToday(), []);
 
@@ -126,6 +128,7 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
   );
 
   const dueDate = resolveDueDate({ invoiceDate, termDays, explicitDueDate });
+  const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<Warning[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -147,7 +150,7 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
     due_date: dueDate,
     invoice_date: invoiceDate,
     invoice_number: invoiceNumber,
-    note: '',
+    note,
   };
 
   const chosenPreset = activePreset(dueDate, invoiceDate, DUE_PRESETS_DAYS);
@@ -160,30 +163,20 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
   }, []);
 
   /**
-   * Add a supplier without leaving the sheet.
+   * A venue picks a supplier. It no longer makes one.
    *
-   * A venue may insert into `suppliers` but not update them (CATCH_UP_010 §4),
-   * which is exactly what this needs: the id is decided here so the supplier
-   * can be selected immediately rather than after a round trip, and offline
-   * that round trip never completes at all.
+   * The client's instruction: "not allow staffs to create a new supplier, they
+   * have to choose from the ones already available. however if there genuinely
+   * is a new supplier then they can at least leave a note to that invoice".
+   *
+   * CATCH_UP_013 §5 drops `staff_insert` on `suppliers`, so the database is
+   * the enforcement and this is the interface agreeing with it. What replaces
+   * the Add control is the placeholder row plus a required note — the shop can
+   * still log the delivery, and the name of whoever it came from arrives with
+   * it in a form one of the four will read.
    */
-  async function onCreateSupplier(name: string) {
-    if (!profile) return;
-
-    const created = optimisticSupplier(crypto.randomUUID(), name);
-    const outcome = await submitWrite(createSupplier, {
-      id: created.id,
-      name,
-      actorId: profile.id,
-    });
-
-    if (outcome.kind === 'failed') {
-      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that supplier.'), 'problem');
-      return;
-    }
-
-    chooseSupplier(created);
-  }
+  const placeholder = useMemo(() => placeholderSupplier(suppliers), [suppliers]);
+  const onPlaceholder = supplier !== null && supplier.is_placeholder;
 
   /**
    * Everything worth stopping for. Warnings, never blocks — spec §6.
@@ -255,6 +248,21 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
      */
     if (venueId === '') {
       toast.show('Still loading your shop. Try that again in a second.', 'problem');
+      return;
+    }
+
+    /*
+     * The one thing this sheet refuses outright, and the only one.
+     *
+     * Spec §6 is emphatic that warnings never block, and every other check
+     * here obeys it. This is not a warning: filing against "Supplier not
+     * listed" with nothing written down produces a record that says an invoice
+     * arrived from nobody, and there is no later screen, person or query that
+     * can recover who it was from. The shop is the only place that knowledge
+     * exists, and this is the moment it is in the room.
+     */
+    if (onPlaceholder && note.trim() === '') {
+      setErrors({ note: 'Write who this invoice is from — nothing else will know.' });
       return;
     }
 
@@ -342,17 +350,44 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
      * for the row back; it says the amount and the supplier instead, which is
      * what the person just typed and can check against the paper in their hand.
      */
-    if (outcome.kind === 'queued') {
-      toast.show('Saved — will send when you’re back online.', 'queued');
-      return;
-    }
-
     if (outcome.kind === 'failed') {
       toast.show(
         writeFailureMessage(outcome.error, 'Couldn’t save that invoice. Nothing was written.'),
         'problem',
       );
       return;
+    }
+
+    if (outcome.kind === 'queued') {
+      if (note.trim() !== '' && profile) {
+        void submitWrite(addNote, {
+          id: crypto.randomUUID(),
+          invoiceId: id,
+          body: note.trim(),
+          authorId: profile.id,
+        });
+      }
+      toast.show('Saved — will send when you’re back online.', 'queued');
+      return;
+    }
+
+    /*
+     * The note, after the invoice and only if the invoice went. Second because
+     * `invoice_notes.invoice_id` is a foreign key; queued the same way, so
+     * offline the two travel in the order they were made.
+     *
+     * A venue can insert a note on its own venue's invoice and read back only
+     * its own (CATCH_UP_013 §6). It cannot read the four's notes, deliberately
+     * — those are free text about money and one of them will eventually say
+     * "paid this on Friday".
+     */
+    if (note.trim() !== '' && profile) {
+      void submitWrite(addNote, {
+        id: crypto.randomUUID(),
+        invoiceId: id,
+        body: note.trim(),
+        authorId: profile.id,
+      });
     }
 
     toast.show(`Saved · ${formatCents(payload.amount_cents)} to ${supplier.name}`);
@@ -383,9 +418,18 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
           suppliers={suppliers}
           selected={supplier}
           onSelect={chooseSupplier}
-          onCreate={onCreateSupplier}
-          creating={createSupplier.isPending}
+          onCreate={() => {}}
+          allowCreate={false}
+          includePlaceholder
           error={errors.supplier_id}
+          hint={
+            placeholder ? (
+              <>
+                Not on the list? Choose <span className="text-ink">{placeholder.name}</span> and
+                write who it is from in the note.
+              </>
+            ) : null
+          }
         />
 
         <div className="mb-4">
@@ -518,6 +562,45 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
             />
             <p className="figure-date mt-1 text-xs text-muted">{formatDay(dueDate)}</p>
           </div>
+        </div>
+
+        {/*
+          The note, and on this sheet it is the shop's only voice.
+
+          It is where "this is from Riverina Meats, they are new" gets written
+          down, because a venue can no longer create the supplier itself. The
+          copy changes when the placeholder is chosen, and so does whether it
+          is optional — see `save`.
+        */}
+        <div className="mt-4">
+          <label
+            className="mb-1 block text-xs uppercase tracking-widest text-muted"
+            htmlFor="venue-note"
+          >
+            Note{onPlaceholder ? '' : ' (optional)'}
+          </label>
+          <textarea
+            id="venue-note"
+            rows={2}
+            placeholder={
+              onPlaceholder
+                ? 'Who is this invoice from? Write their name here.'
+                : 'Anything odd about this one?'
+            }
+            value={note}
+            onChange={(event) => {
+              setNote(event.target.value);
+              if (errors.note) setErrors((current) => ({ ...current, note: '' }));
+            }}
+            className={`w-full rounded-sm border bg-card px-3 py-2 text-base text-ink outline-none focus:border-action ${
+              errors.note ? 'border-overdue' : 'border-hairline'
+            }`}
+          />
+          {errors.note ? (
+            <p role="alert" className="mt-1 text-sm text-overdue">
+              {errors.note}
+            </p>
+          ) : null}
         </div>
       </Sheet>
 

@@ -77,7 +77,25 @@ const rows: StaffInvoice[] = [
   },
 ];
 
+/**
+ * The row a shop picks when a delivery arrives from somebody not on the list.
+ *
+ * A venue can no longer create a supplier (CATCH_UP_013 §5), so this plus a
+ * required note is the whole of what replaces the Add control.
+ */
+const PLACEHOLDER = {
+  id: 's-unlisted',
+  name: 'Supplier not listed',
+  default_terms_days: null,
+  contact_name: null,
+  contact_phone: null,
+  notes: null,
+  active: true,
+  is_placeholder: true,
+};
+
 const mocks = vi.hoisted(() => ({
+  addNoteMutate: vi.fn(),
   createInvoice: vi.fn(),
   updateInvoice: vi.fn(),
   createSupplier: vi.fn(),
@@ -108,8 +126,21 @@ vi.mock('@/lib/queries/session', () => ({
   useProfiles: () => ({ data: PROFILES }),
 }));
 
+/*
+ * The note write. It goes out AFTER the invoice and nothing waits on it — but
+ * it is a real mutation, so without this the sheet reaches a hook with no
+ * QueryClient above it.
+ */
+vi.mock('@/lib/queries/detail', () => ({
+  useAddNote: () => ({ mutateAsync: mocks.addNoteMutate, mutate: mocks.addNoteMutate, isPending: false }),
+  useRecentActivity: () => ({ data: [] }),
+  useInvoice: () => ({ data: null, isLoading: false }),
+  useInvoiceActivity: () => ({ data: [] }),
+  useInvoiceNotes: () => ({ data: [] }),
+}));
+
 vi.mock('@/lib/queries/reference', () => ({
-  useSuppliers: () => ({ data: SUPPLIERS }),
+  useSuppliers: () => ({ data: [...SUPPLIERS, PLACEHOLDER] }),
   useCreateSupplier: () => ({ mutateAsync: mocks.createSupplier, isPending: false }),
   optimisticSupplier: (id: string, name: string) => ({
     id,
@@ -368,6 +399,84 @@ describe('adding an invoice', () => {
    * staff_venue())`. Offering the choice would be the interface promising
    * something the insert would then reject.
    */
+/*
+   * A shop picks a supplier. It no longer makes one.
+   *
+   * CATCH_UP_013 §5 drops `staff_insert` on `suppliers`, so the database is
+   * the enforcement and these assert the interface agrees with it — offering a
+   * control that would come back 42501 is the interface promising what it
+   * cannot do (ARCHITECTURE §34.6).
+   */
+  it('does not offer to add a supplier that is not on the list', async () => {
+    await openSheet();
+    fireEvent.change(screen.getByLabelText('Supplier'), {
+      target: { value: 'Riverina Meats Wholesale' },
+    });
+
+    expect(screen.queryByText(/as a new supplier/)).not.toBeInTheDocument();
+    expect(mocks.createSupplier).not.toHaveBeenCalled();
+  });
+
+  it('points at the placeholder instead, by name', async () => {
+    await openSheet();
+    expect(screen.getByText(/Not on the list\?/)).toBeInTheDocument();
+    expect(screen.getAllByText(PLACEHOLDER.name).length).toBeGreaterThan(0);
+  });
+
+  it('refuses to file against the placeholder with no note', async () => {
+    mocks.createInvoice.mockResolvedValue(undefined);
+    mocks.findDuplicates.mockResolvedValue([]);
+    await openSheet();
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '88.00' } });
+    pickSupplier(PLACEHOLDER.name);
+    fireEvent.click(screen.getByRole('button', { name: 'Save invoice' }));
+
+    /*
+     * The one blocking check in a sheet whose every other check is a warning.
+     * An invoice against the placeholder with nothing written down is a record
+     * saying it arrived from nobody, and the shop is the only place that
+     * knowledge exists — this is the moment it is in the room.
+     */
+    expect(await screen.findByRole('alert')).toHaveTextContent(/who this invoice is from/);
+    expect(mocks.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('saves against the placeholder once the note names them', async () => {
+    mocks.createInvoice.mockResolvedValue(undefined);
+    mocks.findDuplicates.mockResolvedValue([]);
+    await openSheet();
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '88.00' } });
+    pickSupplier(PLACEHOLDER.name);
+    fireEvent.change(screen.getByLabelText(/^Note/), {
+      target: { value: 'From Riverina Meats — new supplier' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save invoice' }));
+
+    await waitFor(() => expect(mocks.createInvoice).toHaveBeenCalled());
+    // And the note travels as its own write, after the invoice, carrying the
+    // invoice id — a foreign key cannot point at a row that is not there yet.
+    await waitFor(() => expect(mocks.addNoteMutate).toHaveBeenCalled());
+    const note = mocks.addNoteMutate.mock.calls[0]![0] as { invoiceId: string; body: string };
+    const invoice = mocks.createInvoice.mock.calls[0]![0] as { payload: { id: string } };
+    expect(note.invoiceId).toBe(invoice.payload.id);
+    expect(note.body).toContain('Riverina Meats');
+  });
+
+  it('does not send a note when none was written', async () => {
+    mocks.createInvoice.mockResolvedValue(undefined);
+    mocks.findDuplicates.mockResolvedValue([]);
+    await openSheet();
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '412.90' } });
+    pickSupplier('Bidfood');
+    fireEvent.click(screen.getByRole('button', { name: 'Save invoice' }));
+
+    await waitFor(() => expect(mocks.createInvoice).toHaveBeenCalled());
+    expect(mocks.addNoteMutate).not.toHaveBeenCalled();
+  });
+
   it('offers no business to choose, because a shop has one', async () => {
     await openSheet();
     for (const code of ['GMH', 'MJR', 'DDL']) {

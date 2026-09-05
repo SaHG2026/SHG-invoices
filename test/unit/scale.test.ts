@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BUSINESSES, FIXTURE_TODAY, makeInvoices } from '../fixtures/invoices';
 import {
   filterInvoices,
-  onlyUnpaid,
+  onlyOwed,
   searchInvoices,
   sortInvoices,
   summarise,
@@ -88,7 +88,7 @@ describe('two hundred invoices', () => {
 describe('one array, one total — at two hundred rows', () => {
   it('the headline total is the sum of exactly the rows shown', () => {
     const visible = filterInvoices(ROWS, { today });
-    expect(summarise(visible).total_cents).toBe(sumCents(onlyUnpaid(visible)));
+    expect(summarise(visible).total_cents).toBe(sumCents(onlyOwed(visible)));
   });
 
   it('holds under a business filter', () => {
@@ -97,12 +97,12 @@ describe('one array, one total — at two hundred rows', () => {
 
     expect(visible.length).toBeGreaterThan(0);
     expect(visible.length).toBeLessThan(ROWS.length);
-    expect(summarise(visible).total_cents).toBe(sumCents(onlyUnpaid(visible)));
+    expect(summarise(visible).total_cents).toBe(sumCents(onlyOwed(visible)));
   });
 
   it('holds under a search, which is the filter most likely to drift', () => {
     const visible = searchInvoices(ROWS, 'bid');
-    expect(summarise(visible).total_cents).toBe(sumCents(onlyUnpaid(visible)));
+    expect(summarise(visible).total_cents).toBe(sumCents(onlyOwed(visible)));
   });
 
   it('buckets partition the list — every row in exactly one', () => {
@@ -125,9 +125,9 @@ describe('one array, one total — at two hundred rows', () => {
     const buckets = bucketByUrgency(ROWS, today);
     const cards = summariseUrgency(ROWS, today);
 
-    expect(cards.overdue.total_cents).toBe(sumCents(onlyUnpaid(buckets.overdue)));
+    expect(cards.overdue.total_cents).toBe(sumCents(onlyOwed(buckets.overdue)));
     expect(cards.next7.total_cents).toBe(
-      sumCents(onlyUnpaid([...buckets.today, ...buckets.week])),
+      sumCents(onlyOwed([...buckets.today, ...buckets.week])),
     );
   });
 
@@ -148,7 +148,7 @@ describe('one array, one total — at two hundred rows', () => {
 
   it('a run total is the sum of its own unpaid rows, never of all of them', () => {
     for (const run of groupIntoRuns(ROWS)) {
-      expect(run.total_cents).toBe(sumCents(onlyUnpaid(run.invoices)));
+      expect(run.total_cents).toBe(sumCents(onlyOwed(run.invoices)));
     }
   });
 });

@@ -88,6 +88,7 @@ export const SUPPLIERS: Supplier[] = SUPPLIER_NAMES.map(([name, terms], i) => ({
   contact_phone: null,
   notes: null,
   active: true,
+  is_placeholder: false,
 }));
 
 /**
@@ -130,6 +131,19 @@ export function makeInvoices(count = 200, seed = 20260828): InvoiceRow[] {
       paid_by: null,
       payment_ref: null,
       void_reason: null,
+      /*
+       * Approved, because the fixture stands for the ledger as the screens
+       * see it: `useUnpaidInvoices` asks the database for approved rows only,
+       * so an unapproved one could never arrive in this array.
+       *
+       * A test that wants the review queue builds those explicitly with
+       * `makeAwaitingReview` below — which is the point. Nothing waiting for
+       * review should ever appear in a fixture by accident, because the bug
+       * this whole feature guards against is money reaching a total without
+       * anybody agreeing to it.
+       */
+      approved_at: `2026-08-${String(((i % 27) + 1)).padStart(2, '0')}T03:20:00.000Z`,
+      approved_by: creator.id,
       created_by: creator.id,
       created_at: `2026-08-${String(((i % 27) + 1)).padStart(2, '0')}T03:14:00.000Z`,
       updated_at: `2026-08-${String(((i % 27) + 1)).padStart(2, '0')}T03:14:00.000Z`,
@@ -145,4 +159,23 @@ export function makeInvoices(count = 200, seed = 20260828): InvoiceRow[] {
 export function makeInvoice(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
   const base = makeInvoices(1)[0]!;
   return { ...base, ...overrides };
+}
+
+/**
+ * Invoices a venue has entered and nobody has accepted yet.
+ *
+ * Built from the same generator so they are ordinary invoices in every other
+ * respect — the only difference is the one that matters, and a test asserting
+ * "this never reaches a total" is asserting it about a row that would
+ * otherwise have.
+ */
+export function makeAwaitingReview(count = 3, seed = 20260905): InvoiceRow[] {
+  return makeInvoices(count, seed).map((invoice, i) => ({
+    ...invoice,
+    id: `r-${String(i).padStart(3, '0')}`,
+    approved_at: null,
+    approved_by: null,
+    // A venue's entry. `created_by` is the shop's shared login, not a person.
+    created_by: 'venue-gmp',
+  }));
 }

@@ -118,6 +118,17 @@ export function describeActivity(entry: ActivityEntry): ActivityDescription {
       // Spec §6: un-ticking is "allowed, but logged loudly".
       return { summary: 'put this back to unpaid', changes: [] };
 
+    case 'approved':
+      /*
+       * A named action, not an 'edited' with a diff.
+       *
+       * An approval moves none of the fields the audit trigger tracks, so
+       * without its own word the trigger would discard the line entirely
+       * (CATCH_UP_013 §4) — and "who let this in" is the one thing people will
+       * come to this stream to look up.
+       */
+      return { summary: 'approved this invoice', changes: [] };
+
     case 'voided': {
       const raw = detail?.void_reason;
       const reason = isFromTo(raw) ? formatValue('void_reason', raw.to) : null;

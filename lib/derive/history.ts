@@ -172,16 +172,33 @@ export interface RangeSummary {
   pending: { total_cents: number; count: number };
   settled: { total_cents: number; count: number };
   voided_count: number;
+  /**
+   * Entered by a shop and not yet accepted. In neither figure.
+   *
+   * Counted rather than dropped, for the same reason `voided_count` is: it is
+   * why the number of rows on screen does not match the numbers above them.
+   * Silently omitting them would make this panel the one place in the app
+   * where the list and the totals disagree without saying so.
+   */
+  awaiting_count: number;
 }
 
 export function summariseRange(invoices: readonly Invoice[]): RangeSummary {
-  const pending = invoices.filter((invoice) => invoice.status === 'unpaid');
+  // The same rule as `onlyOwed`, and it has to be: a supplier's pending figure
+  // and the group's pending figure are the same money counted twice, and a
+  // panel that included a shop's unreviewed entry would disagree with Home.
+  const pending = invoices.filter(
+    (invoice) => invoice.status === 'unpaid' && invoice.approved_at !== null,
+  );
   const settled = invoices.filter((invoice) => invoice.status === 'paid');
 
   return {
     pending: { total_cents: sumCents(pending), count: pending.length },
     settled: { total_cents: sumCents(settled), count: settled.length },
     voided_count: invoices.filter((invoice) => invoice.status === 'void').length,
+    awaiting_count: invoices.filter(
+      (invoice) => invoice.status === 'unpaid' && invoice.approved_at === null,
+    ).length,
   };
 }
 

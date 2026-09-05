@@ -179,18 +179,41 @@ export function searchInvoices(rows: ReadonlyArray<InvoiceRow>, query: string): 
 /**
  * Only what is genuinely still owed.
  *
- * Invoices ticked off during this session stay on screen, struck through,
- * until the app is closed (lib/recently-paid.ts). They are in the same array
- * as everything else, so every figure has to say out loud that it does not
- * count them — otherwise the headline would keep including money that has
- * already left the account, which is notes §3's trust-destroying disagreement
- * with the list right under it.
+ * Two conditions, and they are different kinds of fact.
+ *
+ * **Unpaid.** Invoices ticked off during this session stay on screen, struck
+ * through, until the app is closed (lib/recently-paid.ts). They are in the
+ * same array as everything else, so every figure has to say out loud that it
+ * does not count them — otherwise the headline would keep including money that
+ * has already left the account, which is notes §3's trust-destroying
+ * disagreement with the list right under it.
+ *
+ * **Approved.** An invoice a venue entered is not money the group has agreed
+ * it owes until one of the four says so (CATCH_UP_013). It is in the ledger,
+ * it is visible on the review screen, and it is in no total anywhere.
+ *
+ * ---------------------------------------------------------------------------
+ * The name changed from `onlyUnpaid`, and the rename is the point.
+ *
+ * A function called `onlyUnpaid` that also checks approval is a function whose
+ * name is a lie, and the next person to need "just the unpaid ones" writes
+ * their own filter rather than reading this one. `onlyOwed` says what the
+ * answer is for: money the group owes. Both conditions belong to that
+ * question, and neither belongs to the name it used to have.
  *
  * One function, called by every summary below, rather than a `.filter` at each
- * site that somebody later adds a fifth summary without.
+ * site that somebody later adds a fifth summary without. That mattered when it
+ * was one condition. With two it is the only reason the review gate cannot be
+ * half-applied.
+ * ---------------------------------------------------------------------------
  */
-export function onlyUnpaid(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
-  return rows.filter((row) => row.status === 'unpaid');
+export function onlyOwed(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
+  return rows.filter((row) => row.status === 'unpaid' && row.approved_at !== null);
+}
+
+/** Waiting for one of the four to accept it. Only ever a venue's entry. */
+export function awaitingReview(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
+  return rows.filter((row) => row.status === 'unpaid' && row.approved_at === null);
 }
 
 export interface OutstandingSummary {
@@ -204,7 +227,7 @@ export interface OutstandingSummary {
  * Derived from the same array the sections below it render.
  */
 export function summarise(rows: ReadonlyArray<InvoiceRow>): OutstandingSummary {
-  const owed = onlyUnpaid(rows);
+  const owed = onlyOwed(rows);
   return {
     total_cents: sumCents(owed),
     invoice_count: owed.length,
@@ -277,7 +300,7 @@ export function summariseByBusiness(
   // work grew with businesses x invoices rather than with invoices. Four
   // businesses and two hundred rows makes that eight hundred passes to do two
   // hundred rows worth of filtering. Found in the 200-row pass (spec 9).
-  const unpaid = onlyUnpaid(rows);
+  const unpaid = onlyOwed(rows);
 
   return businesses
     .map((business) => {

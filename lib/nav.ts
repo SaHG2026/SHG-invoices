@@ -16,7 +16,13 @@ import { ALL_SCOPE } from './scope';
  * tested at every URL the app has in about a second.
  */
 
-export type NavSection = 'invoices' | 'suppliers' | 'customers' | 'history' | 'settings';
+export type NavSection =
+  | 'invoices'
+  | 'review'
+  | 'suppliers'
+  | 'customers'
+  | 'history'
+  | 'settings';
 
 export interface NavItem {
   section: NavSection;
@@ -36,6 +42,12 @@ export interface NavItem {
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { section: 'invoices', label: 'Invoices', href: '/' as Route, expandable: true },
+  /*
+   * Directly under Invoices, because it is the same ledger one step earlier —
+   * and above Suppliers, because it is the only row here with work waiting on
+   * it. A queue filed under the housekeeping is a queue nobody clears.
+   */
+  { section: 'review', label: 'Review', href: '/review' as Route },
   { section: 'suppliers', label: 'Suppliers', href: '/suppliers' as Route },
   { section: 'customers', label: 'Customers', href: '/customers' as Route },
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
@@ -53,6 +65,8 @@ export function activeSection(pathname: string): NavSection | null {
   const path = normalise(pathname);
 
   if (path.endsWith('/history')) return 'history';
+  // Before the invoice test, which would otherwise claim /review is nothing.
+  if (path.startsWith('/review')) return 'review';
   if (path === '/' || path.startsWith('/b/') || path.startsWith('/invoices/')) return 'invoices';
   if (path.startsWith('/suppliers')) return 'suppliers';
   if (path.startsWith('/customers')) return 'customers';

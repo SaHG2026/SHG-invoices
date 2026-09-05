@@ -10,7 +10,8 @@ import { useBusinesses } from '@/lib/queries/reference';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { NAV_ITEMS, activeSection, isBusinessActive } from '@/lib/nav';
-import { onlyUnpaid } from '@/lib/derive/select';
+import { onlyOwed } from '@/lib/derive/select';
+import { useAwaitingReview } from '@/lib/queries/review';
 import { scopeHref } from '@/lib/scope';
 
 /**
@@ -65,9 +66,19 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
    * rows do not vanish under the person reading them. Counting the array as it
    * arrives meant the menu went on saying 12 after two of them were paid.
    */
+  /*
+   * The one number in this menu that is not "how much is outstanding".
+   *
+   * It is a count of things waiting on a person, so it is drawn as a badge
+   * rather than as money — and it is fetched here rather than passed in
+   * because the drawer is mounted only while it is open (see above), which is
+   * exactly when a queue length is worth a round trip.
+   */
+  const { data: waiting = [] } = useAwaitingReview();
+
   const counts = useMemo(() => {
     const perBusiness = new Map<string, number>();
-    for (const invoice of onlyUnpaid(invoices)) {
+    for (const invoice of onlyOwed(invoices)) {
       perBusiness.set(invoice.business_id, (perBusiness.get(invoice.business_id) ?? 0) + 1);
     }
     return perBusiness;
@@ -164,7 +175,24 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
                     }`}
                     style={current ? { backgroundColor: 'var(--action-bg)' } : undefined}
                   >
-                    {item.label}
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+
+                    {/*
+                      Only ever drawn when there is something waiting. A badge
+                      showing 0 is a badge people learn to stop reading, and
+                      this is the one that must be read.
+                    */}
+                    {item.section === 'review' && waiting.length > 0 ? (
+                      <span
+                        className="ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                        style={{
+                          backgroundColor: 'var(--spine-today)',
+                          color: 'var(--card)',
+                        }}
+                      >
+                        {waiting.length}
+                      </span>
+                    ) : null}
                   </Link>
 
                   {item.expandable ? (

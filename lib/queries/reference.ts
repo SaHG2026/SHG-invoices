@@ -136,6 +136,9 @@ export function optimisticSupplier(id: string, name: string): Supplier {
     contact_phone: null,
     notes: null,
     active: true,
+    // Only the one seeded row is ever a placeholder, and nothing in the app
+    // creates another (CATCH_UP_013 §5).
+    is_placeholder: false,
   };
 }
 

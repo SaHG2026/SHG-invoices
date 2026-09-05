@@ -190,3 +190,16 @@ describe('the review section', () => {
     expect(order.indexOf('review')).toBe(order.indexOf('invoices') + 1);
   });
 });
+
+describe('composing an invoice for a customer', () => {
+  it('has a row of its own, because it was not findable without one', () => {
+    expect(NAV_ITEMS.some((item) => item.section === 'newSale')).toBe(true);
+    expect(activeSection('/sales/new')).toBe('newSale');
+  });
+
+  it('but a printed document belongs to the customer side', () => {
+    // The document is where a customer's invoice ends up, not a place you set
+    // out to go. Composing is the verb; printing is the result.
+    expect(activeSection('/sales/abc-123/print')).toBe('customers');
+  });
+});

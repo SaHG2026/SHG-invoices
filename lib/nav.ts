@@ -22,6 +22,7 @@ export type NavSection =
   | 'suppliers'
   | 'customers'
   | 'products'
+  | 'newSale'
   | 'history'
   | 'settings';
 
@@ -54,6 +55,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
   /* Under Customers, because a price list only means anything on the side
      of the ledger that sends invoices out. */
   { section: 'products', label: 'Products', href: '/products' as Route },
+  /*
+   * The one row in this menu that is a verb.
+   *
+   * It was reachable only from inside a customer, and the report was "I could
+   * not find create invoice feature for Deli" — which is the correct verdict
+   * on a feature buried one level below where somebody looks for it. Composing
+   * an invoice is a thing you set out to do, not something you discover while
+   * reading a customer's page.
+   */
+  { section: 'newSale', label: 'New invoice for a customer', href: '/sales/new' as Route },
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
   { section: 'settings', label: 'Settings', href: '/settings' as Route },
 ] as const;
@@ -75,7 +86,8 @@ export function activeSection(pathname: string): NavSection | null {
   if (path.startsWith('/suppliers')) return 'suppliers';
   if (path.startsWith('/customers')) return 'customers';
   if (path.startsWith('/products')) return 'products';
-  // Composing and printing both belong to the customer side of the ledger.
+  // Composing lights its own row; a printed document belongs to the customer.
+  if (path.startsWith('/sales/new')) return 'newSale';
   if (path.startsWith('/sales')) return 'customers';
   if (path.startsWith('/settings')) return 'settings';
   return null;

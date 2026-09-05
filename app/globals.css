@@ -507,3 +507,85 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Printing an invoice Deli has issued.
+
+   The one screen in this app that becomes a piece of paper. Everything here is
+   `@media print`, so it changes nothing anybody sees on a phone.
+
+   The page prints ITSELF rather than rebuilding the document into a hidden
+   element: two copies of one invoice in one file is the arrangement notes §1.3
+   warns about, and the copy that drifts is always the one nobody looks at on
+   screen. So the chrome is removed and what is left is the document.
+
+   Colours are here rather than in the component for rule 3's reason, and print
+   sharpens it: a printer has no CSS variables to read, and a token that failed
+   to resolve on paper is white on white with no way to notice.
+   --------------------------------------------------------------------------- */
+@media print {
+  /*
+     The header, the nav, the Print button, the toast host, the add bar.
+
+     `.no-print` is put on the elements themselves — an attribute selector
+     guessing at the shell printed the app header on every invoice, and a rule
+     that only exists on paper is one nothing on screen can catch.
+  */
+  .no-print,
+  nav,
+  .fixed {
+    display: none !important;
+  }
+
+  /* Black on white, whatever the app's own palette is doing. A green invoice
+     costs a colour cartridge to say nothing. */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* The shell centres content and pads it for a thumb. Paper has margins of
+     its own and does not need either. */
+  main,
+  body > * {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-sheet {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    color: #000000 !important;
+  }
+
+  .print-sheet * {
+    color: #000000 !important;
+  }
+
+  /* Rules have to survive: browsers drop backgrounds and borders when they
+     think they are decoration, and on an invoice the line under the headings
+     is what separates the total from everything above it. */
+  .print-sheet th,
+  .print-sheet td {
+    border-color: #000000 !important;
+  }
+
+  /* A line item must not be split across two pages: half a row on one sheet
+     and half on the next is a document somebody will query. */
+  .print-sheet tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-sheet thead {
+    display: table-header-group;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}

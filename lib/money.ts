@@ -32,7 +32,26 @@ export const MAX_AMOUNT_CENTS = 1_000_000_000;
  * Cents are produced by string manipulation, not `parseFloat(x) * 100`,
  * because the latter drifts — 8.29 * 100 is 828.9999999999999.
  */
-export function parseAmountToCents(input: string): number | null {
+export interface ParseAmountOptions {
+  /**
+   * Whether zero is a legitimate answer.
+   *
+   * Off by default, because `invoices.amount_cents` has `check (> 0)` and an
+   * invoice for nothing is a mistake somebody should be told about.
+   *
+   * On for a LINE price and a product price, where zero is a real thing: a
+   * sample, a replacement, a line that carries a description and no charge.
+   * One parser with a flag rather than two parsers — notes §1.3 is about what
+   * happens when one record has two paths that build it, and a second
+   * money parser is that with the stakes at their highest.
+   */
+  allowZero?: boolean;
+}
+
+export function parseAmountToCents(
+  input: string,
+  { allowZero = false }: ParseAmountOptions = {},
+): number | null {
   if (typeof input !== 'string') return null;
 
   // Strip the things a person legitimately types or pastes: currency symbol,
@@ -45,7 +64,7 @@ export function parseAmountToCents(input: string): number | null {
   const cents = Number(`${whole || '0'}${fraction.padEnd(2, '0')}`);
 
   if (!Number.isSafeInteger(cents)) return null;
-  if (cents <= 0) return null; // invoices.amount_cents has `check (> 0)`
+  if (allowZero ? cents < 0 : cents <= 0) return null;
   if (cents > MAX_AMOUNT_CENTS) return null;
 
   return cents;

@@ -68,6 +68,15 @@ export const qk = {
       ['invoices', 'supplier', supplierId, 'range', range] as const,
   },
   /**
+   * Deli's price list. Scoped by business, because a price is a fact about who
+   * is selling the thing.
+   */
+  products: {
+    all: ['products'] as const,
+    forBusiness: (businessId: string) => ['products', businessId] as const,
+    withInactive: (businessId: string) => ['products', businessId, 'all'] as const,
+  },
+  /**
    * Invoices Deli Delights has sent. A separate key from `invoices`, not a
    * filter on it — ARCHITECTURE §17. Nothing here feeds an owed total.
    */
@@ -75,6 +84,8 @@ export const qk = {
     all: ['sales'] as const,
     outstanding: ['sales', 'outstanding'] as const,
     forCustomer: (customerId: string) => ['sales', 'customer', customerId] as const,
+    /** One issued invoice and its lines, for the record and the document. */
+    detail: (id: string) => ['sales', 'detail', id] as const,
   },
   /**
    * What a venue account sees: the `staff_invoices` view, its own venue only.

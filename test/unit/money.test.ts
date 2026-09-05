@@ -91,3 +91,33 @@ describe('round trip', () => {
     }
   });
 });
+
+describe('a price of zero', () => {
+  /*
+   * Off by default, on for a line and a product price.
+   *
+   * `invoices.amount_cents` has `check (> 0)` — an invoice for nothing is a
+   * mistake somebody should be told about. A LINE for nothing is a real thing:
+   * a sample, a replacement, a line that carries a description and no charge.
+   *
+   * One parser with a flag rather than two parsers. A second money parser is
+   * notes §1.3 with the stakes at their highest.
+   */
+  it('is refused by default', () => {
+    expect(parseAmountToCents('0')).toBeNull();
+    expect(parseAmountToCents('0.00')).toBeNull();
+  });
+
+  it('is accepted when the caller says so', () => {
+    expect(parseAmountToCents('0', { allowZero: true })).toBe(0);
+    expect(parseAmountToCents('0.00', { allowZero: true })).toBe(0);
+  });
+
+  it('does not open the door to anything else', () => {
+    // Only zero changes. Negatives, nonsense and the ceiling are untouched.
+    expect(parseAmountToCents('-1', { allowZero: true })).toBeNull();
+    expect(parseAmountToCents('abc', { allowZero: true })).toBeNull();
+    expect(parseAmountToCents('', { allowZero: true })).toBeNull();
+    expect(parseAmountToCents('4.50', { allowZero: true })).toBe(450);
+  });
+});

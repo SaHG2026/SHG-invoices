@@ -192,6 +192,56 @@ export interface Invoice {
 }
 
 /**
+ * Something Deli sells, and what it costs.
+ *
+ * Scoped to a business rather than global: the price of a thing is a fact
+ * about who is selling it, and Majheri's idea of what a box of tomatoes costs
+ * is not Deli's.
+ */
+export interface Product {
+  id: string;
+  business_id: string;
+  name: string;
+  /** 'kg', 'each', 'box' — free text, because a unit is whatever it says. */
+  unit: string | null;
+  unit_price_cents: number;
+  active: boolean;
+}
+
+/**
+ * One line of an invoice Deli has issued.
+ *
+ * ---------------------------------------------------------------------------
+ * The description and the price are COPIES, and that is the whole design.
+ *
+ * The obvious schema is a product id and a quantity. Raise a product's price
+ * next month and every invoice printed last month silently reprints at the new
+ * one — a piece of paper somebody is holding would stop agreeing with your
+ * copy of it. A printed invoice is a claim about a moment.
+ *
+ * `product_id` is kept only to answer "which product was this", and is null
+ * for a one-off line that is not a product at all.
+ * ---------------------------------------------------------------------------
+ *
+ * `quantity_milli` is integer thousandths, for the reason rule 6 makes money
+ * integer cents. 1.5 kg is 1500. `lib/quantity.ts` is the only thing that
+ * parses or formats it.
+ */
+export interface SalesInvoiceLine {
+  id: string;
+  sales_invoice_id: string;
+  /** Order on the page, from 0. Unique per invoice. */
+  position: number;
+  product_id: string | null;
+  description: string;
+  unit: string | null;
+  quantity_milli: number;
+  unit_price_cents: number;
+  /** Computed by the database, never by the client. CATCH_UP_015 §4. */
+  line_total_cents: number;
+}
+
+/**
  * An invoice Deli Delights has SENT. ARCHITECTURE §17.
  *
  * The mirror of Invoice, in the other direction, and deliberately its own type

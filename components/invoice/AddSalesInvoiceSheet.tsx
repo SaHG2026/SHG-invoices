@@ -125,6 +125,10 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         amount_cents: amountCents,
         note: note.trim() || null,
         created_by: profile.id,
+        // No lines: this is the "record one we already sent" path, where
+        // the amount above is the whole of it. Composing an invoice with
+        // line items is /sales/new.
+        lines: [],
       });
 
       toast.show(`Recorded ${formatCents(amountCents)} owed to us.`);

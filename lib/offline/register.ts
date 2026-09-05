@@ -7,6 +7,7 @@ import { registerSupplierMutations } from '@/lib/queries/reference';
 import { registerSupplierEditMutations } from '@/lib/queries/history';
 import { registerCustomerMutations } from '@/lib/queries/customers';
 import { registerSalesMutations } from '@/lib/queries/sales';
+import { registerProductMutations } from '@/lib/queries/products';
 import { registerVenueMutations, registerVenueUpdateMutations } from '@/lib/queries/venue';
 import { QUEUEABLE_KEYS } from './keys';
 
@@ -42,6 +43,7 @@ export function registerMutationDefaults(queryClient: QueryClient) {
   registerSupplierEditMutations(queryClient);
   registerCustomerMutations(queryClient);
   registerSalesMutations(queryClient);
+  registerProductMutations(queryClient);
   registerVenueMutations(queryClient);
   registerVenueUpdateMutations(queryClient);
 }

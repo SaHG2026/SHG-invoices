@@ -88,7 +88,17 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 border-b border-edge bg-card">
+      {/*
+        `no-print` on the shell itself, not a selector in the stylesheet
+        guessing at it.
+
+        The print rules first targeted `header[data-app-header]`, an attribute
+        nothing here has, so the hamburger and the icons printed at the top of
+        every invoice — and nothing on screen could have shown that, because
+        the rule only exists on paper. Marking the element is the version that
+        cannot silently stop matching.
+      */}
+      <header className="no-print sticky top-0 z-30 border-b border-edge bg-card">
         {/* relative, so the bell panel can hang beneath the bar */}
         <div className="relative mx-auto flex h-14 max-w-[560px] items-center gap-1 px-4">
           <button

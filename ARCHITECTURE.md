@@ -3200,3 +3200,148 @@ unenabled extension costs a second run rather than the whole paste.
   to save, and after the file with no deploy nothing has set a time.
 - **§7 of the file** sets a time, clears the stamp and calls the function by
   hand, so it can be proven without waiting for tomorrow.
+
+---
+
+## 38. Round D — Deli issues an invoice it can print
+
+*"We add/select a supplier. We add list of products (will be added with prices,
+also an option to add/edit those). Then all the added products will show an
+invoice. Then there is an option to export, that exported will be printed."*
+
+One correction to the vocabulary, because it decided which table this landed
+in: on this flow Deli is **selling**, so the other party is a customer and the
+record is a `sales_invoice`. Both already existed (§17, migration 009). What
+that ledger never had was line items or a document.
+
+Two decisions the client took, recorded so nobody re-derives them: a **plain
+invoice**, no GST and no ABN; and the **app numbers them**, `DDL-0001`.
+
+### 38.1 The description and the price are copied onto the line
+
+The obvious schema is a `product_id` and a quantity, and it is wrong for a
+document. Raise a price next month and every invoice printed last month
+silently reprints at the new one — a piece of paper somebody is holding stops
+agreeing with your copy of it.
+
+A printed invoice is a claim about a moment. So the line carries what was
+charged, and `product_id` is kept only to answer *which product was this*,
+nullable for the one-off line that is not a product at all.
+
+That is also what makes the products screen safe to use: changing a price there
+changes what the **next** invoice suggests and nothing already issued.
+
+### 38.2 Quantity is integer thousandths
+
+Rule 6 makes money integer cents because floats drift and then people argue. A
+quantity multiplies that money, so a float here reaches the total by the same
+route with the same result — `1.1 * 3` is 3.3000000000000003, and a line on a
+customer's invoice cannot fail to add up.
+
+Thousandths rather than hundredths because the unit is not always money-like:
+1.5 kg, 0.25 hours, 12 boxes. `lib/quantity.ts` is `lib/money.ts` one column
+over, with the same two boundaries and the same refusal to coerce.
+
+**`formatQuantity` trims trailing zeros, and money never does.** "12.000 boxes"
+reads as a measurement taken to three places, which is a claim the docket did
+not make.
+
+### 38.3 One calculation, written twice, pinned together
+
+`lineTotalCents` exists in TypeScript and again inside `create_sales_invoice`,
+because the total on a document handed to a customer cannot be whatever the
+client said it was. Two implementations of one calculation is notes §1.3 — "two
+paths that built a record, one of them wrong" — so they are pinned deliberately:
+
+```
+here:  Math.round(quantity_milli * unit_price_cents / 1000)
+SQL:   round(quantity_milli::numeric * unit_price_cents / 1000)
+```
+
+`test/unit/quantity.test.ts` holds a table of ten cases including both rounding
+directions, and **the same table is repeated in the SQL file's verification
+query**. The agreement is proven on both sides rather than assumed on one. If a
+row is added to one it goes in the other.
+
+The table earned its keep immediately: it caught a wrong expected value in its
+own first draft.
+
+### 38.4 A blank price is not a price of zero
+
+Both are needed and they are different facts. Blank means somebody is still
+typing, and a line still being typed must not join the running total — it would
+make the figure flicker downward as they work. A typed `0` is a real thing: a
+sample, a replacement, a line that carries a description and no charge.
+
+`parseAmountToCents` refused zero outright, because `invoices.amount_cents` has
+`check (> 0)` and an invoice for nothing is a mistake. So it gained an
+`allowZero` option rather than a sibling function — **a second money parser is
+notes §1.3 with the stakes at their highest.**
+
+### 38.5 One write path, and the schema bump that cost
+
+`create_sales_invoice` is one RPC, one transaction, and it computes
+`amount_cents` from the lines it was sent. A header and its lines that disagree
+is a document that lies about itself, and it gets handed to somebody.
+
+An invoice with **no** lines still uses the amount the app sent — that is the
+"record one we already sent" path, which predates line items and still works.
+One branch, in one place, is the whole difference between the two shapes.
+
+The alternative was a second mutation key for the new shape, leaving both. That
+is two paths building one record. So: one key, one shape, and
+**`OFFLINE_SCHEMA` went v1 → v2** — which discards anything queued on a phone
+when that build loads. The cost was paid knowingly and is written into
+`lib/offline/keys.ts`: deploy it when nobody is mid-entry somewhere without
+signal.
+
+### 38.6 Numbering counts upward forever
+
+`set_sales_invoice_number` is the race-free counter `set_internal_ref` has used
+since migration 002 — one `insert ... on conflict do update ... returning`,
+resolved under Postgres' own row lock, with a unique index as the backstop.
+
+Different in one way that matters: this counter is per business and **not per
+day**. An internal ref is a label; a number a customer quotes back at you
+should count upward forever, not restart every morning.
+
+A number typed by hand is left alone, and §7 of the file sets the counter once
+if Deli has been invoicing on paper and wants the app to carry on from 119.
+
+### 38.7 The page prints itself
+
+The client's word was "export", and on a phone the answer is the browser's own
+print dialog: AirPrint on iOS, Save as PDF everywhere. No PDF library — rule 7,
+and this one would replace something every device already has and does better.
+
+**The chrome is marked and removed; the document is not rebuilt.** Two copies
+of one invoice in a file drift, and the one that drifts is the one nobody looks
+at on screen.
+
+### 38.8 The bug that only existed on paper
+
+The print rules first targeted `header[data-app-header]` — an attribute nothing
+in this app has. So the hamburger, the back link and the header icons printed
+across the top of every invoice, and **nothing on screen could have shown it**,
+because the rule only exists in `@media print`.
+
+Found by lifting the print rules out of their media query in a browser and
+looking at what was left. The fix puts `no-print` on the element itself rather
+than a selector guessing at it, and `test/unit/sales-invoice.test.tsx` now
+asserts the header carries it — the only kind of check that catches a rule
+which is invisible until it is on paper.
+
+### 38.9 Where it stands
+
+- **Tests: 689**, up from 651, under all three timezones. `tsc` and
+  `next build` clean.
+- **`CATCH_UP_015.sql` has not been run.** Like 013, the app half is inert
+  without it and worse than inert: `create_sales_invoice` does not exist, so
+  recording ANY sales invoice — including the old flat path — fails until it
+  is applied. **Database first, then deploy.**
+- **`test/preview-sales.test.tsx`** renders the document and the composer to
+  standalone HTML. The document cannot otherwise be seen without a customer,
+  products and an issued invoice.
+- **Not built:** a global list of issued invoices. They are reachable from each
+  customer, which is where somebody looks for one. Worth adding when there are
+  enough of them that a customer is the wrong index.

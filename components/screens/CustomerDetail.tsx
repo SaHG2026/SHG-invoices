@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
@@ -169,6 +170,18 @@ export function CustomerDetail({ id }: { id: string }) {
         ) : null}
       </section>
 
+      {/*
+        The way in to building one. It sits under "Owes us" because that is the
+        figure it changes, and the flow the client described starts here:
+        choose who it is for, then the products, then print.
+      */}
+      <Link
+        href={'/sales/new' as Route}
+        className="touch mb-4 flex items-center justify-center rounded-sm border border-action bg-action-bg text-sm text-action"
+      >
+        + New invoice for this customer
+      </Link>
+
       {outstanding.length > 0 ? (
         <section className="mb-4">
           <h2 className="text-h2 mb-2 text-ink">Outstanding</h2>
@@ -181,9 +194,15 @@ export function CustomerDetail({ id }: { id: string }) {
                   className="flex h-row items-center gap-3 border-b border-hairline px-3 last:border-b-0"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-ink">
+                    {/* The number is the link, because the number is what a
+                        customer quotes back and what the document is headed
+                        with. */}
+                    <Link
+                      href={`/sales/${row.id}/print` as Route}
+                      className="block truncate text-sm text-action underline-offset-2 hover:underline"
+                    >
                       {row.invoice_number ? `#${row.invoice_number}` : 'No invoice number'}
-                    </span>
+                    </Link>
                     <span className="figure-date block truncate text-xs text-muted">
                       Sent {formatDay(row.invoice_date)}
                     </span>

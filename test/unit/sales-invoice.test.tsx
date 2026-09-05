@@ -1,0 +1,411 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ToastProvider } from '@/components/ui/Toast';
+import { BUSINESSES, FIXTURE_TODAY, PROFILES } from '../fixtures/invoices';
+import { formatCents } from '@/lib/money';
+import { lineTotalCents, parseQuantityToMilli } from '@/lib/quantity';
+import type { Customer, Product, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
+
+/**
+ * Deli composes an invoice, and prints it.
+ *
+ * ---------------------------------------------------------------------------
+ * What these are actually guarding
+ *
+ * A number that goes on a piece of paper handed to a customer. Everywhere else
+ * in this app a wrong figure is a wrong screen somebody can refresh; here it is
+ * a document in somebody else's hands that disagrees with your copy.
+ *
+ * So: the running total is the sum of the lines rendered beside it, the payload
+ * sent is exactly what was typed, the price is COPIED off the product rather
+ * than linked to it, and the document prints itself rather than being rebuilt
+ * into a second hidden copy that could drift.
+ * ---------------------------------------------------------------------------
+ */
+
+const deli = BUSINESSES.find((b) => b.code === 'DDL')!;
+
+const CUSTOMERS: Customer[] = [
+  {
+    id: 'c-1',
+    name: 'Harris Farm Markets',
+    contact_name: 'Jo',
+    contact_phone: '02 9000 0000',
+    contact_email: 'jo@example.com',
+    notes: null,
+    active: true,
+  },
+];
+
+const PRODUCTS: Product[] = [
+  { id: 'p-1', business_id: deli.id, name: 'Momo (pork)', unit: 'box', unit_price_cents: 2_500, active: true },
+  { id: 'p-2', business_id: deli.id, name: 'Achar', unit: 'jar', unit_price_cents: 899, active: true },
+];
+
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  push: vi.fn(),
+  detail: { current: null as unknown },
+}));
+
+vi.mock('@/lib/queries/session', () => ({
+  useCurrentProfile: () => ({ data: PROFILES[0], isLoading: false, isError: false }),
+  useProfiles: () => ({ data: PROFILES }),
+  useTeam: () => ({ data: PROFILES }),
+  useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateReminderTime: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/reference', () => ({
+  useBusinesses: () => ({ data: BUSINESSES }),
+  useSuppliers: () => ({ data: [] }),
+  useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/customers', () => ({
+  useCustomers: () => ({ data: CUSTOMERS }),
+  useAllCustomers: () => ({ data: CUSTOMERS, isLoading: false, isError: false }),
+  useCreateCustomer: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateCustomer: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/products', () => ({
+  useProducts: () => ({ data: PRODUCTS, isLoading: false }),
+  useAllProducts: () => ({ data: PRODUCTS, isLoading: false }),
+  useCreateProduct: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateProduct: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/sales', () => ({
+  useCreateSalesInvoice: () => ({ mutateAsync: mocks.create, mutate: mocks.create, isPending: false }),
+  useSalesInvoice: () => ({ data: mocks.detail.current, isLoading: false, isError: false }),
+  useOutstandingSales: () => ({ data: [] }),
+  useCustomerSales: () => ({ data: [] }),
+  useMarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUnmarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/detail', () => ({
+  useRecentActivity: () => ({ data: [] }),
+  useInvoice: () => ({ data: null, isLoading: false }),
+  useInvoiceActivity: () => ({ data: [] }),
+  useInvoiceNotes: () => ({ data: [] }),
+  useAddNote: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/review', () => ({
+  useAwaitingReview: () => ({ data: [], isLoading: false }),
+  useReviewNotes: () => ({ data: {} }),
+  useApproveInvoices: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReassignSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/lib/queries/invoices', () => ({
+  useUnpaidInvoices: () => ({ data: [], isLoading: false }),
+  useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  findDuplicates: vi.fn(),
+}));
+
+vi.mock('@/lib/queries/payments', () => ({
+  useMarkPaid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUnmarkPaid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => FIXTURE_TODAY }));
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/sales/new',
+  useRouter: () => ({ push: mocks.push, replace: vi.fn() }),
+}));
+
+const { ComposeSalesInvoice } = await import('@/components/screens/ComposeSalesInvoice');
+const { SalesInvoiceDocument } = await import('@/components/screens/SalesInvoiceDocument');
+
+function compose() {
+  return render(
+    <ToastProvider>
+      <ComposeSalesInvoice />
+    </ToastProvider>,
+  );
+}
+
+function document_(id = 'si-1') {
+  return render(
+    <ToastProvider>
+      <SalesInvoiceDocument id={id} />
+    </ToastProvider>,
+  );
+}
+
+/** The sticky footer figure. */
+function runningTotal(): string {
+  const footer = window.document.querySelector('.fixed.inset-x-0.bottom-0')!;
+  return within(footer as HTMLElement).getByText(/^\$/).textContent!;
+}
+
+function fillLine(index: number, description: string, quantity: string, price: string) {
+  fireEvent.change(screen.getByLabelText(`Description for line ${index}`), {
+    target: { value: description },
+  });
+  fireEvent.change(screen.getByLabelText(`Quantity for line ${index}`), {
+    target: { value: quantity },
+  });
+  fireEvent.change(screen.getByLabelText(`Price for line ${index}`), { target: { value: price } });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  mocks.create.mockResolvedValue({ id: 'si-1', invoice_number: 'DDL-0001' });
+  mocks.detail.current = null;
+});
+
+describe('the running total', () => {
+  it('is the sum of the lines beside it', () => {
+    compose();
+    fillLine(1, 'Momo (pork)', '3', '25.00');
+    expect(runningTotal()).toBe(formatCents(7_500));
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add another line' }));
+    fillLine(2, 'Achar', '2', '8.99');
+    expect(runningTotal()).toBe(formatCents(7_500 + 1_798));
+  });
+
+  it('agrees with lineTotalCents on a fractional quantity', () => {
+    compose();
+    fillLine(1, 'Sausage', '1.5', '12.40');
+    const expected = lineTotalCents(parseQuantityToMilli('1.5')!, 1_240)!;
+    expect(runningTotal()).toBe(formatCents(expected));
+  });
+
+  it('ignores a half-typed line rather than counting it as nothing', () => {
+    // A row somebody is still working on is not a line worth zero. Counting it
+    // would make the total flicker downward as they type.
+    compose();
+    fillLine(1, 'Momo (pork)', '3', '25.00');
+    fireEvent.click(screen.getByRole('button', { name: '+ Add another line' }));
+    fireEvent.change(screen.getByLabelText('Description for line 2'), { target: { value: 'Ach' } });
+
+    expect(runningTotal()).toBe(formatCents(7_500));
+    // Split across text nodes by the plural, so read the footer itself.
+    const footer = window.document.querySelector('.fixed.inset-x-0.bottom-0')!;
+    expect(footer.textContent).toContain('1 line');
+  });
+
+  it('is zero, not NaN, before anything is typed', () => {
+    compose();
+    expect(runningTotal()).toBe(formatCents(0));
+  });
+});
+
+describe('picking a product', () => {
+  it('copies the name, unit and price onto the line', () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Product for line 1'), { target: { value: 'p-1' } });
+
+    expect((screen.getByLabelText('Description for line 1') as HTMLInputElement).value).toBe(
+      'Momo (pork)',
+    );
+    expect((screen.getByLabelText('Unit for line 1') as HTMLInputElement).value).toBe('box');
+    expect((screen.getByLabelText('Price for line 1') as HTMLInputElement).value).toBe('25.00');
+  });
+
+  it('sends the copied price, not a reference to the product', async () => {
+    /*
+     * The whole design of the line table. A price looked up at print time
+     * means an invoice already handed over reprints at next month's price —
+     * a piece of paper that stops agreeing with your copy of it.
+     */
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.change(screen.getByLabelText('Product for line 1'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('Quantity for line 1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    const input = mocks.create.mock.calls[0]![0];
+    expect(input.lines).toHaveLength(1);
+    expect(input.lines[0]).toMatchObject({
+      product_id: 'p-1',
+      description: 'Momo (pork)',
+      unit: 'box',
+      quantity_milli: 2_000,
+      unit_price_cents: 2_500,
+    });
+  });
+});
+
+describe('saving', () => {
+  it('refuses without a customer, and writes nothing', async () => {
+    compose();
+    fillLine(1, 'Momo', '1', '25.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/who this invoice is for/);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses with no complete line, and writes nothing', async () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at least one line/);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('lets the database number it', async () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fillLine(1, 'Momo', '1', '25.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    // Null, so `set_sales_invoice_number` stamps DDL-0001 race-free. A number
+    // invented here is a number two people composing at once could both pick.
+    expect(mocks.create.mock.calls[0]![0].invoice_number).toBeNull();
+  });
+
+  it('goes to the document once it has one', async () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fillLine(1, 'Momo', '1', '25.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.push).toHaveBeenCalled());
+    expect(mocks.push.mock.calls[0]![0]).toMatch(/\/sales\/.+\/print$/);
+  });
+});
+
+describe('the printed document', () => {
+  const LINES: SalesInvoiceLine[] = [
+    {
+      id: 'l-1',
+      sales_invoice_id: 'si-1',
+      position: 0,
+      product_id: 'p-1',
+      description: 'Momo (pork)',
+      unit: 'box',
+      quantity_milli: 3_000,
+      unit_price_cents: 2_500,
+      line_total_cents: 7_500,
+    },
+    {
+      id: 'l-2',
+      sales_invoice_id: 'si-1',
+      position: 1,
+      product_id: 'p-2',
+      description: 'Achar',
+      unit: 'jar',
+      quantity_milli: 1_500,
+      unit_price_cents: 899,
+      line_total_cents: 1_349,
+    },
+  ];
+
+  const INVOICE: SalesInvoiceRow = {
+    id: 'si-1',
+    business_id: deli.id,
+    customer_id: 'c-1',
+    invoice_number: 'DDL-0001',
+    invoice_date: '2026-09-05',
+    due_date: '2026-09-19',
+    amount_cents: 8_849,
+    status: 'outstanding',
+    received_at: null,
+    received_by: null,
+    payment_ref: null,
+    void_reason: null,
+    note: null,
+    created_by: PROFILES[0]!.id,
+    created_at: '2026-09-05T00:00:00Z',
+    updated_at: '2026-09-05T00:00:00Z',
+    customer: { id: 'c-1', name: 'Harris Farm Markets' },
+  };
+
+  beforeEach(() => {
+    mocks.detail.current = { invoice: INVOICE, lines: LINES };
+  });
+
+  it('shows every line, in the order the database stored them', () => {
+    document_();
+    const rows = window.document.querySelectorAll('.print-sheet tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('Momo (pork)');
+    expect(rows[1]!.textContent).toContain('Achar');
+  });
+
+  it('shows a quantity as a quantity, not padded like money', () => {
+    document_();
+    // "1.5 jar", never "1.500". Money always shows two places; a quantity
+    // shows what it is, or it claims a precision the docket did not.
+    expect(screen.getByText('1.5 jar')).toBeInTheDocument();
+    expect(screen.getByText('3 box')).toBeInTheDocument();
+  });
+
+  it('totals what the lines add up to', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    expect(sheet.getByText(formatCents(7_500 + 1_349))).toBeInTheDocument();
+    expect(INVOICE.amount_cents).toBe(7_500 + 1_349);
+  });
+
+  it('carries the number, both dates and who it is for', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    expect(sheet.getByText('DDL-0001')).toBeInTheDocument();
+    expect(sheet.getByText('Harris Farm Markets')).toBeInTheDocument();
+    expect(sheet.getByText(/5 Sep 2026/)).toBeInTheDocument();
+    expect(sheet.getByText(/19 Sep 2026/)).toBeInTheDocument();
+  });
+
+  it('is one document, not a screen copy and a print copy', () => {
+    // Two copies of one invoice in a file drift, and the one that drifts is
+    // the one nobody looks at on screen. There is exactly one .print-sheet.
+    document_();
+    expect(window.document.querySelectorAll('.print-sheet')).toHaveLength(1);
+  });
+
+  it('marks the chrome as chrome so the stylesheet can take it away', () => {
+    document_();
+    const printButton = screen.getByRole('button', { name: 'Print' });
+    expect(printButton.closest('.no-print')).not.toBeNull();
+  });
+
+  it('marks the app header too', () => {
+    /*
+     * Found in a browser and not by any assertion, because the rule only
+     * exists on paper: the print stylesheet first targeted
+     * `header[data-app-header]`, which matches nothing here, so the hamburger
+     * and the icons printed across the top of every invoice.
+     *
+     * The class is on the element now rather than a selector guessing at it,
+     * and this is what stops that quietly coming back.
+     */
+    document_();
+    const header = window.document.querySelector('header');
+    expect(header).not.toBeNull();
+    expect(header!.className).toContain('no-print');
+  });
+
+  it('says so rather than printing an empty table for an invoice with no lines', () => {
+    mocks.detail.current = { invoice: INVOICE, lines: [] };
+    document_();
+    expect(screen.getByText('Recorded without a breakdown')).toBeInTheDocument();
+    expect(
+      within(window.document.querySelector('.print-sheet') as HTMLElement).getAllByText(
+        formatCents(INVOICE.amount_cents),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('renders nothing broken — notes §6', () => {
+    const { container } = document_();
+    const text = container.textContent ?? '';
+    for (const token of ['undefined', 'NaN', '[object Object]', 'Invalid Date']) {
+      expect(text).not.toContain(token);
+    }
+  });
+});

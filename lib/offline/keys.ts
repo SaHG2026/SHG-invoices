@@ -58,6 +58,10 @@ export const mk = {
     create: ['customers', 'create'] as const,
     update: ['customers', 'update'] as const,
   },
+  products: {
+    create: ['products', 'create'] as const,
+    update: ['products', 'update'] as const,
+  },
   sales: {
     create: ['sales', 'create'] as const,
     markReceived: ['sales', 'mark-received'] as const,
@@ -102,8 +106,25 @@ export const mk = {
  *
  * Leave it alone for changes that do not touch what a mutation is *called
  * with*. Adding a screen, changing a total, repainting: none of those.
+ *
+ * ---------------------------------------------------------------------------
+ * v1 -> v2, when Deli's invoices grew line items.
+ *
+ * `sales.create` stopped taking a flat row and started taking a header plus
+ * its lines, because the total is now computed by the database from the lines
+ * (CATCH_UP_015 §4) — a header and its lines that disagree is a document that
+ * lies about itself, and it gets handed to a customer.
+ *
+ * The alternative was a second key for the new shape, leaving both. That is
+ * two paths that build one record, which is notes §1.3 exactly: "one of them
+ * wrong, and it looked like it saved." So one key, one shape, and the bump.
+ *
+ * The cost was paid knowingly: anything queued on a phone at the moment this
+ * build loads is discarded. Deploy it when nobody is mid-entry somewhere with
+ * no signal.
+ * ---------------------------------------------------------------------------
  */
-export const OFFLINE_SCHEMA = 'v1';
+export const OFFLINE_SCHEMA = 'v2';
 
 /** Every key above, flattened — what `register.ts` and the persister check against. */
 export const QUEUEABLE_KEYS: readonly (readonly string[])[] = [
@@ -118,6 +139,8 @@ export const QUEUEABLE_KEYS: readonly (readonly string[])[] = [
   mk.suppliers.update,
   mk.customers.create,
   mk.customers.update,
+  mk.products.create,
+  mk.products.update,
   mk.sales.create,
   mk.sales.markReceived,
   mk.sales.unmarkReceived,

@@ -21,6 +21,7 @@ export type NavSection =
   | 'review'
   | 'suppliers'
   | 'customers'
+  | 'products'
   | 'history'
   | 'settings';
 
@@ -50,6 +51,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { section: 'review', label: 'Review', href: '/review' as Route },
   { section: 'suppliers', label: 'Suppliers', href: '/suppliers' as Route },
   { section: 'customers', label: 'Customers', href: '/customers' as Route },
+  /* Under Customers, because a price list only means anything on the side
+     of the ledger that sends invoices out. */
+  { section: 'products', label: 'Products', href: '/products' as Route },
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
   { section: 'settings', label: 'Settings', href: '/settings' as Route },
 ] as const;
@@ -70,6 +74,9 @@ export function activeSection(pathname: string): NavSection | null {
   if (path === '/' || path.startsWith('/b/') || path.startsWith('/invoices/')) return 'invoices';
   if (path.startsWith('/suppliers')) return 'suppliers';
   if (path.startsWith('/customers')) return 'customers';
+  if (path.startsWith('/products')) return 'products';
+  // Composing and printing both belong to the customer side of the ledger.
+  if (path.startsWith('/sales')) return 'customers';
   if (path.startsWith('/settings')) return 'settings';
   return null;
 }

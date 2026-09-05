@@ -68,6 +68,10 @@ read it before concluding anything looks wrong.
 | §32 | Signing out no longer discards unsent work |
 | §33 | **Handover** — the audit findings accepted, and what is next |
 | §34 | **Venue staff accounts** — the day `role` became a permission |
+| §35 | **Round A** — the figures on Home became controls; edit/remove found |
+| §36 | **Round B** — a shop's invoice waits to be approved |
+| §37 | **Round C** — a daily reminder at a time each person chooses |
+| §38 | **Round D** — Deli issues an invoice it can print |
 
 **Phase 7 is built, deployed and switched on** — the offline write queue, the
 service worker, error boundaries, the 200-row pass, and push all the way
@@ -122,7 +126,7 @@ allowlist or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 579 tests
+npx vitest run       # 689 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -266,6 +270,32 @@ with `within()`.
 **Nothing is blocking. The app is live and in daily use.** Everything below
 is either waiting on real usage or waiting on the client.
 
+### The two things that are built and not proven
+
+Read these before concluding anything works end to end.
+
+**1. Push has never delivered a notification to a phone.** Not once, and it is
+not a fault — `db/diagnose_push.sql` established the whole chain is correctly
+configured. The cause is that **nobody eligible has subscribed**: exactly one
+device is subscribed and it is the builder's, who is out of both notification
+audiences by design (§28.2). Mani, Milan and Sujan have never turned the switch
+on, because §28.4 decided the app never asks. Somebody has to tell them it is in
+Settings.
+
+The daily reminder (§37) is the first mechanism that can be proven alone,
+because it is addressed to one person rather than to an audience and therefore
+does reach the builder. §7 of `CATCH_UP_014.sql` sets a time, clears the stamp
+and calls the function by hand — two minutes, and it is the only way anybody
+will find out whether push works before it matters.
+
+**2. `db/verify_staff.mjs` has not been re-run since the venue accounts
+shipped.** Round B (§36) moved the staff surface three ways: the supplier
+insert policy was dropped, two `invoice_notes` policies were added, and
+`pin_invoice_facts` gained two lines. The `staff_invoices` view itself is
+untouched, so the boundary is very likely intact — but "very likely" is what
+§34.11 refused to accept about this exact file, and it was right to. It needs
+`STAFF_EMAIL` / `STAFF_PASSWORD` in `.env.local`, and removing them after.
+
 ### Done, so nobody re-derives them
 
 Every database file through `CATCH_UP_009_RESET` has been run. Push is fully
@@ -328,6 +358,14 @@ and not the venue work. The three things to localise — written up in §34.12:
    decides between an hour of CSV and half a day of `.xlsx` plus the first
    dependency added purely for output.
    **After a month of real use**, per spec §11's discipline and his own words.
+
+   Half of it exists already: the supplier date range (§35.4) answers the same
+   question on screen, and deliberately stopped there. What a range answers in
+   front of somebody is worth having before deciding what a file should contain.
+
+2. **A global list of issued invoices.** Deli's invoices are reachable from each
+   customer, which is where somebody looks for one. Worth adding when there are
+   enough that a customer is the wrong index — not before.
 
 ### Small things, whenever
 

@@ -22,6 +22,7 @@ import type { Profile } from '@/lib/types';
 const profile = { ...PROFILES[0]!, notify_on_new_invoice: true } as Profile;
 
 const mocks = vi.hoisted(() => ({
+  updateReminder: vi.fn(),
   /* Who is signed in. Switched per test, so the venue branch can be reached. */
   who: null as unknown,
   updateNotify: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('@/lib/queries/session', () => ({
   useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: mocks.signOut, isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: mocks.updateNotify, isPending: false }),
+  useUpdateReminderTime: () => ({ mutateAsync: mocks.updateReminder, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
@@ -115,6 +117,7 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   mocks.updateNotify.mockResolvedValue(profile);
+  mocks.updateReminder.mockResolvedValue(profile);
   mocks.lock.supported = true;
   mocks.lock.set = false;
 });
@@ -163,6 +166,65 @@ describe('the notification switch', () => {
     open();
     expect(screen.getByLabelText(label)).toBeInTheDocument();
     expect(screen.queryByText(/pays an invoice/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the daily reminder', () => {
+  /*
+   * "An option to send the managements an alert at a time of their choosing,
+   * as a reminder to check today's invoices."
+   *
+   * Null is off and the field is the switch — there is no separate checkbox,
+   * because a time plus an enabled flag is two values describing three states
+   * when two are real, and the pair can disagree.
+   */
+  const field = () => screen.getByLabelText(/Remind me to check/) as HTMLInputElement;
+
+  it('is off, and says so, when no time has been chosen', () => {
+    open();
+    expect(field().value).toBe('');
+    expect(screen.getByText(/Off\. Set a time/)).toBeInTheDocument();
+  });
+
+  it('saves the time as a plain string, never a date', () => {
+    open();
+    fireEvent.change(field(), { target: { value: '08:30' } });
+    expect(mocks.updateReminder).toHaveBeenCalledWith({ id: profile.id, time: '08:30' });
+  });
+
+  it('reads the chosen time back the way the rest of the app writes times', () => {
+    mocks.who = { ...profile, reminder_time: '08:30' };
+    open();
+    expect(field().value).toBe('08:30');
+    expect(screen.getByText(/Every day at 8:30am, Sydney time/)).toBeInTheDocument();
+  });
+
+  it('turns off by clearing the field, with null and not an empty string', () => {
+    // The column means "off" by being null. Sending '' would be a time
+    // Postgres refuses, and the switch would look set and do nothing.
+    mocks.who = { ...profile, reminder_time: '08:30' };
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+    expect(mocks.updateReminder).toHaveBeenCalledWith({ id: profile.id, time: null });
+  });
+
+  it('offers no Turn off when there is nothing to turn off', () => {
+    open();
+    expect(screen.queryByRole('button', { name: 'Turn off' })).not.toBeInTheDocument();
+  });
+
+  it('sends nothing for a value that is not a real time', () => {
+    // A browser reporting '8:5' would otherwise store something nothing reads.
+    open();
+    fireEvent.change(field(), { target: { value: '8:5' } });
+    expect(mocks.updateReminder).not.toHaveBeenCalled();
+  });
+
+  it('says it stays as it was when the write is refused', async () => {
+    mocks.updateReminder.mockRejectedValue(new Error('permission denied'));
+    open();
+    fireEvent.change(field(), { target: { value: '08:30' } });
+    await screen.findByText(/It stays as it was/);
   });
 });
 
@@ -375,6 +437,10 @@ describe('a venue account', () => {
     open();
     expect(screen.queryByText(/Notify me when a new invoice is added/)).not.toBeInTheDocument();
     expect(screen.queryByText('Notifications')).not.toBeInTheDocument();
+    // The reminder lives in that section, so it goes with it — and the loop in
+    // CATCH_UP_014 §3 is an allowlist that excludes staff anyway. Two
+    // mechanisms, neither relying on the other.
+    expect(screen.queryByLabelText(/Remind me to check/)).not.toBeInTheDocument();
   });
 
   it('is described as a shared shop login, not as a person with a job title', () => {

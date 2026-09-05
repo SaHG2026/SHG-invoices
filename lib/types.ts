@@ -7,7 +7,7 @@
  * one source of truth: the database.
  */
 
-import type { DateStr, Timestamp } from './date';
+import type { DateStr, TimeStr, Timestamp } from './date';
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
 
@@ -49,11 +49,25 @@ export interface Profile {
   accent: string;
   role: ProfileRole;
   /**
-   * The one field a person may change about themselves. Enforced by an RLS
+   * One of two fields a person may change about themselves. Enforced by an RLS
    * policy (which row) plus a column-level grant (which field), because RLS
    * alone cannot restrict columns.
    */
   notify_on_new_invoice: boolean;
+  /**
+   * A daily reminder to check today's invoices, at a Sydney wall-clock time.
+   *
+   * Null means off, and there is deliberately no separate enabled flag: a time
+   * plus a boolean is two values describing three states when two are real,
+   * and the pair can disagree. "On, at null o'clock" is a state somebody would
+   * eventually write a branch for.
+   *
+   * In the column grant alongside `notify_on_new_invoice` (CATCH_UP_014 §1).
+   * `reminder_last_sent_on` is not, and is not on this type either — it is the
+   * job's bookkeeping, and a person who could clear it could make the reminder
+   * send again.
+   */
+  reminder_time: TimeStr | null;
   active: boolean;
   /**
    * The venue a `staff` profile belongs to, and null for everybody else.

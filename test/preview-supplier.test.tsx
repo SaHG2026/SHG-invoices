@@ -36,6 +36,7 @@ vi.mock('@/lib/queries/session', () => ({
   useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateReminderTime: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({

@@ -26,7 +26,24 @@ export type DateStr = string;
 /** An instant, as returned by Postgres `timestamptz`. */
 export type Timestamp = string;
 
+/**
+ * A time of day with no date and no timezone: 'HH:MM', 24-hour.
+ *
+ * The same shape as `DateStr` and for the same reason (§3): it is a string,
+ * it is compared as a string, and it is never parsed into a `Date`. A daily
+ * reminder set for 08:30 means half past eight in Sydney, which is a fact
+ * about a wall clock and not about an instant — turning it into a `Date` to
+ * format it would reintroduce exactly the timezone this module exists to keep
+ * out, and would do it on a value nobody would think to test at 23:00.
+ *
+ * Seconds are deliberately absent. Postgres `time` will accept them and the
+ * app never produces or reads them; a value with seconds is a value somebody
+ * put in by hand.
+ */
+export type TimeStr = string;
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -50,6 +67,28 @@ const MONTHS_LONG = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ] as const;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function isTimeStr(value: unknown): value is TimeStr {
+  return typeof value === 'string' && TIME_RE.test(value);
+}
+
+/**
+ * '08:30' -> '8:30am'. Spec §8's register: lower case, no space, no seconds.
+ *
+ * String work, like every formatter here. `Intl` is not reached for even
+ * though it can format a time, because it would need a `Date` to format and
+ * building one from 'HH:MM' means choosing a date — which is the operation
+ * §3 bans outright.
+ */
+export function formatTime(value: TimeStr): string {
+  if (!isTimeStr(value)) return '';
+  const hours = Number(value.slice(0, 2));
+  const minutes = value.slice(3, 5);
+  const suffix = hours < 12 ? 'am' : 'pm';
+  // 0 -> 12am, 12 -> 12pm, 13 -> 1pm.
+  const shown = hours % 12 === 0 ? 12 : hours % 12;
+  return `${shown}:${minutes}${suffix}`;
+}
 
 export function isDateStr(value: unknown): value is DateStr {
   if (typeof value !== 'string' || !DATE_RE.test(value)) return false;

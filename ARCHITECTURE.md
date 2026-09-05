@@ -3075,3 +3075,128 @@ entry time answer all three.
 - **`test/preview-review.test.tsx`** joins the previews. This screen cannot
   otherwise be seen until a shop has entered something nobody has approved,
   which is a state that exists only in production and only briefly.
+
+---
+
+## 37. Round C — a reminder at a time you choose
+
+*"I would love to have an option to send the managements an alert at a time of
+their choosing, as a reminder to check today's invoices."*
+
+Separate from per-invoice push, and it does not replace it —
+`notify_on_new_invoice` already exists per person in Settings, so anybody who
+wants to stop hearing about every addition can turn that off with or without
+this.
+
+### 37.1 The uncomfortable part, which is not a bug
+
+**This sends nothing to anybody until somebody turns push on for their own
+phone.** `db/diagnose_push.sql` established that the whole chain is correctly
+configured and that exactly one device is subscribed — Rabindra's — and the
+builder is out of both notification audiences by design (§28.2). So the
+per-invoice push has never had anybody to tell, and that is the decision
+working, not a fault.
+
+A reminder is different in one way that helps: it is addressed to **one person**
+rather than to an audience, so `notify_push_one` does reach the builder and can
+be tested end to end today. For Mani, Milan and Sujan the switch in Settings is
+still what has to happen, and §28.4's decision is that the app never asks.
+Somebody has to tell them it is there.
+
+### 37.2 Null is off, and there is no second flag
+
+`profiles.reminder_time` alone decides both when and whether. A time plus an
+`enabled` boolean is two values describing three states when two are real, and
+the pair can disagree — "on, at null o'clock" is a state somebody eventually
+writes a branch for. §19's pattern at its smallest scale.
+
+`reminder_last_sent_on` sits beside it and is a different kind of thing: it is
+the job's bookkeeping, and it is what makes a cron running every ten minutes
+send one reminder rather than eighty. It is deliberately **not** in the column
+grant and not on the `Profile` type — a person who could clear it could make
+the reminder send again.
+
+`reminder_time` **is** in the grant, alongside `notify_on_new_invoice`, and both
+are named in one statement. `grant update (a)` then `grant update (b)` is
+additive, but two statements a year apart is how somebody concludes the second
+replaced the first and tidies it away.
+
+### 37.3 `TimeStr`, and why it is a string
+
+A time of day is a **wall clock, not an instant**. Half past eight in Sydney is
+half past eight regardless of what machine is asking, which is exactly what a
+`Date` takes away — and takes away silently, on a value nobody thinks to test
+at 23:00. So `TimeStr` is `'HH:MM'`, compared as a string, never parsed, the
+same shape `DateStr` has had since §3.
+
+`formatTime` does the 12-hour conversion by arithmetic rather than reaching for
+`Intl`, because `Intl` would need a `Date` to format and building one from
+`'HH:MM'` means choosing a date — the operation §3 bans outright. Its tests run
+under all three timezones like everything else, which is the point: if it ever
+reaches for a `Date`, one of the three fails.
+
+Seconds are deliberately absent. Postgres `time` accepts them and the app never
+produces or reads them; a value with seconds is one somebody put in by hand.
+
+### 37.4 One person, not an audience
+
+`notify_push` picks its targets from a view and excludes the actor, which is
+right for "somebody added an invoice" and wrong for every part of this — a
+reminder has no actor and exactly one recipient. Bending the audience views
+into that shape would give the codebase a view that is sometimes an audience
+and sometimes a person.
+
+So `notify_push_one` reads `push_subscriptions` directly, and per-person
+targeting is true by construction rather than by a `WHERE` clause somebody
+could widen.
+
+### 37.5 It sends every day, whether or not anything happened
+
+A reminder that appears only when there is news is an **alert**, which is a
+different thing and not what was asked for. "Nothing logged today" is
+information: it is how you find out a shop forgot, which is the one case a
+notification about new invoices can never tell you about.
+
+The body carries the three figures the dashboard answers, in the order they
+matter at the end of a day — what came in, what is waiting on you, what is
+already late:
+
+> **Today's invoices** — 4 logged today · 2 to review · 5 overdue
+
+### 37.6 Staff are excluded by an allowlist, again
+
+The loop selects `role in ('member', 'owner', 'builder')`. Written that way for
+the reason CATCH_UP_010 §6 gives in full: three blocklists spelled
+`role <> 'builder'` would each have silently admitted the venue accounts on the
+day they were created. Nobody would have written that bug; it would simply have
+happened.
+
+The builder **is** included, and that is not an inconsistency with §28.2. He is
+out of the two audiences, which are about being told what other people did. A
+reminder is a personal alarm somebody set for themselves.
+
+Two independent mechanisms keep it away from the shops: that allowlist, and the
+fact that Settings hides the whole Notifications section from a venue account.
+Neither relies on the other.
+
+### 37.7 Every ten minutes
+
+Finer than the minute the app offers would buy nothing; being up to ten minutes
+late on a reminder to check the day's invoices costs nothing that six times the
+scans would recover. The three counts are computed once per run rather than once
+per person — four people is four identical scans otherwise.
+
+`pg_cron` has to be enabled in the dashboard, and the schedule is the **last**
+section of the file for that reason: everything above it applies first, so an
+unenabled extension costs a second run rather than the whole paste.
+
+### 37.8 Where it stands
+
+- **Tests: 651**, up from 639, under all three timezones. `tsc` and
+  `next build` clean.
+- **`CATCH_UP_014.sql` has not been run**, and needs `pg_cron` enabled first.
+  Unlike 013 it is safe in either order with the deploy: the app only ever
+  reads and writes `reminder_time`, so before the file the field simply fails
+  to save, and after the file with no deploy nothing has set a time.
+- **§7 of the file** sets a time, clears the stamp and calls the function by
+  hand, so it can be proven without waiting for tomorrow.

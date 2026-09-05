@@ -11,7 +11,13 @@ import { useIsOnline, useQueuedWriteCount } from '@/lib/offline/pending';
 import { useQueryClient } from '@tanstack/react-query';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
-import { useCurrentProfile, useSignOut, useUpdateNotifyPreference } from '@/lib/queries/session';
+import {
+  useCurrentProfile,
+  useSignOut,
+  useUpdateNotifyPreference,
+  useUpdateReminderTime,
+} from '@/lib/queries/session';
+import { formatTime, isTimeStr } from '@/lib/date';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
 import { isStaff, STAFF_HOME } from '@/lib/staff';
 import { PIN_LENGTH } from '@/lib/constants';
@@ -46,6 +52,7 @@ export function SettingsScreen() {
   const { data: profile } = useCurrentProfile();
   const signOut = useSignOut();
   const updateNotify = useUpdateNotifyPreference();
+  const updateReminder = useUpdateReminderTime();
 
   // What is still waiting to send, and whether it could. Both are live, so the
   // sign-out question below answers itself when the signal comes back.
@@ -76,6 +83,35 @@ export function SettingsScreen() {
         <p className="mt-2 text-sm text-muted">Loading…</p>
       </AppChrome>
     );
+  }
+
+  /**
+   * The daily reminder, set to a time or turned off.
+   *
+   * Null is off, and the field is the switch — there is no separate checkbox,
+   * because a time and an enabled flag are two values describing three states
+   * when two are real, and they can disagree.
+   *
+   * An empty `<input type="time">` reports `''`, which is exactly the "off"
+   * the column wants, so the two agree without a translation step. Anything
+   * else that is not a real 'HH:MM' is refused rather than sent — a browser
+   * that produced '8:5' would otherwise store a time nothing can read back.
+   */
+  async function setReminder(raw: string) {
+    if (!profile) return;
+    const value = raw === '' ? null : raw;
+    if (value !== null && !isTimeStr(value)) return;
+
+    try {
+      await updateReminder.mutateAsync({ id: profile.id, time: value });
+      toast.show(
+        value === null
+          ? 'Daily reminder off.'
+          : `Reminder set for ${formatTime(value)}, every day.`,
+      );
+    } catch {
+      toast.show('Couldn’t save that. It stays as it was.', 'problem');
+    }
   }
 
   async function toggleNotify(notify: boolean) {
@@ -169,6 +205,54 @@ export function SettingsScreen() {
           />
           <span>Notify me when a new invoice is added</span>
         </label>
+
+        {/*
+          The reminder. Asked for after real use: "an option to send the
+          managements an alert at a time of their choosing, as a reminder to
+          check today's invoices."
+
+          Under the per-invoice switch and above the per-device one, which is
+          the order the three of them read: whether I am told about other
+          people's work, when I am reminded about my own, and which of my
+          phones rings. All three are one person's own settings.
+
+          It sends every day whether or not anything happened — a reminder that
+          appears only when there is news is an alert, and "nothing logged
+          today" is how you find out a shop forgot.
+        */}
+        <div className="mt-4 border-t border-hairline pt-4">
+          <label
+            className="mb-1 block text-sm text-ink"
+            htmlFor="reminder-time"
+          >
+            Remind me to check the day’s invoices
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="reminder-time"
+              type="time"
+              value={profile.reminder_time ?? ''}
+              disabled={updateReminder.isPending}
+              onChange={(event) => void setReminder(event.target.value)}
+              className="figure-date touch rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action disabled:opacity-50"
+            />
+            {profile.reminder_time ? (
+              <button
+                type="button"
+                onClick={() => void setReminder('')}
+                disabled={updateReminder.isPending}
+                className="touch rounded-full border border-hairline px-3 text-sm text-muted disabled:opacity-50"
+              >
+                Turn off
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            {profile.reminder_time
+              ? `Every day at ${formatTime(profile.reminder_time)}, Sydney time.`
+              : 'Off. Set a time and you’ll get one notification a day.'}
+          </p>
+        </div>
 
         <PushSwitch profileId={profile.id} />
       </section>

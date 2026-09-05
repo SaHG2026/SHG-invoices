@@ -17,6 +17,7 @@ const profile: Profile = {
   accent: '#12384B',
   role: 'owner',
   notify_on_new_invoice: true,
+  reminder_time: null,
   active: true,
   business_id: null,
 };

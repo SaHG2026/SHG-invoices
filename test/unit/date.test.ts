@@ -6,7 +6,9 @@ import {
   formatDateTime,
   formatDay,
   formatDayWithYear,
+  formatTime,
   isDateStr,
+  isTimeStr,
   msUntilSydneyMidnight,
   sydneyDateOf,
   sydneyToday,
@@ -164,5 +166,49 @@ describe('msUntilSydneyMidnight', () => {
       expect(ms).toBeGreaterThan(0);
       expect(ms).toBeLessThanOrEqual(24 * 3_600_000);
     }
+  });
+});
+
+describe('times of day — the reminder', () => {
+  /**
+   * A `TimeStr` is a wall clock, not an instant, and that is the whole reason
+   * it is a string. Half past eight in Sydney is half past eight whatever the
+   * machine running this thinks the date is — which is exactly what a `Date`
+   * would take away, and would take away silently, on a value nobody thinks
+   * to test at 23:00.
+   *
+   * These run under all three timezones like everything else here, which is
+   * the point: if `formatTime` ever reaches for a `Date`, one of the three
+   * fails.
+   */
+  it('accepts every real minute of the day', () => {
+    for (const value of ['00:00', '08:30', '12:00', '13:05', '23:59']) {
+      expect(isTimeStr(value)).toBe(true);
+    }
+  });
+
+  it('refuses everything that is not one', () => {
+    for (const value of ['24:00', '8:30', '08:60', '0830', '08:30:00', '', 'noon', null, 830]) {
+      expect(isTimeStr(value)).toBe(false);
+    }
+  });
+
+  it('reads back the way spec §8 writes everything else', () => {
+    expect(formatTime('08:30')).toBe('8:30am');
+    expect(formatTime('13:05')).toBe('1:05pm');
+    expect(formatTime('23:59')).toBe('11:59pm');
+  });
+
+  it('gets both ends of the clock right', () => {
+    // The two every 12-hour formatter written from scratch gets wrong.
+    expect(formatTime('00:00')).toBe('12:00am');
+    expect(formatTime('12:00')).toBe('12:00pm');
+    expect(formatTime('00:30')).toBe('12:30am');
+    expect(formatTime('12:30')).toBe('12:30pm');
+  });
+
+  it('says nothing rather than something wrong for a value it cannot read', () => {
+    expect(formatTime('nonsense')).toBe('');
+    expect(formatTime('')).toBe('');
   });
 });

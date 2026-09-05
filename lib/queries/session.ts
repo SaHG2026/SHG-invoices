@@ -7,6 +7,7 @@ import { clearAllLockState } from '@/lib/pin';
 import { clearRecentlyPaid } from '@/lib/recently-paid';
 import { runsTheBusinesses } from '@/lib/staff';
 import { qk } from './keys';
+import type { TimeStr } from '@/lib/date';
 import type { Profile } from '@/lib/types';
 
 /**
@@ -33,7 +34,7 @@ export function useCurrentProfile() {
 
       const { data, error } = await client
         .from('profiles')
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
+        .select(PROFILE_COLUMNS)
         .eq('id', user.id)
         .maybeSingle();
 
@@ -53,7 +54,7 @@ export function useProfiles() {
     queryFn: async (): Promise<Profile[]> => {
       const { data, error } = await supabase()
         .from('profiles')
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
+        .select(PROFILE_COLUMNS)
         .eq('active', true)
         .order('display_name');
 
@@ -97,6 +98,18 @@ export function useTeam() {
 }
 
 /**
+ * Every column of a profile the app reads, in one place.
+ *
+ * Four call sites used to spell this list out. Adding `reminder_time` to three
+ * of them and missing the fourth would have produced a profile whose reminder
+ * silently reset to off whenever that particular query was the one that
+ * refreshed the cache — a bug that appears only after a specific navigation
+ * and looks like the setting "not saving".
+ */
+const PROFILE_COLUMNS =
+  'id, display_name, initials, accent, role, notify_on_new_invoice, reminder_time, active, business_id';
+
+/**
  * The one field a person may change about themselves.
  *
  * ARCHITECTURE §8.1: two mechanisms in migration 007 enforce that, because
@@ -118,7 +131,7 @@ export function useUpdateNotifyPreference() {
         .from('profiles')
         .update({ notify_on_new_invoice: notify })
         .eq('id', id)
-        .select('id, display_name, initials, accent, role, notify_on_new_invoice, active, business_id')
+        .select(PROFILE_COLUMNS)
         .single();
 
       if (error) throw error;
@@ -167,6 +180,48 @@ export function useSignOut() {
       // A full navigation rather than a client-side push: it discards every
       // scrap of in-memory state, which is what signing out should mean.
       window.location.href = '/login';
+    },
+  });
+}
+
+/**
+ * When this person wants their daily nudge, or null for not at all.
+ *
+ * The second field in the column grant (CATCH_UP_014 §1), and the same two
+ * mechanisms guard it as guard the notify switch: the `self_update` policy
+ * decides which row, the grant decides which field.
+ *
+ * The value is a plain 'HH:MM' string all the way to Postgres, which accepts
+ * it as a `time`. It is never turned into a `Date` — §3, and the reason
+ * `TimeStr` exists: half past eight in Sydney is a fact about a wall clock,
+ * and a `Date` would make it a fact about an instant.
+ */
+export function useUpdateReminderTime() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      time,
+    }: {
+      id: string;
+      time: TimeStr | null;
+    }): Promise<Profile> => {
+      const { data, error } = await supabase()
+        .from('profiles')
+        .update({ reminder_time: time })
+        .eq('id', id)
+        .select(PROFILE_COLUMNS)
+        .single();
+
+      if (error) throw error;
+      return data as Profile;
+    },
+    onSuccess: (profile) => {
+      queryClient.setQueryData<Profile | null>(qk.profiles.me, profile);
+      queryClient.setQueryData<Profile[]>(qk.profiles.all, (current) =>
+        (current ?? []).map((existing) => (existing.id === profile.id ? profile : existing)),
+      );
     },
   });
 }

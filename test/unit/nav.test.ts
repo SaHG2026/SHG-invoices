@@ -203,3 +203,13 @@ describe('composing an invoice for a customer', () => {
     expect(activeSection('/sales/abc-123/print')).toBe('customers');
   });
 });
+
+describe('receivables', () => {
+  it('lights its own row', () => {
+    expect(activeSection('/receivables')).toBe('receivables');
+  });
+
+  it('is in the menu', () => {
+    expect(NAV_ITEMS.map((item) => item.section)).toContain('receivables');
+  });
+});

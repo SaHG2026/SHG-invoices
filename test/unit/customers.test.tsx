@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, makeInvoices } from '../fixtures/invoices';
 import { filterCustomers, orderCustomers } from '@/lib/derive/customer-match';
@@ -181,12 +182,27 @@ vi.mock('@/lib/queries/sales', () => ({
     isPending: false,
   }),
   useUnmarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  /* The expandable row fetches its own lines, and only once opened. */
+  useSalesInvoice: (id: string) => ({
+    data: id === '' ? undefined : { invoice: SALES.find((row) => row.id === id), lines: [] },
+    isLoading: false,
+  }),
 }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/customers' }));
 
 const { CustomersList } = await import('@/components/screens/CustomersList');
 const { CustomerDetail } = await import('@/components/screens/CustomerDetail');
+/*
+ * Imported HERE, beside the other screen, not inside the preview block.
+ *
+ * The last test in this file calls `vi.resetModules()`, so anything imported
+ * after it comes from a fresh registry with its own Toast context object --
+ * and a component holding a different context than the provider wrapping it
+ * throws "useToast must be used inside <ToastProvider>". Same trap the
+ * `doUnmock` test documents, arrived at from the other side.
+ */
+const { ReceivablesList } = await import('@/components/screens/ReceivablesList');
 
 function openList() {
   return render(
@@ -291,11 +307,35 @@ describe('the customer list', () => {
 });
 
 describe('the customer page', () => {
-  it('shows the contact details', () => {
+  it('folds the contact details away, and says what is behind them', () => {
+    /*
+     * Asked for: *"hide the contact, phone and email within the details"*.
+     * Three rows reading "—" was the top third of the page saying nothing and
+     * pushing the money below the fold.
+     *
+     * The summary line is the other half of it. A collapsed panel with a
+     * generic label is a panel nobody opens, because there is no way to tell
+     * whether it holds anything.
+     */
     openDetail('c-1');
+    expect(screen.getByText(/0400 111 222/)).toBeInTheDocument();
+    expect(screen.queryByText('dan@example.com')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByText('Dan')).toBeInTheDocument();
-    expect(screen.getByText('0400 111 222')).toBeInTheDocument();
     expect(screen.getByText('dan@example.com')).toBeInTheDocument();
+  });
+
+  it('says so plainly when there are no contact details at all', () => {
+    openDetail('c-2');
+    expect(screen.getByText('No contact details yet')).toBeInTheDocument();
+  });
+
+  it('shows what has been received, under the details', () => {
+    // *"underneath the details, add in the history of this particular
+    // customer to see past payments received"*.
+    openDetail('c-1');
+    expect(screen.getByRole('button', { name: /History/ })).toBeInTheDocument();
   });
 
   it('shows what this customer owes, and how much of it is late', () => {
@@ -306,10 +346,29 @@ describe('the customer page', () => {
     expect(screen.getByText(/past due/)).toBeInTheDocument();
   });
 
-  it('lists each outstanding invoice with a way to record it received', () => {
+  it('opens an invoice into its bill, where recording it received lives', () => {
+    /*
+     * *"intuitively we tend to tap any invoices ... I would want it to expand
+     * into its bill and show the details."* And the row's own Received button
+     * is gone: *"not sure why there is received in there. Remove that."* It
+     * was a one-tap way to write off money on whichever row you happened to be
+     * looking at, sitting exactly where a chevron belongs.
+     */
     openDetail('c-1');
     expect(screen.getByText('#DD-1001')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Received' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Received' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /#DD-1001/ }));
+    expect(screen.getByRole('button', { name: 'Mark received' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open/ })).toBeInTheDocument();
+  });
+
+  it('keeps every other invoice shut when one is opened', () => {
+    // Two open bills at once is two tables of line items on a 375px phone,
+    // and no way to tell which total belongs to which.
+    openDetail('c-1');
+    fireEvent.click(screen.getByRole('button', { name: /#DD-1001/ }));
+    expect(screen.getAllByRole('button', { name: 'Mark received' })).toHaveLength(1);
   });
 
   it('saves an edit', async () => {
@@ -328,7 +387,7 @@ describe('the customer page', () => {
   it('turns a blank field into null rather than an empty string', async () => {
     openDetail('c-1');
     fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
-    fireEvent.change(screen.getByLabelText('Contact'), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText('Contact name'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
 
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
@@ -471,5 +530,63 @@ describe('before the migration has been run', () => {
     expect(screen.getByText(/CATCH_UP_004\.sql/)).toBeInTheDocument();
     expect(screen.queryByText(/No customers yet/)).not.toBeInTheDocument();
     vi.doUnmock('@/lib/queries/customers');
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * A way to look at the customer page and the receivables list.
+ *
+ * ARCHITECTURE §21.6. Both screens were rebuilt on a photograph of the old
+ * ones with things circled on it, and both are dense: two collapsible panels,
+ * a figure, a list of rows that open. That is exactly the shape where a
+ * passing assertion and a usable screen come apart — §38.8 and §39.6 were both
+ * found this way and neither was visible to a test.
+ *
+ * Skipped unless PREVIEW_OUT is set.
+ * -------------------------------------------------------------------------- */
+describe('preview', () => {
+  const OUT = process.env.PREVIEW_OUT ?? '';
+  const CSS = process.env.PREVIEW_CSS ?? '';
+
+  it.skipIf(!OUT)('snapshot', async () => {
+    const customer = render(
+      <ToastProvider>
+        <CustomerDetail id="c-1" />
+      </ToastProvider>,
+    );
+    const shut = customer.container.innerHTML;
+
+    // Both panels open, and an invoice opened into its bill — the state that
+    // has three expandable things stacked on a 375px screen.
+    fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    fireEvent.click(screen.getByRole('button', { name: /History/ }));
+    fireEvent.click(screen.getByRole('button', { name: /#DD-1001/ }));
+    const open = customer.container.innerHTML;
+    customer.unmount();
+
+    const list = render(
+      <ToastProvider>
+        <ReceivablesList />
+      </ToastProvider>,
+    );
+    const receivables = list.container.innerHTML;
+    list.unmount();
+
+    const css = CSS ? readFileSync(CSS, 'utf8') : '';
+    const page = (title: string, body: string) =>
+      `<!doctype html><html lang="en-AU"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>${css}</style>
+<style>body{background:var(--page);margin:0}</style>
+</head><body>${body}</body></html>`;
+
+    writeFileSync(OUT, page('Customer, shut', shut), 'utf8');
+    writeFileSync(OUT.replace(/\.html$/, '-open.html'), page('Customer, open', open), 'utf8');
+    writeFileSync(
+      OUT.replace(/\.html$/, '-receivables.html'),
+      page('Receivables', receivables),
+      'utf8',
+    );
   });
 });

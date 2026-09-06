@@ -20,13 +20,13 @@ import type { Business } from '@/lib/types';
 
 interface BusinessMarkProps {
   business: Pick<Business, 'code' | 'name'>;
-  /** 28px in the menu; 24px in a list row. */
-  size?: 'sm' | 'md';
+  /** 28px in the menu; 24px in a list row; 48px at the top of a document. */
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
   const mark = businessMark(business.code);
-  const px = size === 'md' ? 28 : 24;
+  const px = size === 'lg' ? 48 : size === 'md' ? 28 : 24;
 
   /*
    * An uploaded logo wins over the bundled one, which wins over the letters.
@@ -76,7 +76,7 @@ export function BusinessMark({ business, size = 'md' }: BusinessMarkProps) {
         backgroundColor: 'var(--pressed)',
         color: 'var(--muted)',
         fontFamily: 'var(--font-mono)',
-        fontSize: size === 'md' ? '10px' : '9px',
+        fontSize: size === 'lg' ? '16px' : size === 'md' ? '10px' : '9px',
         letterSpacing: '0.02em',
       }}
     >

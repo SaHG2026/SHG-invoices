@@ -30,7 +30,7 @@ end to end. Grep for the section you need:
 | Roles, notifications, push | §8.1 |
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
-| Rounds A–E, the most recent work | §35–§39 |
+| Rounds A–F, the most recent work | §35–§40 |
 
 ---
 
@@ -87,7 +87,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 706 tests
+npx vitest run       # 719 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -137,7 +137,7 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 016**
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 017**
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -213,10 +213,10 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_016` applied.**
-706 tests under three timezones.
+**Live and in daily use. All database files through `CATCH_UP_017` applied.**
+719 tests under three timezones.
 
-Phases 1–7, the venue accounts (§34), then five rounds of feedback:
+Phases 1–7, the venue accounts (§34), then six rounds of feedback:
 
 | | |
 |---|---|
@@ -225,6 +225,7 @@ Phases 1–7, the venue accounts (§34), then five rounds of feedback:
 | §37 | **Round C** — a daily reminder at a time each person chooses |
 | §38 | **Round D** — Deli's products, line items and printable invoice |
 | §39 | **Round E** — Deli's price list became the compose screen, and the two ways in |
+| §40 | **Round F** — due dates optional, Receivables, invoices that open into their bill |
 
 ### The two lessons worth more than the features
 
@@ -234,6 +235,11 @@ invoice, because from outside a missing permission and a working refusal are
 both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
+
+**A default is a claim.** A due date filled in because the field wanted one
+prints a deadline nobody agreed to, and drives every overdue figure off it.
+Where the honest answer is "nobody has decided", the column is nullable and
+the switch is off. §40.1.
 
 **A mock that cannot produce a real state guarantees bugs in it.** The compose
 screen threw on every open for a whole round -- `useSydneyToday()` returns
@@ -294,9 +300,9 @@ without upsert: generate the id on the client, use a plain insert, and treat a
    having before deciding what a file should contain. §33.2 has the one
    question to ask first: what happens to the file when it arrives.
 
-6. **A global list of issued invoices.** Deli's are reachable per customer,
-   and now from `/b/ddl` as well. Worth adding when a customer becomes the
-   wrong index, not before.
+6. **Done** — `/receivables` is the global list of what Deli is owed (§40.3).
+   Left here as the shape of the answer: it was held until chasing money
+   across customers became the actual job, and then it was one screen.
 
 7. **Tidying the audit left behind** (§33.1): three unused packages, the
    `/specimen` page, the middleware's `offline` exemption. Harmless.

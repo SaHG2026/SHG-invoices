@@ -77,7 +77,11 @@ export interface CreateSalesInvoiceInput {
   /** Null lets the database number it — DDL-0001. CATCH_UP_015 §3. */
   invoice_number: string | null;
   invoice_date: string;
-  due_date: string;
+  /**
+   * Null when none was issued — CATCH_UP_017, and the switch on the compose
+   * screen. `->>` on a JSON null yields SQL NULL, so the RPC needed no edit.
+   */
+  due_date: string | null;
   /**
    * Only consulted when there are no lines.
    *

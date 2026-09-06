@@ -2,6 +2,7 @@
 
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
+import { BusinessMark } from '@/components/ui/BusinessMark';
 import { useSalesInvoice } from '@/lib/queries/sales';
 import { useBusinesses } from '@/lib/queries/reference';
 import { useAllCustomers } from '@/lib/queries/customers';
@@ -71,8 +72,23 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
       {/* Everything below is the document. `print-sheet` is what survives. */}
       <article className="print-sheet rounded-sm border border-edge bg-card p-5">
         <header className="mb-6 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-h2 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
+          {/*
+            The mark, on the document.
+
+            Asked for: *"when we add in the logo for deli, I would like that
+            logo to show up in the invoice"*. `BusinessMark` already resolves
+            an uploaded logo over a bundled file over the letters, so the day
+            Deli's artwork is uploaded on the Brand screen it appears here with
+            no code change -- and until then the header carries "DD" rather
+            than a hole where a logo will go.
+
+            `lg` exists for exactly this. Everywhere else the mark identifies a
+            row at 24-28px; here it is the top of a piece of paper somebody is
+            handed.
+          */}
+          <div className="flex min-w-0 items-center gap-3">
+            {business ? <BusinessMark business={business} size="lg" /> : null}
+            <p className="text-h2 min-w-0 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
               {business?.name ?? 'Invoice'}
             </p>
           </div>
@@ -101,8 +117,17 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
             <p className="figure-date text-sm text-ink">
               {formatDayWithYear(invoice.invoice_date)}
             </p>
-            <p className="mt-2 text-xs uppercase tracking-widest text-muted">Due</p>
-            <p className="figure-date text-sm text-ink">{formatDayWithYear(invoice.due_date)}</p>
+            {/* No due date is printed as no due date, not as a blank line
+                labelled Due -- a heading with nothing under it reads as
+                something that failed to load. CATCH_UP_017. */}
+            {invoice.due_date ? (
+              <>
+                <p className="mt-2 text-xs uppercase tracking-widest text-muted">Due</p>
+                <p className="figure-date text-sm text-ink">
+                  {formatDayWithYear(invoice.due_date)}
+                </p>
+              </>
+            ) : null}
           </div>
         </div>
 

@@ -128,14 +128,15 @@ export function WeekView({ scope }: { scope: Scope }) {
                   them under the other three would imply those have customers
                   as well.
 
-                  Issuing an invoice leads, because it is the verb. The report
-                  was "still no option to create invoice ... when I am in the
-                  deli's interface", and a menu row somewhere else is not an
-                  answer to standing on Deli's own screen and looking for it.
+                  Receivables leads, because this card is a place you STAND, not a
+                  thing you do. The composer had this row for one round and it
+                  was asked for back: an invoice starts from the customer it is
+                  for, which is the flow the client described in the first
+                  place. What belongs here is the money still out.
                 */
                 ...(scope === 'ddl'
                   ? ([
-                      ['/sales/new' as Route, 'New invoice for a customer'],
+                      ['/receivables' as Route, 'Receivables'],
                       ['/customers' as Route, 'Customers'],
                       ['/products' as Route, 'Products'],
                     ] as const)

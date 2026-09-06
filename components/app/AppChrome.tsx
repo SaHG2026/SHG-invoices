@@ -41,8 +41,13 @@ interface AppChromeProps {
    *
    * Never both: two controls doing one thing, one of them overlapping the
    * other, is worse than either.
+   *
+   * `none` is for a screen that IS the act of adding something. The compose
+   * screen has its own Save pinned across the bottom, and the floating `+`
+   * landed on top of it -- a button offering to start a second invoice,
+   * covering the button that finishes the first. Reported with a photograph.
    */
-  add?: 'floating' | 'bar';
+  add?: 'floating' | 'bar' | 'none';
 }
 
 export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) {
@@ -74,8 +79,12 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
    * place the `+` has to ask which one you mean. Everywhere else the answer is
    * "a supplier invoice" and a question with one right answer is not a
    * question — ARCHITECTURE §17.
+   *
+   * Receivables and Products joined the list when Receivables was added: both
+   * are Deli's screens, and a `+` that opens a SUPPLIER sheet while you are
+   * standing on the money customers owe you is the wrong ledger entirely.
    */
-  const sellsAsWell = /^\/(b\/ddl|customers)(\/|$)/.test(pathname ?? '');
+  const sellsAsWell = /^\/(b\/ddl|customers|receivables|products)(\/|$)/.test(pathname ?? '');
   const [salesOpen, setSalesOpen] = useState(false);
   const [asking, setAsking] = useState(false);
 
@@ -179,7 +188,7 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         {children}
       </main>
 
-      {add === 'floating' ? (
+      {add === 'none' ? null : add === 'floating' ? (
         <button
           type="button"
           onClick={pressedAdd}

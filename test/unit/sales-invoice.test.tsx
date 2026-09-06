@@ -217,19 +217,85 @@ describe('the first render, before the date arrives', () => {
     expect(screen.getByLabelText('Customer')).toBeInTheDocument();
   });
 
-  it('leaves both dates empty rather than inventing one', () => {
+  it('leaves the date empty rather than inventing one', () => {
     mocks.today.current = null;
     compose();
     expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe('');
   });
 
-  it('fills both in, and lights the default preset, once it arrives', () => {
+  it('fills it in once it arrives', () => {
     compose();
     expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe(FIXTURE_TODAY);
-    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe(
-      addDays(FIXTURE_TODAY, DEFAULT_TERMS_DAYS),
+  });
+});
+
+describe('the due date switch', () => {
+  /*
+   * ==========================================================================
+   * Off by default, and the default is the feature.
+   *
+   * *"we don't want to issue due dates yet."* Deli invoices before it has
+   * agreed terms with anybody, so a due date filled in for it would print a
+   * deadline nobody set AND drive every overdue figure off a date that means
+   * nothing. Recorded as an absence, not hidden (CATCH_UP_017).
+   * ==========================================================================
+   */
+  it('starts off, with no due date field at all', () => {
+    compose();
+    expect(screen.getByRole('switch', { name: /due date/i })).toHaveAttribute(
+      'aria-checked',
+      'false',
     );
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+  });
+
+  it('sends null for the due date while it is off', async () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].due_date).toBeNull();
+    // The invoice date is still sent. Only the deadline is unstated.
+    expect(mocks.create.mock.calls[0]![0].invoice_date).toBe(FIXTURE_TODAY);
+  });
+
+  it('turning it on defaults to the usual terms, and sends that', async () => {
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.click(screen.getByRole('switch', { name: /due date/i }));
+
+    const expected = addDays(FIXTURE_TODAY, DEFAULT_TERMS_DAYS);
+    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe(expected);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].due_date).toBe(expected);
+  });
+
+  it('turning it back off drops the date rather than keeping it hidden', async () => {
+    // The failure this guards against is a stored date the screen has stopped
+    // showing: the document would print without it and every overdue figure
+    // would still be driven by it.
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.click(screen.getByRole('switch', { name: /due date/i }));
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-12-01' } });
+    fireEvent.click(screen.getByRole('switch', { name: /due date/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].due_date).toBeNull();
+  });
+
+  it('does not offer a second + on top of Save & print', () => {
+    // A floating button offering to start another invoice, sitting on the
+    // button that finishes this one. Reported with a photograph.
+    compose();
+    expect(screen.queryByRole('button', { name: 'Add invoice' })).not.toBeInTheDocument();
   });
 
   it('falls back to today when the date field is cleared, and still saves', async () => {

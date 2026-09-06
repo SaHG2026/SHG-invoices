@@ -44,11 +44,30 @@ export function summariseReceivable(
   const owed = onlyOutstanding(rows);
   if (owed.length === 0) return EMPTY;
 
-  const overdue = owed.filter((row) => compareDates(row.due_date, today) < 0);
-  const oldest = owed.reduce(
-    (earliest, row) => (compareDates(row.due_date, earliest) < 0 ? row.due_date : earliest),
-    owed[0]!.due_date,
+  /*
+   * An invoice with no due date can never be overdue, and is not the oldest
+   * thing outstanding either.
+   *
+   * Both figures are about a deadline, and a deadline nobody set is not a
+   * deadline that has passed (CATCH_UP_017). Counting a null as overdue would
+   * put money in the one figure on this screen that is meant to mean
+   * "someone has to be chased about this"; counting it as not-yet-due would
+   * be equally a claim. It is simply not part of either question.
+   *
+   * It still counts in `total_cents` and `invoice_count`. The money is owed —
+   * only the date is unstated.
+   */
+  const dated = owed.filter(
+    (row): row is SalesInvoiceRow & { due_date: DateStr } => row.due_date !== null,
   );
+  const overdue = dated.filter((row) => compareDates(row.due_date, today) < 0);
+  const oldest =
+    dated.length === 0
+      ? null
+      : dated.reduce<DateStr>(
+          (earliest, row) => (compareDates(row.due_date, earliest) < 0 ? row.due_date : earliest),
+          dated[0]!.due_date,
+        );
 
   return {
     total_cents: sumCents(owed),

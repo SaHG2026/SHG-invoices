@@ -161,6 +161,16 @@ export function ComposeSalesInvoice({
    */
   const [invoiceDate, setInvoiceDate] = useState<DateStr | null>(null);
   const [dueDate, setDueDate] = useState<DateStr | null>(null);
+  /*
+   * Off by default, and that default is the point.
+   *
+   * The client: *"we don't want to issue due dates yet."* Deli is invoicing
+   * before it has agreed terms with anybody, so an invented due date would
+   * print a deadline nobody set AND make the invoice go overdue on a day that
+   * means nothing -- which reaches "Owes us", the past-due figure and the
+   * chasing. Recorded as an absence rather than hidden (CATCH_UP_017).
+   */
+  const [dueDateOn, setDueDateOn] = useState(false);
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
@@ -191,8 +201,14 @@ export function ComposeSalesInvoice({
    * ==========================================================================
    */
   const issuedOn: DateStr | null = invoiceDate ?? today;
-  const dueOn: DateStr | null =
-    dueDate ?? (issuedOn === null ? null : addDays(issuedOn, DEFAULT_TERMS_DAYS));
+  /*
+   * The switch decides whether there IS one; the field decides what it is.
+   * Off is null all the way through to the row, so nothing downstream has to
+   * ask whether a stored date was meant.
+   */
+  const dueOn: DateStr | null = !dueDateOn
+    ? null
+    : (dueDate ?? (issuedOn === null ? null : addDays(issuedOn, DEFAULT_TERMS_DAYS)));
 
   /**
    * Every line that is complete enough to charge for, and what it comes to.
@@ -374,10 +390,11 @@ export function ComposeSalesInvoice({
       setError('Add at least one line with a description, a quantity and a price.');
       return;
     }
-    if (issuedOn === null || dueOn === null) {
-      // Only reachable by clearing a date field outright. An invoice with no
-      // date on it is not an invoice, and the database would refuse it anyway.
-      setError('Give it a date and a due date.');
+    if (issuedOn === null) {
+      // Only reachable by clearing the field outright. An invoice with no date
+      // on it is not an invoice. A due date is a different matter — see the
+      // switch; null is a legitimate answer there and goes through as null.
+      setError('Give it a date.');
       return;
     }
 
@@ -441,7 +458,7 @@ export function ComposeSalesInvoice({
     'touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
 
   return (
-    <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
+    <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }} add="none">
       <h1 className="text-h1 mb-3 text-ink">New invoice</h1>
 
       <label className="mb-4 block">
@@ -476,45 +493,90 @@ export function ComposeSalesInvoice({
             className={`figure-date ${field}`}
           />
         </label>
-        <label className="block">
-          <span className="mb-1 block text-xs uppercase tracking-widest text-muted">Due</span>
-          <input
-            type="date"
-            aria-label="Due date"
-            value={dueOn ?? ''}
-            onChange={(event) =>
-              setDueDate(isDateStr(event.target.value) ? event.target.value : null)
-            }
-            className={`figure-date ${field}`}
-          />
-          <span className="figure-date mt-1 block text-xs text-muted">
-            {dueOn ? formatDay(dueOn) : ' '}
-          </span>
-        </label>
+
+        {/*
+          The switch sits where the second date used to, so the row still reads
+          as "the two things about timing" -- and the field appears underneath
+          only once there is a date to put in it. An input that is present but
+          meaningless is the state this switch exists to remove.
+        */}
+        <div className="block">
+          <span className="mb-1 block text-xs uppercase tracking-widest text-muted">Due date</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={dueDateOn}
+            aria-label="Give this invoice a due date"
+            onClick={() => setDueDateOn((on) => !on)}
+            className={`touch flex w-full items-center justify-between gap-2 rounded-sm border px-3 text-sm ${
+              dueDateOn ? 'border-action text-ink' : 'border-hairline text-muted'
+            }`}
+            style={dueDateOn ? { backgroundColor: 'var(--action-bg)' } : undefined}
+          >
+            <span className="min-w-0 truncate">{dueDateOn ? 'On' : 'None'}</span>
+            <span
+              aria-hidden
+              className="flex h-6 w-10 shrink-0 items-center rounded-full px-0.5"
+              style={{
+                backgroundColor: dueDateOn ? 'var(--action)' : 'var(--pressed)',
+                justifyContent: dueDateOn ? 'flex-end' : 'flex-start',
+              }}
+            >
+              <span
+                className="block size-5 rounded-full"
+                style={{ backgroundColor: 'var(--card)' }}
+              />
+            </span>
+          </button>
+        </div>
       </div>
 
-      <div className="mb-6 flex gap-1">
-        {DUE_PRESETS_DAYS.map((days) => {
-          // Computed once, inside the guard, rather than twice outside it.
-          const preset = issuedOn === null ? null : addDays(issuedOn, days);
-          return (
-            <button
-              key={days}
-              type="button"
-              disabled={preset === null}
-              onClick={() => setDueDate(preset)}
-              aria-label={`Due in ${days} days`}
-              className={`touch rounded-full border px-3 text-xs disabled:opacity-40 ${
-                preset !== null && dueOn === preset
-                  ? 'border-action bg-action text-action-text'
-                  : 'border-hairline bg-card text-muted'
-              }`}
-            >
-              {days}d
-            </button>
-          );
-        })}
-      </div>
+      {dueDateOn ? (
+        <div className="mb-6">
+          <label className="mb-1 block">
+            <span className="mb-1 block text-xs uppercase tracking-widest text-muted">Due</span>
+            <input
+              type="date"
+              aria-label="Due date"
+              value={dueOn ?? ''}
+              onChange={(event) =>
+                setDueDate(isDateStr(event.target.value) ? event.target.value : null)
+              }
+              className={`figure-date ${field}`}
+            />
+          </label>
+          <span className="figure-date mb-2 block text-xs text-muted">
+            {dueOn ? formatDay(dueOn) : ' '}
+          </span>
+
+          <div className="flex gap-1">
+            {DUE_PRESETS_DAYS.map((days) => {
+              // Computed once, inside the guard, rather than twice outside it.
+              const preset = issuedOn === null ? null : addDays(issuedOn, days);
+              return (
+                <button
+                  key={days}
+                  type="button"
+                  disabled={preset === null}
+                  onClick={() => setDueDate(preset)}
+                  aria-label={`Due in ${days} days`}
+                  className={`touch rounded-full border px-3 text-xs disabled:opacity-40 ${
+                    preset !== null && dueOn === preset
+                      ? 'border-action bg-action text-action-text'
+                      : 'border-hairline bg-card text-muted'
+                  }`}
+                >
+                  {days}d
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <p className="mb-6 text-xs text-muted">
+          No due date on this one. It will show as owing, never as overdue.
+        </p>
+      )}
 
       {/* ---------------------------------------------------------------- *
         The price list, as the body of the screen.

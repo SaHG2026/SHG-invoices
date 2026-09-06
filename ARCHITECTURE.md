@@ -3545,3 +3545,166 @@ a door between them at the moment the wrong one has been opened.
 - **Tests: 706**, under all three timezones. `tsc` and `next build` clean.
 - **No database change** in this round.
 
+
+---
+
+## 40. Round F — the receivables side grows up
+
+Six items, from a phone, with two screenshots marked in red.
+
+### 40.1 A due date is now a choice, and the default is no
+
+> *"Need to add a toggle switch next to due date. off by default. we don't
+> want to issue due dates yet."*
+
+Deli is invoicing before it has agreed terms with anybody. A due date filled
+in on its behalf is not a harmless default: it prints a deadline nobody set,
+and underneath that it drives **every overdue figure in the app** off a date
+that means nothing. "$1,200 past due" is the one sentence this app exists to
+be trusted about.
+
+The tempting version keeps the column NOT NULL and has the screen hide the
+date it stored anyway. That is notes §1.3 exactly — a record saying one thing
+and a screen saying another — and the hidden date would still have driven the
+chasing. So `CATCH_UP_017` drops the NOT NULL and the absence is recorded as
+an absence.
+
+`create_sales_invoice` needed no edit: it already writes
+`(p_invoice ->> 'due_date')::date`, and `->>` on a JSON null yields SQL NULL.
+The constraint was the only thing refusing it.
+
+`SalesInvoice.due_date` became `DateStr | null` and `tsc` named all five
+places that had assumed otherwise — the same device as §39.8, used
+deliberately this time rather than in a panic. What each of them now does:
+
+| | |
+|---|---|
+| `summariseReceivable` | counts in the total; in **neither** overdue nor oldest-due |
+| the row's urgency chip | absent, rather than coloured 'later' |
+| the printed document | no "Due" heading at all, rather than a blank under one |
+| the receivables sort | last, ascending — no agreed deadline is not urgency |
+| the expanded bill | says "No due date" in words |
+
+A deadline nobody set has not passed. That sentence is the whole of it.
+
+### 40.2 A `+` on top of the Save button
+
+Photographed: the floating `+` sitting across "Save & print" on the compose
+screen — a button offering to start a second invoice, covering the button that
+finishes the first.
+
+`AppChrome` gained `add="none"`. The prop already carried the argument in its
+own comment — *"Never both: two controls doing one thing, one of them
+overlapping the other, is worse than either"* — and a screen that IS the act
+of adding something is the case it had not anticipated.
+
+### 40.3 Deli's card leads with Receivables, not with the composer
+
+> *"remove new invoice for a customer option from the deli delights customers
+> and add Receivables in there to track the pending receivables"*
+
+Round E put the composer on `/b/ddl` after two reports of not being able to
+find it. He is right that it does not belong there: **a business card is a
+place you stand, not a thing you do.** An invoice starts from the customer it
+is for, which is the flow he described in the first place, and the `+` asks
+which ledger you mean. What belongs on the card is the money still out.
+
+`/receivables` is the list HANDOFF §7 held as *"worth adding when a customer
+becomes the wrong index, not before"*. It became the wrong index the moment
+chasing was the job: that is done across every customer at once, and from the
+customer list it means opening six pages to find the two with anything in them.
+
+The screen is PendingList's shape one ledger over — a total derived from the
+array beneath it, three sorts, rows that open. The drawer keeps both rows;
+`sellsAsWell` grew to cover `/receivables` and `/products`, because a `+` that
+opens a *supplier* sheet while you are standing on what customers owe you is
+the wrong ledger entirely.
+
+### 40.4 The row is the way in
+
+> *"intuitively we tend to tap any invoices (receivables or payables), so I
+> would want it to expand into its bill and show the details. Specially
+> relevant in deli delights case."*
+
+**The payables side already worked exactly this way.** `InvoiceRow` is a
+full-width button with `aria-expanded` that opens a detail block in place. The
+sales rows were the odd ones out: the invoice *number* was a link and the rest
+of the row was dead, so the tappable part was the smallest text on the line.
+
+"Specially relevant in deli delights case" is the sharp end. A payables row is
+one amount from one supplier; a Deli invoice is a docket of products, and the
+question you have looking at one is *what was on it* — reachable only by
+leaving for the print view.
+
+`SalesInvoiceRowItem` is the mirror, shared by the customer page and the
+receivables list. It fetches its lines **only when opened** (`useSalesInvoice`
+is disabled on `''`): thirty invoices must not be thirty line queries on
+arrival, and until somebody taps a row nobody has asked what is on it.
+
+### 40.5 The button that removed itself
+
+> *"not sure why there is received in there. Remove that."*
+
+Circled in red: a **Received** pill on every outstanding row, sitting exactly
+where a chevron belongs. Two things were wrong with it and only one is
+obvious. It was a one-tap way to write off money on whichever row you happened
+to be looking at — and it made the row read as a *control* rather than as
+something you could open, which is why the expanding behaviour of §40.4 had
+never occurred to anybody as missing.
+
+Marking one received now lives inside the invoice, after you have seen what is
+on it. The undo path is unchanged.
+
+### 40.6 Details folded, history promoted
+
+> *"hide the contact, phone and email within the details ... and underneath
+> the details, add in the history of this particular customer to see past
+> payments received."*
+
+Three rows reading "—" were the top third of the page saying nothing and
+pushing **Owes us** below the fold, on the page whose whole purpose is that
+figure. Both panels collapse, and both say what is behind them: the Details
+row shows the phone number itself, History shows what has been received and
+across how many invoices. A collapsed panel with a generic label is a panel
+nobody opens, because there is no way to tell whether it holds anything.
+
+History moved up from the very bottom, under the outstanding list, which was
+the wrong way round: *have they ever actually paid us* is a question you ask
+before deciding what to do about what they owe.
+
+> *"also, contact is essentially phone, no?"*
+
+Nearly, and the fact that it was worth asking is the defect. Contact holds a
+person's NAME — who you ask for when you ring. The field is labelled
+**Contact name** now, in the form and on the row. A field labelled by its role
+rather than its content is a field that gets filled in wrongly.
+
+### 40.7 The mark on the document
+
+> *"when we add in the logo for deli, I would like that logo to show up in the
+> invoice (not sure if it already does)"*
+
+It did not. The document header carried the business *name* and nothing else.
+
+`BusinessMark` already resolves an uploaded logo over a bundled file over the
+letters (§30.2), so putting it at the top of the document means **the day
+Deli's artwork is uploaded on the Brand screen it appears on every invoice
+with no code change** — including invoices already issued, because the
+document is rendered from the row rather than stored. Until then the header
+carries "DD" rather than a hole where a logo will go. `size="lg"` (48px)
+exists for this: everywhere else the mark identifies a row at 24–28px, here it
+is the top of a piece of paper somebody is handed.
+
+### 40.8 Where it stands
+
+- **Tests: 719**, under all three timezones. `tsc` and `next build` clean.
+- **`CATCH_UP_017.sql` must be run BEFORE the deploy.** It only ever makes the
+  column more permissive, so the live app keeps working the moment it lands.
+- **`test/unit/customers.test.tsx` now writes previews** — the customer page
+  shut, the customer page with all three panels open, and the receivables
+  list. Both screens were rebuilt off a marked-up photograph and both are
+  dense; that is the shape where a passing assertion and a usable screen come
+  apart.
+- **Not changed:** payables rows, which already expanded on tap. The report
+  named both directions; only one of them was actually missing it.
+

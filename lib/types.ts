@@ -274,7 +274,20 @@ export interface SalesInvoice {
   /** Ours — we issued it. */
   invoice_number: string | null;
   invoice_date: DateStr;
-  due_date: DateStr;
+  /**
+   * Null when none was issued, and that is an ordinary state.
+   *
+   * Deli issues invoices before it has agreed terms with anybody, so the
+   * compose screen offers a due date behind a switch that is off (CATCH_UP_017).
+   * An invented due date is worse than none: it would go overdue on a day
+   * nobody agreed to, and drive the chasing from a number that means nothing.
+   *
+   * Nullable here rather than guarded at each call site, so `tsc` finds every
+   * place that assumed a date -- the same device that fixed the compose screen
+   * crash in §39.8. The payables side stays NOT NULL: a bill sent to US always
+   * has a date on it.
+   */
+  due_date: DateStr | null;
   amount_cents: number;
 
   status: SalesStatus;

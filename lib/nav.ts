@@ -23,6 +23,7 @@ export type NavSection =
   | 'customers'
   | 'products'
   | 'newSale'
+  | 'receivables'
   | 'history'
   | 'settings';
 
@@ -65,6 +66,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
    * reading a customer's page.
    */
   { section: 'newSale', label: 'New invoice for a customer', href: '/sales/new' as Route },
+  /*
+   * Under it, because it is the other half of the same ledger: one issues an
+   * invoice, this one watches for the money. Deli's own screen leads with this
+   * rather than the composer -- §40 -- but the drawer keeps both, because the
+   * drawer is how somebody who is not standing on Deli gets to either.
+   */
+  { section: 'receivables', label: 'Receivables', href: '/receivables' as Route },
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
   { section: 'settings', label: 'Settings', href: '/settings' as Route },
 ] as const;
@@ -86,6 +94,7 @@ export function activeSection(pathname: string): NavSection | null {
   if (path.startsWith('/suppliers')) return 'suppliers';
   if (path.startsWith('/customers')) return 'customers';
   if (path.startsWith('/products')) return 'products';
+  if (path.startsWith('/receivables')) return 'receivables';
   // Composing lights its own row; a printed document belongs to the customer.
   if (path.startsWith('/sales/new')) return 'newSale';
   if (path.startsWith('/sales')) return 'customers';

@@ -6,13 +6,13 @@ import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { SalesInvoiceRowItem } from '@/components/invoice/SalesInvoiceRowItem';
 import { useAllCustomers, useUpdateCustomer } from '@/lib/queries/customers';
-import { useCustomerSales, useMarkReceived, useUnmarkReceived } from '@/lib/queries/sales';
+import { useCustomerSales } from '@/lib/queries/sales';
 import { summariseReceivable } from '@/lib/derive/receivables';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
-import { formatCents } from '@/lib/money';
-import { formatDay, formatDayWithYear } from '@/lib/date';
-import { formatDueLabel, URGENCY_COLOUR, URGENCY_TINT, urgencyOf } from '@/lib/derive/urgency';
+import { formatCents, sumCents } from '@/lib/money';
+import { formatDayWithYear } from '@/lib/date';
 import type { Customer } from '@/lib/types';
 
 /**
@@ -32,8 +32,6 @@ export function CustomerDetail({ id }: { id: string }) {
   const { data: customers = [], isLoading, isError } = useAllCustomers();
   const { data: sales = [] } = useCustomerSales(id);
   const updateCustomer = useUpdateCustomer();
-  const markReceived = useMarkReceived();
-  const unmarkReceived = useUnmarkReceived();
   const today = useSydneyToday();
 
   const owed = useMemo(
@@ -42,9 +40,22 @@ export function CustomerDetail({ id }: { id: string }) {
   );
   const outstanding = sales.filter((row) => row.status === 'outstanding');
   const settled = sales.filter((row) => row.status !== 'outstanding');
+  /* Rule 4: the figure on the History header is the sum of the rows inside
+     it, not a second query that could disagree with them. */
+  const receivedTotal = useMemo(() => sumCents(settled), [settled]);
 
   const [editing, setEditing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  /*
+   * Both closed by default, and both remember nothing.
+   *
+   * This page is opened to answer "what do they owe us", and the two panels
+   * above that figure are reference material. A remembered open state would
+   * mean the answer starts below the fold for whoever last went looking for a
+   * phone number.
+   */
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const customer = customers.find((entry) => entry.id === id) ?? null;
 
@@ -61,6 +72,19 @@ export function CustomerDetail({ id }: { id: string }) {
   }
 
   const { id: customerId, name: customerName } = customer;
+
+  /*
+   * What the folded Details row says about itself.
+   *
+   * A collapsed panel with a generic label is a panel nobody opens, because
+   * there is no way to tell whether it holds anything. This says the useful
+   * part -- a phone number is what somebody came for -- and says plainly when
+   * there is nothing behind it, so the tap is never wasted.
+   */
+  const contactSummary =
+    [customer.contact_name, customer.contact_phone, customer.contact_email]
+      .filter((entry) => entry && entry.trim() !== '')
+      .join(' · ') || 'No contact details yet';
 
   /** Remove is deactivate. Rule 5 — the sales invoices reference this row. */
   async function setActive(active: boolean) {
@@ -92,7 +116,12 @@ export function CustomerDetail({ id }: { id: string }) {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setEditing((open) => !open)}
+            onClick={() => {
+              // Opening the editor opens the panel holding it. Otherwise
+              // "Edit details" appears to do nothing at all.
+              setEditing((open) => !open);
+              setDetailsOpen(true);
+            }}
             aria-expanded={editing}
             className="touch rounded-full border border-hairline bg-card px-4 text-sm text-ink"
           >
@@ -121,34 +150,120 @@ export function CustomerDetail({ id }: { id: string }) {
         </div>
       </header>
 
-      <section className="mb-4 rounded-sm border border-edge bg-card p-4">
-        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Details</p>
+      {/*
+        Details, folded away.
 
-        {editing ? (
-          <CustomerForm
-            customer={customer}
-            busy={updateCustomer.isPending}
-            onSave={async (changes) => {
-              try {
-                await updateCustomer.mutateAsync({ id: customer.id, ...changes });
-                setEditing(false);
-                toast.show('Saved.');
-              } catch (error) {
-                toast.show(
-                  error instanceof Error ? error.message : 'Couldn’t save that.',
-                  'problem',
-                );
-              }
-            }}
-          />
-        ) : (
-          <dl>
-            <Fact label="Contact">{customer.contact_name || '—'}</Fact>
-            <Fact label="Phone">{customer.contact_phone || '—'}</Fact>
-            <Fact label="Email">{customer.contact_email || '—'}</Fact>
-            {customer.notes ? <Fact label="Notes">{customer.notes}</Fact> : null}
-          </dl>
-        )}
+        The client: *"hide the contact, phone and email within the details"*.
+        Three rows reading "—" was the top third of the screen saying
+        nothing, and pushing the money below the fold on the page whose whole
+        purpose is the money. Open it when you need to ring somebody.
+
+        His aside — *"contact is essentially phone, no?"* — is fair,
+        and the answer is nearly yes: Contact is a person's NAME, the one you
+        ask for when you ring. The label now says so, because a field whose
+        meaning has to be guessed is a field that gets filled in wrongly.
+      */}
+      <section className="mb-4 overflow-hidden rounded-sm border border-edge bg-card">
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((open) => !open)}
+          aria-expanded={detailsOpen}
+          className="flex h-row w-full items-center gap-3 px-4 text-left active:bg-pressed"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs uppercase tracking-widest text-muted">Details</span>
+            {!detailsOpen ? (
+              <span className="block truncate text-sm text-ink">{contactSummary}</span>
+            ) : null}
+          </span>
+          <span
+            aria-hidden
+            className="shrink-0 text-xs text-muted"
+            style={{ transform: detailsOpen ? 'rotate(90deg)' : undefined }}
+          >
+            &rsaquo;
+          </span>
+        </button>
+
+        {detailsOpen ? (
+          <div className="border-t border-hairline px-4 py-3">
+            {editing ? (
+              <CustomerForm
+                customer={customer}
+                busy={updateCustomer.isPending}
+                onSave={async (changes) => {
+                  try {
+                    await updateCustomer.mutateAsync({ id: customer.id, ...changes });
+                    setEditing(false);
+                    toast.show('Saved.');
+                  } catch (error) {
+                    toast.show(
+                      error instanceof Error ? error.message : 'Couldn’t save that.',
+                      'problem',
+                    );
+                  }
+                }}
+              />
+            ) : (
+              <dl>
+                <Fact label="Contact name">{customer.contact_name || '—'}</Fact>
+                <Fact label="Phone">{customer.contact_phone || '—'}</Fact>
+                <Fact label="Email">{customer.contact_email || '—'}</Fact>
+                {customer.notes ? <Fact label="Notes">{customer.notes}</Fact> : null}
+              </dl>
+            )}
+          </div>
+        ) : null}
+      </section>
+
+      {/*
+        What has come back, under the details.
+
+        Asked for: *"underneath the details, add in the history of this
+        particular customer to see past payments received"*. It was at the
+        very bottom of the page, under the outstanding list, which is the
+        wrong way round — "have they ever actually paid us" is a question
+        you ask BEFORE deciding what to do about what they owe.
+      */}
+      <section className="mb-4 overflow-hidden rounded-sm border border-edge bg-card">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((open) => !open)}
+          aria-expanded={historyOpen}
+          className="flex h-row w-full items-center gap-3 px-4 text-left active:bg-pressed"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs uppercase tracking-widest text-muted">History</span>
+            <span className="block truncate text-sm text-ink">
+              {settled.length === 0
+                ? 'Nothing received yet'
+                : `${formatCents(receivedTotal)} received · ${settled.length} invoice${
+                    settled.length === 1 ? '' : 's'
+                  }`}
+            </span>
+          </span>
+          <span
+            aria-hidden
+            className="shrink-0 text-xs text-muted"
+            style={{ transform: historyOpen ? 'rotate(90deg)' : undefined }}
+          >
+            &rsaquo;
+          </span>
+        </button>
+
+        {historyOpen ? (
+          settled.length === 0 ? (
+            <p className="border-t border-hairline px-4 py-3 text-sm text-muted">
+              Nothing received from {customer.name} yet.
+            </p>
+          ) : (
+            <ul className="border-t border-hairline">
+              {settled.slice(0, 50).map((row) => (
+                <SalesInvoiceRowItem key={row.id} row={row} today={today} />
+              ))}
+            </ul>
+          )
+        ) : null}
       </section>
 
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
@@ -171,14 +286,14 @@ export function CustomerDetail({ id }: { id: string }) {
       </section>
 
       {/*
-        The way in to building one. It sits under "Owes us" because that is the
-        figure it changes, and the flow the client described starts here:
+        The way in to building one. It sits under "Owes us" because that is
+        the figure it changes, and the flow the client described starts here:
         choose who it is for, then the products, then print.
 
-        The customer travels in the query string. It went without one at first,
-        so a link that said "for this customer" landed on a screen asking who
-        it was for -- which is the link not working, and was reported as
-        exactly that.
+        The customer travels in the query string. It went without one at
+        first, so a link that said "for this customer" landed on a screen
+        asking who it was for — which is the link not working, and was
+        reported as exactly that.
       */}
       <Link
         href={`/sales/new?customer=${customer.id}` as Route}
@@ -190,106 +305,24 @@ export function CustomerDetail({ id }: { id: string }) {
       {outstanding.length > 0 ? (
         <section className="mb-4">
           <h2 className="text-h2 mb-2 text-ink">Outstanding</h2>
+          {/*
+            Every row opens into its own bill.
+
+            The "Received" button used to sit on the row itself, and was asked
+            about directly: *"not sure why there is received in there. Remove
+            that."* It was a one-tap way to write off money on whichever row
+            you happened to be looking at, sitting exactly where a chevron
+            belongs — so the row read as a control rather than as
+            something you could open. Marking one received now happens inside
+            the invoice, after you have seen what is on it.
+          */}
           <ul className="overflow-hidden rounded-sm border border-edge bg-card">
-            {outstanding.map((row) => {
-              const urgency = today ? urgencyOf(row.due_date, today) : 'later';
-              return (
-                <li
-                  key={row.id}
-                  className="flex h-row items-center gap-3 border-b border-hairline px-3 last:border-b-0"
-                >
-                  <span className="min-w-0 flex-1">
-                    {/* The number is the link, because the number is what a
-                        customer quotes back and what the document is headed
-                        with. */}
-                    <Link
-                      href={`/sales/${row.id}/print` as Route}
-                      className="block truncate text-sm text-action underline-offset-2 hover:underline"
-                    >
-                      {row.invoice_number ? `#${row.invoice_number}` : 'No invoice number'}
-                    </Link>
-                    <span className="figure-date block truncate text-xs text-muted">
-                      Sent {formatDay(row.invoice_date)}
-                    </span>
-                  </span>
-                  {today ? (
-                    <span
-                      className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px]"
-                      style={{
-                        backgroundColor: URGENCY_TINT[urgency],
-                        color: URGENCY_COLOUR[urgency],
-                      }}
-                    >
-                      {formatDueLabel(row.due_date, today)}
-                    </span>
-                  ) : null}
-                  <span className="money shrink-0 text-sm text-ink">
-                    {formatCents(row.amount_cents)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const result = await markReceived.mutateAsync({ ids: [row.id] });
-                        toast.show(
-                          result.received.length === 0
-                            ? 'Already recorded by someone else.'
-                            : `Received ${formatCents(row.amount_cents)}.`,
-                          result.received.length === 0 ? 'queued' : 'done',
-                        );
-                      } catch {
-                        toast.show('Couldn’t record that. Try again.', 'problem');
-                      }
-                    }}
-                    className="touch shrink-0 rounded-full px-3 text-xs font-medium"
-                    style={{ backgroundColor: 'var(--paid-bg)', color: 'var(--paid)' }}
-                  >
-                    Received
-                  </button>
-                </li>
-              );
-            })}
+            {outstanding.map((row) => (
+              <SalesInvoiceRowItem key={row.id} row={row} today={today} />
+            ))}
           </ul>
         </section>
       ) : null}
-
-      <section className="rounded-sm border border-edge bg-card p-4">
-        <p className="mb-2 text-xs uppercase tracking-widest text-muted">Received</p>
-        {settled.length === 0 ? (
-          <p className="text-sm text-muted">Nothing received yet.</p>
-        ) : (
-          <ul>
-            {settled.slice(0, 30).map((row) => (
-              <li
-                key={row.id}
-                className="flex items-center gap-3 border-b border-hairline py-2 last:border-b-0"
-              >
-                <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                  {row.invoice_number ? `#${row.invoice_number}` : 'No invoice number'}
-                </span>
-                <span className="money shrink-0 text-sm text-muted line-through">
-                  {formatCents(row.amount_cents)}
-                </span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await unmarkReceived.mutateAsync(row.id);
-                      toast.show('Put back to outstanding.');
-                    } catch {
-                      toast.show('Couldn’t undo that.', 'problem');
-                    }
-                  }}
-                  className="touch shrink-0 rounded-full px-3 text-xs font-medium"
-                  style={{ backgroundColor: 'var(--action-bg)', color: 'var(--action)' }}
-                >
-                  Undo
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       <ConfirmDialog
         open={confirmingRemove}
@@ -362,9 +395,15 @@ function CustomerForm({
       </label>
 
       <label className="mb-3 block">
-        <span className="mb-1 block text-xs uppercase tracking-widest text-muted">Contact</span>
+        {/* "Contact name", not "Contact". The client asked whether contact was
+            essentially the phone number, which is what a field labelled by its
+            role rather than its content invites. This one holds the name of
+            the person you ask for when you ring. */}
+        <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+          Contact name
+        </span>
         <input
-          aria-label="Contact"
+          aria-label="Contact name"
           value={contact}
           onChange={(event) => setContact(event.target.value)}
           className={field}

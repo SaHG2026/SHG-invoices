@@ -124,3 +124,39 @@ describe('the client’s condition: money in never moves money out', () => {
     );
   });
 });
+
+describe('an invoice with no due date', () => {
+  /*
+   * ==========================================================================
+   * CATCH_UP_017. Deli issues invoices before it has agreed terms with
+   * anybody, so `due_date` is nullable and the switch on the compose screen is
+   * off by default.
+   *
+   * The money is still owed. Only the deadline is unstated — so it counts in
+   * the total and the count, and in neither figure that is about a deadline.
+   * Counting a null as overdue would put money into the one figure on the
+   * screen that means "somebody has to be chased about this".
+   * ==========================================================================
+   */
+  const undated = sale({ id: 'undated', amount_cents: 40_000, due_date: null });
+
+  it('counts in what is owed', () => {
+    const summary = summariseReceivable([undated], '2026-09-06');
+    expect(summary.total_cents).toBe(40_000);
+    expect(summary.invoice_count).toBe(1);
+  });
+
+  it('is never overdue, however long it has been sitting there', () => {
+    // Every dated row in this fixture is already late. A deadline nobody set
+    // has not passed.
+    const summary = summariseReceivable([undated], '2026-09-06');
+    expect(summary.overdue_cents).toBe(0);
+    expect(summary.overdue_count).toBe(0);
+  });
+
+  it('is not the oldest thing due, and leaves that answer to the dated ones', () => {
+    const dated = sale({ id: 'dated', amount_cents: 10_000, due_date: '2026-09-20' });
+    expect(summariseReceivable([undated, dated], '2026-09-06').oldest_due).toBe('2026-09-20');
+    expect(summariseReceivable([undated], '2026-09-06').oldest_due).toBeNull();
+  });
+});

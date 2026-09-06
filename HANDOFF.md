@@ -30,7 +30,7 @@ end to end. Grep for the section you need:
 | Roles, notifications, push | §8.1 |
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
-| Rounds A–G, the most recent work | §35–§41 |
+| Rounds A–H, the most recent work | §35–§42 |
 
 ---
 
@@ -87,7 +87,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 729 tests
+npx vitest run       # 731 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -214,9 +214,9 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_017` applied.**
-729 tests under three timezones.
+731 tests under three timezones.
 
-Phases 1–7, the venue accounts (§34), then seven rounds of feedback:
+Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
 | | |
 |---|---|
@@ -227,6 +227,7 @@ Phases 1–7, the venue accounts (§34), then seven rounds of feedback:
 | §39 | **Round E** — Deli's price list became the compose screen, and the two ways in |
 | §40 | **Round F** — due dates optional, Receivables, invoices that open into their bill |
 | §41 | **Round G** — the dark band, attribution on issued invoices, and the tap delay |
+| §42 | **Round H** — the Himalaya, softer greens, the review card archived |
 
 ### The two lessons worth more than the features
 
@@ -313,6 +314,15 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 7. **Tidying the audit left behind** (§33.1): three unused packages, the
    `/specimen` page, the middleware's `offline` exemption. Harmless.
+
+### Archived, not abandoned
+
+**The review card on the home screen** (§42.4). Removed at his request because
+the bell, the drawer badge and the Review menu row all mention the same thing.
+The comment where it stood records what it was, and a test asserts it is gone.
+**All three replacements require somebody to look; the card was the only one
+that spoke unasked.** If shop entries start sitting in review for days, bring
+it back first.
 
 ### Known and deliberately accepted — do not "fix" these
 

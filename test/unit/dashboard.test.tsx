@@ -421,3 +421,29 @@ describe('the total outstanding hero — Round G', () => {
     );
   });
 });
+
+
+describe('the review card is off the home screen — Round H', () => {
+  /*
+   * *"Remove nothing to review from homescreen ... archive it, if we miss it
+   * we will bring it."*
+   *
+   * Asserted rather than just deleted, because the card had a written
+   * argument behind it (a thing in no total on any screen stays invisible
+   * unless something mentions it) and an argument like that grows back. If
+   * somebody re-adds it, this fails and they read §42.4 before deciding.
+   */
+  it('shows no review card, at zero or otherwise', () => {
+    open();
+    expect(screen.queryByText(/to review/i)).not.toBeInTheDocument();
+  });
+
+  it('but Review is still reachable, which is why removing it was safe', () => {
+    // The bell announces new entries, the drawer carries the count badge, and
+    // Review is its own menu row. The card was the only one of those that
+    // existed when it was written.
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+    expect(screen.getByRole('link', { name: /Review/ })).toBeInTheDocument();
+  });
+});

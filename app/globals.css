@@ -36,19 +36,30 @@
      header and the card read as the same material without either of them
      going black on an OLED phone at night.
 
-     Contrast, measured on --hero (#05412a):
-       --hero-text  #ffffff  11.69:1  figures and titles
-       --hero-muted #b8d6c4   7.49:1  labels and counts (AA at any size)
-     Both pass. `--hero-muted` is deliberately NOT 50% white, which resolves
-     to #82a094 and measures 4.12:1 — under AA for the small uppercase labels
-     that say what each figure means, which is where it would have been used.
-     --hero-line is 1.46:1 on --hero and is therefore never text: it draws
+     Round H softened both: *"tone down the greens on the outstanding and
+     header a bit."* #05412a -> #1a5540, which is the same hue with the
+     chroma pulled back, so the band reads as a surface rather than as a
+     block of colour. Everything on it stays well clear of AA.
+
+     Contrast, measured on --hero (#1a5540):
+       --hero-text  #ffffff  8.69:1  figures and titles
+       --hero-muted #b8d6c4  5.57:1  labels and counts (AA at any size)
+     Both pass, and both had room to lose: the previous pair measured 11.69
+     and 7.49, so this spends contrast that was surplus rather than needed.
+     `--hero-muted` is deliberately NOT 50% white, which resolves to #82a094
+     and fails on the small uppercase labels that say what a figure means.
+     --hero-line is 1.38:1 on --hero and is therefore never text: it draws
      rules and the wells behind icons, nothing that has to be read. */
-  --hero: #05412a;
-  --hero-deep: #032b1b; /* the gradient's far end */
+  --hero: #1a5540;
+  --hero-deep: #12402f; /* the gradient's far end */
   --hero-text: #ffffff;
   --hero-muted: #b8d6c4;
-  --hero-line: #1d5b41; /* rules and icon wells inside the dark band */
+  --hero-line: #2c6b53; /* rules and icon wells inside the dark band */
+  /* The ridgeline behind the header. Never text, never a border — one
+     silhouette, at 1.24:1 on --hero, which is the point: a range you notice
+     only if you look for it. Any louder and it competes with the wordmark
+     sitting on top of it. */
+  --hero-ridge: #23604a;
 
   /* ---- 2. Due spine (urgency sequence) ------------------ */
   /* Read as one ramp: hot -> warm -> cool -> inert.
@@ -170,6 +181,7 @@
   --color-hero-text: var(--hero-text);
   --color-hero-muted: var(--hero-muted);
   --color-hero-line: var(--hero-line);
+  --color-hero-ridge: var(--hero-ridge);
 
   --color-overdue: var(--spine-overdue);
   --color-today: var(--spine-today);

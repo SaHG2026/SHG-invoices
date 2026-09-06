@@ -3839,3 +3839,101 @@ trying to hide.
   open, and the receivables list — all four were checked at 375px and 360px
   with no clipping and no horizontal scroll.
 
+
+---
+
+## 42. Round H — the band settles down
+
+Five small things, after looking at Round G on a phone.
+
+### 42.1 The Himalaya, drawn rather than photographed
+
+> *"add the mountain ranges in the background. himalayas."*
+
+An inline SVG, a few hundred bytes, right on every screen and every density.
+A background photograph would be a network request arriving after the header
+has already painted, and it would cost everybody data on shop wifi for
+scenery. Same argument `lib/logos.ts` makes about explicit tables.
+
+Two ranges, the far one lighter, because one silhouette reads as a shape and
+two read as distance.
+
+**The placement is the whole of it, and the first attempt was wrong.** Proper
+peaks across the middle of the bar landed squarely behind the wordmark and the
+three icons — a mountain behind a letterform is what makes a header look
+cheap. A 56px bar has no room *above* its controls, so the range became a
+horizon *under* them: the same scenery, in the only band of this header that
+is actually empty. Two small snow caps, and nothing else.
+
+`--hero-ridge` is 1.24:1 on `--hero`. That is deliberate and it is never text:
+a range you notice only if you look for it.
+
+### 42.2 The strapline came off
+
+> *"remove the manage track get paid. just have it as SHG invoices."*
+
+It lasted one round. Right, and it is the same argument the app keeps making
+about itself: **a strapline sells the product to somebody deciding whether to
+use it, and everybody who sees this header decided months ago.** It was the
+only line in the app addressed to a visitor rather than to the four people who
+work here.
+
+### 42.3 Toned down
+
+> *"tone down the greens on the outstanding and header a bit."*
+
+`--hero` #05412a → **#1a5540**, same hue with the chroma pulled back, so the
+band reads as a surface rather than as a block of colour.
+
+| | before | after |
+|---|---|---|
+| `--hero-text` #ffffff | 11.69:1 | **8.69:1** |
+| `--hero-muted` #b8d6c4 | 7.49:1 | **5.57:1** |
+
+Both still pass AA comfortably. The point of recording both columns: this
+spends contrast that was **surplus**, not contrast that was doing work. There
+is no room to do it a second time — another step of this size puts
+`--hero-muted` under 4.5:1 on the small uppercase labels, and those labels are
+what say which figure you are looking at.
+
+### 42.4 The review card is off the home screen
+
+> *"Remove nothing to review from homescreen. if someone adds a bill, it will
+> be shown in the notification anyways, also there is a review panel in the
+> side menu. archive it, if we miss it we will bring it."*
+
+**This one had a written argument behind it, so here is the argument and why
+it lost.** §31 put the card above the two figures and made it present at zero,
+on the reasoning that an invoice a shop entered and nobody looked at is in no
+total on any screen — so the one way it stays invisible is by nothing
+mentioning it, and a card that vanishes when empty is one nobody notices is
+missing.
+
+That was written when the card was the only mention. It no longer is: the bell
+announces a new entry, the drawer carries a count badge, and Review is its own
+menu row. He is right.
+
+**The risk, on the record: all three of those require somebody to look.** The
+card was the only one that spoke without being asked. If entries start sitting
+in review for days, this is the first thing to bring back — and the comment
+where it used to sit says exactly what it was, so that is a paste rather than
+a rebuild. `test/unit/dashboard.test.tsx` asserts it is gone, so anybody
+re-adding it reads this section first.
+
+`useAwaitingReview` is no longer called on the dashboard — one fewer request
+on the screen the app cold-starts to. The drawer still calls it.
+
+### 42.5 The outstanding box, tidier
+
+> *"Keep the box size similar but reduce the font size a bit."*
+
+The figure's ceiling came down from `--text-total` (44px) to `--text-h1`
+(28px), and the card's vertical padding went up to hold its height — 107px,
+against 111px before. At 44px a six-figure total filled the card edge to edge
+and the label and count around it read as captions on a poster.
+
+### 42.6 Where it stands
+
+- **Tests: 731**, under all three timezones. `tsc` and `next build` clean.
+- **No database change** in this round.
+

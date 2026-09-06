@@ -6,12 +6,11 @@ import { useMemo, useState } from 'react';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useBusinesses } from '@/lib/queries/reference';
-import { useAwaitingReview } from '@/lib/queries/review';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { greet } from '@/lib/greeting';
-import { formatDayWithYear, type DateStr } from '@/lib/date';
-import { formatCents, sumCents } from '@/lib/money';
+import type { DateStr } from '@/lib/date';
+import { formatCents } from '@/lib/money';
 import {
   SORT_OPTIONS,
   sortInvoices,
@@ -68,7 +67,13 @@ export default function Dashboard() {
   const { data: profile } = useCurrentProfile();
   const { data: invoices = [], isLoading } = useUnpaidInvoices();
   const { data: businesses = [] } = useBusinesses();
-  const { data: waiting = [] } = useAwaitingReview();
+  /*
+   * `useAwaitingReview` is NOT called here any more — Round H took the review
+   * card off this screen, and with it the only reason the dashboard fetched
+   * that count. The drawer still calls it for its badge, so the query and its
+   * cache entry are alive; this screen simply stopped asking. One fewer
+   * request on the screen the app cold-starts to.
+   */
   const today = useSydneyToday();
 
   const [sort, setSort] = useState<SortKey>('due');
@@ -181,7 +186,7 @@ export default function Dashboard() {
           summary.invoice_count,
           'invoice',
         )}`}
-        className="mb-3 flex items-center gap-3 overflow-hidden rounded-sm px-4 py-4"
+        className="mb-3 flex items-center gap-3 overflow-hidden rounded-sm px-4 py-5"
         style={{
           backgroundImage: 'linear-gradient(150deg, var(--hero) 0%, var(--hero-deep) 100%)',
           color: 'var(--hero-text)',
@@ -204,13 +209,21 @@ export default function Dashboard() {
             off the edge first. `0.72` rather than StatCard's `0.58` because
             this figure shares its row with a 44px icon well and a chevron,
             and the arithmetic has to leave them their space.
+
+            The ceiling came down from --text-total (44px) to --text-h1 (28px)
+            in Round H: *"Outstanding box, make it bit tidier. Keep the box
+            size similar but reduce the font size a bit."* At 44px a
+            six-figure total filled the card edge to edge and the two lines
+            around it read as captions on a poster. The card keeps its height
+            from the padding, so the box is the size it was and the figure now
+            sits inside it rather than defining it.
           */}
           <span
-            className="money block text-total"
+            className="money mt-0.5 block text-h1"
             style={{
               textAlign: 'left',
               color: 'var(--hero-text)',
-              fontSize: `min(var(--text-total), ${(
+              fontSize: `min(var(--text-h1), ${(
                 100 /
                 (Math.max(formatCents(summary.total_cents).length, 1) * 0.72)
               ).toFixed(2)}cqw)`,
@@ -240,57 +253,38 @@ export default function Dashboard() {
       </Link>
 
       {/*
-        Above the money, and present at zero.
+        ==========================================================================
+        The review card used to sit here, and is deliberately gone. Round H.
 
-        This is the failure mode of the whole review feature stated as a
-        control: an invoice a shop entered, never looked at, and therefore in
-        no total on any screen. Everything else in the app excludes it by
-        construction, which is correct and which is also exactly how it would
-        stay invisible. So the count sits above the two figures it is missing
-        from, and it says "Nothing to review" rather than disappearing — a card
-        that vanishes when empty is one nobody notices is missing when it is
-        not.
+        *"Remove nothing to review from homescreen. if someone adds a bill, it
+        will be shown in the notification anyways, also there is a review panel
+        in the side menu. archive it, if we miss it we will bring it."*
+
+        WHAT IT WAS, so bringing it back is a paste and not a rebuild: a link to
+        /review carrying `waiting.length` and `sumCents(waiting)`, tinted
+        --spine-today when anything was waiting and --edge when nothing was,
+        rendered ABOVE the two figures and present at zero. `useAwaitingReview`
+        is untouched and still feeds the drawer badge, so the data it needed is
+        still here — only the card is gone.
+
+        WHY IT WAS THERE, because this is the part that was argued for: an
+        invoice a shop entered and nobody looked at is in no total on any
+        screen, so the one way it stays invisible is by nothing mentioning it.
+        The card said "Nothing to review" rather than disappearing, on the
+        reasoning that a card which vanishes when empty is one nobody notices is
+        missing.
+
+        WHY IT GOES ANYWAY: he is right that it is no longer the only mention.
+        The bell announces a new entry, the drawer carries a count badge, and
+        Review is its own row in the menu. The argument above was written when
+        the card was the only one of those that existed.
+
+        THE RISK, stated once so it is on the record: those three all require
+        somebody to look. This card was the only one that spoke without being
+        asked. If entries start sitting in review for days, this is the first
+        thing to bring back.
+        ==========================================================================
       */}
-      <Link
-        href={'/review' as Route}
-        aria-label={
-          waiting.length === 0
-            ? 'Review, nothing waiting'
-            : `Review, ${count(waiting.length, 'invoice')} waiting, ${formatCents(
-                sumCents(waiting),
-              )}`
-        }
-        className="mb-3 flex items-center gap-3 rounded-sm border bg-card px-3 py-2.5 active:bg-pressed"
-        style={
-          waiting.length > 0
-            ? { borderColor: 'var(--spine-today)', backgroundColor: 'var(--spine-today-bg)' }
-            : { borderColor: 'var(--edge)' }
-        }
-      >
-        <span className="min-w-0 flex-1">
-          <span
-            className="block text-sm font-medium"
-            style={{ color: waiting.length > 0 ? 'var(--spine-today)' : 'var(--muted)' }}
-          >
-            {waiting.length === 0
-              ? 'Nothing to review'
-              : `${count(waiting.length, 'invoice')} to review`}
-          </span>
-          <span className="block truncate text-xs text-muted">
-            {waiting.length === 0
-              ? 'The shops’ entries appear here first'
-              : 'Entered by the shops · in no total until approved'}
-          </span>
-        </span>
-        {waiting.length > 0 ? (
-          <span className="money shrink-0 text-sm" style={{ color: 'var(--spine-today)' }}>
-            {formatCents(sumCents(waiting))}
-          </span>
-        ) : null}
-        <span aria-hidden className="shrink-0 text-xs text-muted">
-          &rsaquo;
-        </span>
-      </Link>
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         <StatCard

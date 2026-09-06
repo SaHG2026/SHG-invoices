@@ -120,15 +120,17 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         utility classes — `text-ink` on this ground is 1.3:1.
       */}
       <header
-        className="no-print sticky top-0 z-30"
+        className="no-print sticky top-0 z-30 relative overflow-hidden"
         style={{
           backgroundColor: 'var(--hero)',
           backgroundImage: 'linear-gradient(160deg, var(--hero) 0%, var(--hero-deep) 100%)',
           color: 'var(--hero-text)',
         }}
       >
-        {/* relative, so the bell panel can hang beneath the bar */}
-        <div className="relative mx-auto flex h-14 max-w-[560px] items-center gap-1 px-4">
+        <HimalayaRidge />
+        {/* relative, so the bell panel can hang beneath the bar — and so the
+            whole bar sits above the ridgeline behind it. */}
+        <div className="relative z-10 mx-auto flex h-14 max-w-[560px] items-center gap-1 px-4">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
@@ -165,28 +167,26 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
                 className="shrink-0 rounded-sm"
               />
               {/*
-                Two lines, from the design. The tagline appears ONLY here —
-                on a deep screen the header shows a back link instead of the
-                wordmark, and a strapline over somebody's invoice list is
-                decoration in the one place the app is meant to be a tool.
+                The name, and nothing else. The design carried a strapline
+                under it for one round and it came straight back off:
+                *"remove the manage track get paid. just have it as SHG
+                invoices."*
+
+                Right, and it is the same argument the app keeps making about
+                itself — a strapline sells the product to somebody deciding
+                whether to use it, and everybody who sees this header decided
+                months ago. It was the only line in the app addressed to a
+                visitor rather than to the four people who work here.
               */}
-              <span className="min-w-0">
-                <span
-                  className="block truncate text-h2 leading-tight"
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    letterSpacing: '-0.02em',
-                    color: 'var(--hero-text)',
-                  }}
-                >
-                  SHG Invoices
-                </span>
-                <span
-                  className="block truncate text-xs"
-                  style={{ color: 'var(--hero-muted)' }}
-                >
-                  Manage. Track. Get paid.
-                </span>
+              <span
+                className="truncate text-h2"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  letterSpacing: '-0.02em',
+                  color: 'var(--hero-text)',
+                }}
+              >
+                SHG Invoices
               </span>
             </span>
           )}
@@ -335,6 +335,65 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
  * real character and it renders at three different weights across iOS, Android
  * and desktop, sometimes as an emoji. This is the same three lines everywhere.
  */
+/**
+ * The Himalaya, behind the header.
+ *
+ * Asked for by name — *"add the mountain ranges in the background.
+ * himalayas."* — and drawn rather than photographed, for the reason
+ * `lib/logos.ts` gives about explicit tables: an SVG is a few hundred bytes
+ * that is right on every screen and every density, where a background
+ * photograph is a network request that arrives after the header has painted
+ * and shifts nothing but costs everybody data on shop wifi.
+ *
+ * Two ranges, the far one lighter, because a single silhouette reads as a
+ * shape and two read as distance.
+ *
+ * They run the full width but stay in the BOTTOM THIRD, and that is the whole
+ * of the placement decision. The first attempt put proper peaks across the
+ * middle and they landed squarely behind the wordmark and the three icons —
+ * a mountain behind a letterform is the thing that makes a header look cheap.
+ * A 56px bar has no room above the controls, so the range became a horizon
+ * under them instead: the same scenery, in the only band of this header that
+ * is actually empty.
+ *
+ * `preserveAspectRatio="none"` deliberately — this is scenery being stretched
+ * to a bar, not a diagram whose proportions carry meaning.
+ */
+function HimalayaRidge() {
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 400 56"
+      preserveAspectRatio="none"
+      fill="none"
+    >
+      {/* The far range: lower, softer, and it never meets the near one's
+          peaks, which is what stops the two reading as one jagged line. */}
+      <path
+        d="M0 56 L34 40 L62 47 L96 34 L124 44 L158 33 L192 45 L226 35 L258 46 L292 32 L322 43 L354 36 L382 45 L400 38 L400 56 Z"
+        fill="var(--hero-ridge)"
+        opacity="0.5"
+      />
+      {/* The near range, with a snow line on the two peaks that carry it. */}
+      <path
+        d="M0 56 L40 46 L74 51 L110 41 L142 49 L178 38 L210 48 L244 42 L276 50 L310 39 L342 48 L374 43 L400 49 L400 56 Z"
+        fill="var(--hero-ridge)"
+      />
+      <path
+        d="M178 38 L185 43 L181 44 L178 42 L174 45 L171 42 Z"
+        fill="var(--hero-muted)"
+        opacity="0.45"
+      />
+      <path
+        d="M310 39 L317 44 L313 45 L310 43 L306 46 L303 43 Z"
+        fill="var(--hero-muted)"
+        opacity="0.45"
+      />
+    </svg>
+  );
+}
+
 function HomeGlyph() {
   return (
     <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none">

@@ -367,6 +367,22 @@ export function SettingsScreen() {
         }}
         onCancel={() => setAskingSignOut(false)}
       />
+
+      {/*
+        Which build this phone is running.
+        
+        Added after a deploy silently did not reach the live URL, and two
+        rounds were spent on "it still says the old thing" before anybody
+        checked. Nothing on any screen said which version it was; the answer
+        came from fetching the stylesheet and comparing a border radius.
+        
+        Deliberately the last thing on the page and deliberately dull. Nobody
+        needs it until somebody asks "did that go out", and then it is the
+        whole answer.
+      */}
+      <p className="mt-6 text-center text-xs text-muted">
+        Build {process.env.NEXT_PUBLIC_BUILD_STAMP ?? 'dev'}
+      </p>
     </AppChrome>
   );
 }

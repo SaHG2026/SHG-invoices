@@ -3,6 +3,16 @@
 Companion to `sagarmatha-payments-spec.md` (what to build) and `CLAUDE-CODE-NOTES.md` (where the bugs will be).
 This document is the third leg: **how it is put together, and in what order.**
 
+> **This file is an archive, not a briefing. Do not read it end to end.**
+> Start with `HANDOFF.md` — it carries everything needed to work, and its §1
+> has an index saying which section here answers which question. Come back for
+> the reasoning behind one decision, and grep for that section.
+>
+> Sections are append-only and dated by their number. Nothing here is edited
+> when it is superseded; a later section says so and says why. That is what
+> makes it worth keeping — the record of what was believed at the time is how
+> you tell a decision from an accident.
+
 Everything here is a decision, not an option. Where I have deviated from the spec or chosen between
 two defensible paths, it is marked **[decision]** with the reasoning.
 

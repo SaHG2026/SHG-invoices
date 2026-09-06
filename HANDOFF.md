@@ -1,10 +1,10 @@
 # Handoff — Sagarmatha Payments
 
-You are picking up a build that is seven phases in and working. This file is the
-entry point: read it, then the three documents in §1, then start.
+Entry point. Read this, then §1's list, then start.
 
-**Everything below §3 is operational knowledge that was expensive to learn the
-first time.** Reading it costs three minutes; re-deriving it costs a session.
+**Everything here was expensive to learn.** Reading it costs five minutes;
+re-deriving it costs a session. Several items below are here because they were
+missed once and cost a round trip through a person.
 
 ---
 
@@ -12,113 +12,74 @@ first time.** Reading it costs three minutes; re-deriving it costs a session.
 
 | File | What it is |
 |---|---|
-| `sagarmatha-payments-spec.md` | The client's own spec. **What** to build. His words, his priorities. |
-| `CLAUDE-CODE-NOTES.md` | **Where the bugs will be.** Written from a previous app of his that shipped these exact failures. Not hypothetical. |
-| `ARCHITECTURE.md` | **How** it is put together, and every decision taken since, with reasoning. §19 is the current state of the build. |
+| `sagarmatha-payments-spec.md` | The client's own spec. **What** to build, in his words. |
+| `CLAUDE-CODE-NOTES.md` | **Where the bugs will be.** Written from his previous app, which shipped these exact failures. Not hypothetical. |
+| `ARCHITECTURE.md` | **How** it is built, and every decision since, with reasoning. Long. §2 below says how to read it without reading all of it. |
 
-Do not skim the notes. Ten bugs have been found in this build — nine on a real
-phone, one by writing down what a function's outcomes actually were — and five
-of them are named in that file before they happened.
+`ARCHITECTURE.md` is 176KB and is an archive, not a briefing. Do not read it
+end to end. Grep for the section you need:
+
+| Question | Section |
+|---|---|
+| Why is there no server-side data fetching? | §1 |
+| Why is every total derived from one array? | §2 |
+| Dates, timezones, the worst bug class | §3 |
+| Money | §4 |
+| Schema, RLS, the ref counter, audit trigger | §5 |
+| The offline queue and optimistic writes | §7 |
+| Roles, notifications, push | §8.1 |
+| Every bug found on a real phone, with its test | §19 |
+| Venue staff accounts — the boundary | §34 |
+| Rounds A–D, the most recent work | §35–§38 |
 
 ---
 
 ## 2. What this is
 
-An internal tool for Sagarmatha Holdings Group — four businesses, four people —
-to log supplier invoices and tick off payments. Not a product. It is optimised
-for one number: **under 15 seconds to log an invoice on a phone, one-handed,
-from cold app open.** That target has been measured and met; the client's words
-were "it feels instantaneous". Every feature decision defers to it.
+An internal tool for Sagarmatha Holdings Group — four businesses, six accounts
+— to log supplier invoices and tick off payments. Not a product. Optimised for
+one number: **under 15 seconds to log an invoice on a phone, one-handed, from
+cold app open.** Measured and met; the client's words were "it feels
+instantaneous". Every feature decision defers to it.
 
 - **Live:** https://shg-invoices.vercel.app
-- **Repo:** `SaHG2026/SHG-invoices`, branch **`main`** — which holds everything.
-  `phase-1-foundation` and `tidy-up-before-phase-7` are history and can be
-  ignored. There was no `main` until handover; the branch-per-phase convention
-  in `ARCHITECTURE.md` §14 was never followed and is not worth starting now.
+- **Repo:** `SaHG2026/SHG-invoices`, branch **`main`** — holds everything.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
-- **Local config:** `.env.local` (gitignored, already populated)
+- **Local config:** `.env.local`, gitignored, already populated
 
-**Everything through Phase 7 is built, deployed and in use.** Phases 1–7, the
-client-driven revisions between 6 and 7, push, and the go-live reset.
+**Who is who.** Mani (owner, CEO), Milan (member, COO), Sujan (member, GM),
+Rabindra (builder — maintains the app, out of every list and both notification
+audiences, access untouched). Plus two shared shop logins, GMP and GMH, role
+`staff`.
 
-**The venue staff accounts (§34) are live and in use.** `CATCH_UP_010`–`012`
-are run, both shop logins exist, the boundary was verified against the live
-database. Read §34 before touching any of the staff policies or the
-`staff_invoices` view. The only open thread is a phone-speed observation, not
-yet diagnosed — see "Open thread" below. §33 is the state at
-handover and the list of audit findings that were accepted rather than fixed —
-read it before concluding anything looks wrong.
+### The one thing that everything else assumes
 
-`ARCHITECTURE.md` carries the reasoning for every one of them:
+**`role` is a permission, for exactly one value.** `staff` decides access;
+`member`, `owner` and `builder` decide only what a screen shows. `is_member()`
+was narrowed rather than nine policies edited, so **a policy written in a later
+phase excludes venues by default** — write `is_member()` like all the others
+and it is already right. §34.
 
-| | |
-|---|---|
-| §20 | Side menu, SHG Invoices branding, customers, Settings |
-| §21 | The home screen rebuilt to the client's mockup |
-| §22 | Photographs on the chips, logos on the businesses |
-| §23 | The tick that appeared to erase two invoices; motion; pill buttons |
-| §24 | Second round of phone feedback — the sheet, the menu counts, renames |
-| §25 | Sales invoices: what customers owe. The sheet's third and final fix |
-| §26 | Copy trimmed; only Mani is notified about payments |
-| §27 | The green repaint; screens push and pop by URL depth |
-| §28 | Going live: the clean slate, who counts as one of the four, Phase 8 closed |
-| §29 | **Phase 7** — the offline queue, the service worker, error boundaries, push |
-| §30 | Rabindra becomes the builder; logos and photographs change without a deploy |
-| §31 | The third motion pass — why it was abrupt; the go-live reset |
-| §32 | Signing out no longer discards unsent work |
-| §33 | **Handover** — the audit findings accepted, and what is next |
-| §34 | **Venue staff accounts** — the day `role` became a permission |
-| §35 | **Round A** — the figures on Home became controls; edit/remove found |
-| §36 | **Round B** — a shop's invoice waits to be approved |
-| §37 | **Round C** — a daily reminder at a time each person chooses |
-| §38 | **Round D** — Deli issues an invoice it can print |
+The trap it replaced: three role filters written as `role <> 'builder'`, and a
+blocklist admits every role invented after it. All three are allowlists now
+(`lib/staff.ts`). **If you add a fourth role check anywhere, write it as an
+allowlist** or it will quietly include whatever comes next.
 
-**Phase 7 is built, deployed and switched on** — the offline write queue, the
-service worker, error boundaries, the 200-row pass, and push all the way
-through to a phone. `ARCHITECTURE.md` §29, and `db/push/README.md` for how the
-sending half is wired if it ever needs re-doing.
+### Four things that are easy to undo by accident
 
-**The go-live reset has been run.** The ledger is empty on purpose: every
-supplier, invoice and customer from the build was test data and was deleted
-before the three of them started (§31.2). An empty app is the expected state,
-not a broken one.
-
-**§4 rule 8 still applies to whatever comes next.** §33.2 has the piece of
-work the client has already named, and it is deliberately not soon.
-
-### The one thing §34 changed that everything else assumes
-
-**`role` is a permission now, for exactly one value.** `staff` decides access;
-`member`, `owner` and `builder` still decide only what a screen shows.
-`is_member()` was narrowed rather than nine policies edited, so a policy
-written in a later phase excludes venues by default — if you add one, write
-`is_member()` like all the others and it is already right.
-
-The trap it replaced: three role filters were written as `role <> 'builder'`,
-and a blocklist admits every role invented after it. All three are allowlists
-now (`lib/staff.ts`). If you add a fourth role check anywhere, write it as an
-allowlist or it will quietly include whatever comes next.
-
-### Four things Phase 7 decided that are easy to undo by accident
-
-1. **Push names nobody in code.** Only Mani is told when a bill is *paid*, and
-   that lives as `profiles.notify_on_payment` — true for one row, deliberately
-   outside the `self_update` column grant so nobody can turn it on for
-   themselves. The single place his name appears is an `UPDATE` in
-   `CATCH_UP_006.sql`, setting data. Never a branch on a display name.
+1. **Push names nobody in code.** Only Mani is told when a bill is *paid*, via
+   `profiles.notify_on_payment`, set by an `UPDATE` in `CATCH_UP_006.sql`.
+   Never a branch on a display name.
 2. **Nothing in the app ever asks anybody to enable push.** No prompt, no
-   interstitial, no badge about the Home Screen. §28.4: build the capability
-   and stop. The switch is in Settings and that is the whole of it.
+   badge. The switch is in Settings and that is the whole of it. §28.4.
 3. **The service worker touches no writes, and must never.** `public/sw.js`
    returns early on anything that is not a same-origin GET. A worker that
    retries writes is a second queue in a second process, and two queues that
    can both send the same invoice is how an invoice gets entered twice.
-   Background Sync makes exactly that mistake easy and appealing.
 4. **Everything a write needs must be in its variables, never in a closure.**
-   A queued write is resumed by key from a cold start, with no component left
-   holding what it captured. `lib/offline/keys.ts` has the full account, and
-   `test/unit/offline-queue.test.ts` fails if a new write is added to `mk`
-   without a function registered for it.
+   A queued write is resumed by key from a cold start. `lib/offline/keys.ts`
+   has the account; `test/unit/offline-queue.test.ts` fails if a write is added
+   to `mk` without a function registered for it.
 
 ---
 
@@ -126,344 +87,254 @@ allowlist or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 689 tests
+npx vitest run       # 697 tests
 npx tsc --noEmit
 npx next build
 ```
 
-**Always run the suite under three timezones before committing.** The app's
-worst historical bug class is date handling, and a Sydney-only pass hides it:
+**Always run the suite under three timezones before committing.** The worst
+historical bug class is date handling, and a Sydney-only pass hides it:
 
 ```bash
 for tz in UTC Australia/Sydney America/Los_Angeles; do TZ=$tz npx vitest run; done
 ```
 
-### Looking at the app without signing in
+### Looking at a screen without signing in
 
-`test/preview-dashboard.test.tsx` renders the real components against the real
-fixture and writes standalone HTML. Skipped unless `PREVIEW_OUT` is set.
-`ARCHITECTURE.md` §21.6 has the commands. It is the only way to see a screen
-without credentials, and it is how the green repaint was shown to the client
-before it shipped.
+Five preview files render real components against real fixtures and write
+standalone HTML. Skipped unless `PREVIEW_OUT` is set. `ARCHITECTURE.md` §21.6
+has the commands.
 
-### Deploying
+`preview-dashboard`, `preview-venue`, `preview-supplier`, `preview-review`,
+`preview-sales`. The last three exist because those screens cannot otherwise be
+seen — one needs a real supplier, one needs a shop's unapproved entry, one
+needs a customer, products and an issued invoice.
+
+### Deploying — and the trap that cost two rounds
 
 ```bash
 npx vercel deploy --prod --yes
 ```
 
-It now aliases `shg-invoices.vercel.app` itself, and says `Aliased` in the
-output when it has. Earlier notes in this file said a second
-`vercel alias set` was always required — check the output before reaching for
-it, and only run it if the alias line is missing.
+**Check the output says `Aliased`.** And know what this command actually does:
+it ships **whatever is on disk right now**. There is no git connection, so it
+cannot know about commits made after you last ran it, and it will not warn you.
 
-There is no GitHub auto-deploy: the client's Vercel account has no GitHub
-connection. Every release is manual, and it is his to run — the CLI login
-lives on his machine.
+A deploy silently left the site a commit behind and two rounds went on "it
+still shows the old message" before anybody checked. So:
+
+**The app carries its build id. Settings shows it, last on the page.** After
+deploying, open Settings and confirm it matches `git rev-parse --short HEAD`.
+That question is now five seconds, not an investigation.
+
+Auto-deploy via `vercel git connect` was considered and **deliberately not
+done**: a push would then deploy app code before its database file has been
+run, and that ordering has mattered twice.
 
 ### Database changes
 
-There is no migration CLI in the loop. **The client applies SQL by hand** in the
-Supabase SQL editor. So:
+There is no migration CLI. **The client applies SQL by hand** in the Supabase
+SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_00N.sql` are deltas already sent to him and applied
-- Write a new `CATCH_UP` file, send it with `SendUserFile`, and make it
-  **idempotent** — he will sometimes run it twice
-- Batch changes. Each file is a round trip through a person.
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 016**
+- Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
+- **Batch changes.** Each file is a round trip through a person
+- **Say explicitly whether the SQL must run before or after the deploy.** It
+  has mattered twice: `CATCH_UP_013` deployed early empties every total,
+  `CATCH_UP_015` deployed early breaks recording any sales invoice
 
 ---
 
 ## 4. Rules that must not be broken
 
-These are not preferences. Each one is load-bearing and several were paid for.
+Not preferences. Each one is load-bearing and several were paid for.
 
-1. **No service-role key. Anywhere.** Not in the app, not on Vercel, not in a
-   script. `auth.uid()` returns null under it, which silently destroys the
-   attribution on every invoice. If the key does not exist, the trap cannot be
-   sprung. This is why the app is client-first (`ARCHITECTURE.md` §1).
-
+1. **No service-role key. Anywhere.** `auth.uid()` returns null under it, which
+   silently destroys attribution on every invoice. If the key does not exist,
+   the trap cannot be sprung. This is why the app is client-first (§1).
 2. **`new Date()` appears in `lib/date.ts` and nowhere else.** `toISOString()`
-   is banned outright — it is the literal mechanism of his previous app's
-   worst bug. Calendar dates are `'YYYY-MM-DD'` strings and are never parsed
-   into a `Date`.
-
-3. **Hex colours exist only in `app/globals.css`.** Components use tokens.
-   Two documented exceptions, both of which cannot read a CSS variable by
-   nature rather than by convenience: `app/manifest.ts`, because a web
-   manifest is JSON; and `app/global-error.tsx`, which renders when the root
-   layout has failed — which is exactly when the stylesheet cannot be relied
-   on, and a boundary that renders white-on-white is not a boundary.
-
+   is banned outright — it is the literal mechanism of his previous app's worst
+   bug. Calendar dates are `'YYYY-MM-DD'` strings, times of day are `'HH:MM'`
+   strings, and neither is ever parsed into a `Date`.
+3. **Hex colours exist only in `app/globals.css`.** Two documented exceptions,
+   both of which cannot read a CSS variable by nature: `app/manifest.ts` and
+   `app/global-error.tsx`. The `@media print` block is a third place colours
+   are literal — a printer has no CSS variables and a token that failed to
+   resolve on paper is white on white.
 4. **One array, one total.** Every figure on a screen is derived from the same
-   array the list renders (`ARCHITECTURE.md` §2). A total from a separate query
-   is the bug notes §3 calls "trust-destroying".
-
+   array the list renders (§2). A total from a separate query is the bug the
+   notes call "trust-destroying".
 5. **Nothing is ever deleted.** Void with a reason. Deactivate, do not remove.
-   The one thing that is genuinely replaced rather than kept is a logo or a
-   photograph (§30.2) — a picture is not a record of anything, and Remove
-   puts back what shipped rather than leaving a hole.
-
+   The one exception is a logo or photograph (§30.2) — a picture is not a
+   record.
 6. **Money is integer cents**, parsed and formatted only by `lib/money.ts`.
-
+   **Quantities are integer thousandths**, only by `lib/quantity.ts`.
 7. **Do not add** an ORM, Redux, tRPC, a state-machine library, a component
-   library, or a charting library. Spec §4 rules them out and the surface is
-   small enough that every one of them would cost more than it saved.
-
-8. **Stop at the end of each phase.** Report, then wait. The client's notes ask
-   for this explicitly.
+   library, or a charting library. Spec §4 rules them out.
+8. **Stop at the end of each phase.** Report, then wait.
 
 ---
 
-## 5. Things that will waste your time if you do not know them
+## 5. Things that will waste your time
 
-Learned the hard way in this project.
+**Bash heredocs break here.** Writing a `.tsx`, `.sql` or `.md` file with
+`cat <<'EOF'` fails on apostrophes, `$$` and em dashes. Use the Write tool for
+anything non-trivial; Python `pathlib` for surgical edits to existing files.
 
-**Bash heredocs break on quotes here.** Writing a `.tsx` or `.sql` file with
-`cat <<'EOF'` fails unpredictably on apostrophes and `$$`. Use the Write tool
-for anything non-trivial; use Python `pathlib` for surgical edits to existing
-files.
+**Browser-pane screenshots render stale frames.** They show blank or
+half-painted pages while the DOM is perfectly correct. Do not debug from them —
+measure with `javascript_tool` (`getBoundingClientRect`, `getComputedStyle`).
+This found real bugs twice.
 
-**Browser-pane screenshots render stale frames.** They will show a blank or
-half-painted page while the DOM is perfectly correct. Do not debug from them —
-measure with `javascript_tool` (`getBoundingClientRect`, `getComputedStyle`)
-and trust that instead. This found a real bug: the dashboard's headline figure
-looked fine in a screenshot and was one character from overflowing its card
-(`ARCHITECTURE.md` §21.5).
-
-**The app cannot be opened without a session, so there is a way to look at it
-without one.** `test/preview-dashboard.test.tsx` renders the real components
-against the real fixture and writes out standalone HTML with the built
-stylesheet. Skipped unless `PREVIEW_OUT` is set — `ARCHITECTURE.md` §21.6 has
-the four commands.
-
-**`use(params)` never resumes in a bare test render.** This is why every
-dynamic route is a two-file pair: a thin `page.tsx` that awaits the params, and
-a screen component in `components/screens/` that takes a plain value. Keep that
-split — it is what makes the screens testable.
+**But do still look.** Two defects in Round B and D were invisible to passing
+assertions and obvious in a browser: a heading truncating at 360px, and the app
+header printing across every invoice. For print, lift the rules out of their
+media query with JS and look at what is left.
 
 **Component tests need the full mock set — all six.** Anything rendering
 `AppChrome` reaches `useRecentActivity` via the header bell and
-`useAwaitingReview` via the drawer's Review badge, and marking paid is
-reachable from every list. A test file that mocks only what it thinks it needs
-passes alone and fails in the suite. Mock all six: `session`, `invoices`,
-`reference`, `detail`, `payments`, `review`.
+`useAwaitingReview` via the drawer's Review badge. A file that mocks only what
+it thinks it needs passes alone and fails in the suite. Mock `session`,
+`invoices`, `reference`, `detail`, `payments`, `review`.
 
-It was five until the review queue landed, and going from five to six broke
-three test files that had nothing to do with reviewing. That is the cost of a
-shared shell and it is worth paying, but it means the number in this sentence
-is load-bearing: check it against `lib/offline/register.ts` if a test fails
-with "No QueryClient set".
+**`use(params)` never resumes in a bare test render.** This is why every
+dynamic route is a two-file pair: a thin `page.tsx` that awaits the params, and
+a screen component taking a plain value. Keep that split. Search params go the
+same way — the route unwraps them, the screen takes a literal.
 
 **Testing Library cleanup is registered manually** in `test/setup.ts`, because
-Vitest runs without globals. Without it renders stack up and queries find
-duplicates.
+Vitest runs without globals.
 
-**Accessible names collide.** The header shows the signed-in person's name, so
-`getByRole('button', { name: /Rabindra/ })` matches two things. Scope queries
-with `within()`.
+**Accessible names collide.** The header shows the signed-in person's name.
+Scope queries with `within()`.
 
 ---
 
-## 6. What is still owed
+## 6. Where the build has got to
 
-**Nothing is blocking. The app is live and in daily use.** Everything below
-is either waiting on real usage or waiting on the client.
+**Live and in daily use. All database files through `CATCH_UP_016` applied.**
+697 tests under three timezones.
 
-### Open, and held deliberately
+Phases 1–7, the venue accounts (§34), then four rounds of feedback:
 
-**A shop could not save an invoice — FOUND AND FIXED, 6 September.** Not a
-regression: it had never worked. `registerVenueMutations` sent `.upsert()`,
-which PostgREST compiles to `INSERT ... ON CONFLICT`, and that brings the
-table's UPDATE policies into the permission check. A member passes them via
-`member_all`; a venue's `staff_update` wants a row created in the last five
-minutes, which on an insert does not exist. Every venue insert was `42501`.
+| | |
+|---|---|
+| §35 | **Round A** — the Home figures became links; edit/remove made findable; supplier totals between two dates |
+| §36 | **Round B** — a shop's invoice waits to be approved; shops choose a supplier rather than creating one; a note on every entry |
+| §37 | **Round C** — a daily reminder at a time each person chooses |
+| §38 | **Round D** — Deli's products, line items and printable invoice |
 
-A plain insert is used now, and a `23505` naming `invoices_pkey` — and only
-that key — counts as the replay succeeding, which is what `ignoreDuplicates`
-was buying. `invoice_notes` had the same wall and the same fix.
-`test/unit/venue-write.test.ts` asserts the request shape.
+### The two lessons worth more than the features
 
-**The lesson is bigger than the bug.** `verify_staff.mjs` passed throughout,
-because a missing permission and a working refusal are both `42501` from
-outside. Its positive write test was behind `--write` and never run. A fence
-proven to keep things out had not been proven to have a gate.
+**A fence proven to keep things out has not been proven to have a gate.**
+`verify_staff.mjs` passed for weeks while a shop could not save a single
+invoice, because from outside a missing permission and a working refusal are
+both `42501`. Its one positive write test sat behind `--write` and was never
+run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
+to the staff policies.
 
-**Edit is offered on rows the shop did not enter.** `stillCorrectable` gates on
-the clock alone, but `staff_update` also requires `created_by = auth.uid()`.
-So a venue is offered Edit on any invoice for its venue created in the last
-five minutes, including one of the four's, and tapping it is refused — notes
-§6, do not offer what cannot be done.
+**`.upsert()` is not `.insert()` under RLS.** PostgREST compiles an upsert to
+`INSERT ... ON CONFLICT`, which brings the table's **UPDATE** policies into the
+permission check. A member passes them via `member_all`; an account whose only
+update policy is conditional does not. Where the replay guarantee is needed
+without upsert: generate the id on the client, use a plain insert, and treat a
+`23505` naming **the primary key and only that key** as the replay succeeding.
+`test/unit/venue-write.test.ts`.
 
-The fix needs the boundary view to answer "is this mine". `created_by` itself
-should NOT be added: an `is_mine` boolean answers the question without handing
-over a row, which is the same shape as everything else in §34. **Held, to batch
-with whatever the blocker above needs** — each SQL file is a round trip through
-a person.
+---
 
-### The two things that are built and not proven
+## 7. What is still open
 
-Read these before concluding anything works end to end.
+**Nothing is blocking.**
 
-**1. Push has never delivered a notification to a phone.** Not once, and it is
-not a fault — `db/diagnose_push.sql` established the whole chain is correctly
-configured. The cause is that **nobody eligible has subscribed**: exactly one
-device is subscribed and it is the builder's, who is out of both notification
-audiences by design (§28.2). Mani, Milan and Sujan have never turned the switch
-on, because §28.4 decided the app never asks. Somebody has to tell them it is in
-Settings.
+1. **Edit is offered on rows a shop did not enter.** `stillCorrectable` gates on
+   the clock alone; `staff_update` also requires `created_by = auth.uid()`. So
+   a venue is offered Edit on one of the four's invoices and tapping it is
+   refused — notes §6, do not offer what cannot be done. The fix needs the
+   boundary view to answer "is this mine". **Add an `is_mine` boolean, not
+   `created_by`** — answer the question, do not hand over the row. Held to
+   batch with the next SQL file. Re-run `verify_staff.mjs` after.
 
-The daily reminder (§37) is the first mechanism that can be proven alone,
-because it is addressed to one person rather than to an audience and therefore
-does reach the builder. §7 of `CATCH_UP_014.sql` sets a time, clears the stamp
-and calls the function by hand — two minutes, and it is the only way anybody
-will find out whether push works before it matters.
+2. **The app feels a touch slower on a phone.** Reported long ago, never
+   diagnosed, and the client was going to watch which pattern it follows. The
+   database is fast (~45ms warm), so this is round trips. §34.12 has the three
+   things to localise.
 
-**2. `db/verify_staff.mjs` has not been re-run since the venue accounts
-shipped.** Round B (§36) moved the staff surface three ways: the supplier
-insert policy was dropped, two `invoice_notes` policies were added, and
-`pin_invoice_facts` gained two lines. The `staff_invoices` view itself is
-untouched, so the boundary is very likely intact — but "very likely" is what
-§34.11 refused to accept about this exact file, and it was right to. It needs
-`STAFF_EMAIL` / `STAFF_PASSWORD` in `.env.local`, and removing them after.
+3. **Recovery within 7 days of a deletion.** Asked for. Nothing in the app
+   deletes anything, so losing an account loses no data — but there is **no
+   backup at all**, which was accepted at handover (§33.1) on the reasoning
+   that this is a reminder layer over records kept elsewhere. A 7-day undo is
+   Supabase point-in-time recovery, a paid add-on. Needs the plan checked and a
+   decision.
 
-### Done, so nobody re-derives them
+4. **Push has now been proven to reach a phone, once.** The daily reminder
+   arrived. But only the builder's device is subscribed: Mani, Milan and Sujan
+   have never turned the switch on, because §28.4 decided the app never asks.
+   Somebody has to tell them it is in Settings. Until then, every notification
+   in this app goes nowhere.
 
-Every database file through `CATCH_UP_009_RESET` has been run. Push is fully
-wired and sending. Rabindra is the builder — out of the lists, out of both
-notification audiences, access untouched. Logos and photographs are his to
-change from `/brand` without a deploy. The go-live reset has been run and the
-ledger started empty.
+5. **Export by date range** — *"from this date to this date export in excel or
+   csv etc."* Still the "after a month of real use" item. Half of it exists as
+   the supplier date range (§35.4), and what a range answers on screen is worth
+   having before deciding what a file should contain. §33.2 has the one
+   question to ask first: what happens to the file when it arrives.
 
-### Shipped this session: venue staff accounts (§34)
+6. **A global list of issued invoices.** Deli's are reachable per customer.
+   Worth adding when a customer becomes the wrong index, not before.
 
-**Live and in use.** GroceryMate Parramatta and Hurstville each have a shared
-login that sees its own venue's invoices, adds to them, and corrects one for
-five minutes after entry — and is told nothing about payment. Deployed to
-production, `main` pushed, both accounts created, the test account deactivated.
-
-What was done, so nobody redoes it:
-
-- **`CATCH_UP_010`, `011`, `012` are all run** against the live project. 010 is
-  the feature; 011 and 012 closed two holes that running the verification —
-  not reading it — turned up. Read their headers before touching the staff
-  policies.
-- **Verified live.** `db/verify_staff.mjs` signs in as a real staff account and
-  proves the boundary: the view hides every payment column (checked on a real
-  row), every fenced table is refused, and the insert policy — not a foreign
-  key — refuses a paid-injection and a forged author with `42501`. It needs
-  `STAFF_EMAIL` / `STAFF_PASSWORD` in `.env.local`; both were removed after use.
-  **Re-run it after any change to the staff policies or the `staff_invoices`
-  view** — that view runs with its owner's rights, so its `WHERE` is the whole
-  boundary and a bad edit leaks silently.
-- **The four are unaffected.** `is_member()` was narrowed to exclude staff, and
-  the members' add/mark-paid paths were not touched.
-
-`test/preview-venue.test.tsx` renders both venue screens to standalone HTML
-without a session, the same way §21.6 works — the way to look at them without a
-venue password.
-
-### Open thread: the app feels a touch slower on a phone
-
-Reported at the end of the session, **not yet diagnosed** — the client was going
-to watch which pattern it follows before anything is changed. Do not edit the
-write paths until that report comes back; they carry the offline-queue
-correctness from §4 rule 4 and notes §1.4–1.6, and a blind change there is how
-that gets undone.
-
-What was already established: the database is fast (~45ms warm, one ~500ms
-cold-start on the first hit), so this is network round-trips, not the server,
-and not the venue work. The three things to localise — written up in §34.12:
-
-1. First action after opening vs every time (cold connection vs plain latency).
-2. Whether a typed invoice number makes a save slower (the duplicate check runs
-   before the sheet closes — spec §6, one blocking round trip).
-3. Whether the mark-paid strikethrough is instant and only the toast lags (it
-   is optimistic, so it should be) or the strike itself waits.
-
-### The next piece of work, deliberately not yet
-
-1. **Export by date range**, in his words *"from this date to this date export
-   in excel or csv etc."* §33.2 has the shape and the one question to ask him
-   before building it: what happens to the file when it arrives. That answer
-   decides between an hour of CSV and half a day of `.xlsx` plus the first
-   dependency added purely for output.
-   **After a month of real use**, per spec §11's discipline and his own words.
-
-   Half of it exists already: the supplier date range (§35.4) answers the same
-   question on screen, and deliberately stopped there. What a range answers in
-   front of somebody is worth having before deciding what a file should contain.
-
-2. **A global list of issued invoices.** Deli's invoices are reachable from each
-   customer, which is where somebody looks for one. Worth adding when there are
-   enough that a customer is the wrong index — not before.
-
-### Small things, whenever
-
-2. **Deli Delights' logo**, when he sends it — and it is no longer a job for
-   whoever has the repo. He adds it himself at `/brand`, reachable from
-   Settings. `lib/logos.ts` remains the fallback for what shipped.
-3. **Supplier payment terms.** Suppliers created from the add-invoice sheet
-   have none and fall back to 14 days. The suppliers list counts them; the
-   supplier page sets them. Worth a prompt once real suppliers exist.
-4. **Tidying the audit left behind** (§33.1): three unused packages
-   (`lucide-react`, `react-hook-form`, `@hookform/resolvers`), the `/specimen`
-   page, and the middleware's `offline` exemption matching more than it should.
-   None of it does harm; all of it makes the next audit shorter.
+7. **Tidying the audit left behind** (§33.1): three unused packages, the
+   `/specimen` page, the middleware's `offline` exemption. Harmless.
 
 ### Known and deliberately accepted — do not "fix" these
 
-The pre-release audit found eleven things. One was a defect and was fixed
-(§32). **The other ten were weighed by the client and accepted**, on the
-reframing that this is a reminder layer over records that live elsewhere —
-not a system of record. §33.1 has each one with his reasoning.
+A pre-release audit found eleven things. One was a defect and was fixed (§32).
+**The other ten the client weighed and accepted**, on his own reframing:
 
-If you are auditing this app and find no automatic backups, an open deletion
-path outside the app, or staff photographs at public urls: **those are
-decisions, not oversights.** Read §33.1 before raising them again. If the app
-ever stops being a notebook and starts being the record, every one of them
-must be reopened — that is the condition the acceptance rests on.
+> "this is meant to be just an advanced interactive notes. They have better
+> means to track record of things. Rather than scribble it somewhere... its
+> more of a reminder app about 'oh its already due tomorrow?'"
 
-**Closed:** Deli Delights receivables. §17 scoped a Phase 8 of three tables;
-the client's ruling is that `customers` and `sales_invoices` are the whole of
-it. **Part payments are carried by a note and a moved due date**, on both
-sides, and deliberately not by an `amount_received_cents` column — a
-partial-payment field is the first plank of an accounts package. §28.3 has
-what that costs.
+So if you find no automatic backups, an open deletion path outside the app, or
+staff photographs at public urls: **those are decisions, not oversights.**
+§33.1 has each with his reasoning. If the app ever stops being a notebook and
+starts being the record, every one must be reopened — that is the condition the
+acceptance rests on.
+
+**Closed:** Deli receivables beyond `customers` and `sales_invoices`. Part
+payments are carried by a note and a moved due date, deliberately not by an
+`amount_received_cents` column — that field is the first plank of an accounts
+package. §28.3.
 
 ---
 
-## 7. How to work with this client
+## 8. How to work with this client
 
-`CLAUDE-CODE-NOTES.md` §7 is accurate and worth re-reading in full. In practice:
+`CLAUDE-CODE-NOTES.md` §7 is accurate and worth re-reading. In practice:
 
-- **He tests on a real phone and reports precisely.** "When I check certain
-  invoices the whole lot gets checked off" was one bug described from two
-  symptoms. Take the report literally and look for the single cause.
-- **He is right about his own product more often than the spec is.** Twice he
-  has asked for something the spec forbade and been correct both times — the
-  tick on list rows, and removing reference numbers from the UI. When his
-  instruction conflicts with the spec, re-read the spec's *reasoning* before
-  pushing back; usually it does not say what you thought.
+- **He tests on a real phone and reports precisely.** Take the report literally
+  and look for the single cause.
+- **He is right about his own product more often than the spec is.** Three
+  times now he has asked for something the spec forbade and been correct: the
+  tick on list rows, removing reference numbers, and rounder corners. When his
+  instruction conflicts with the spec, re-read the spec's *reasoning* first.
 - **Lead with the uncomfortable part.** If something cannot be done, or you got
   something wrong, say it first and plainly. He responds well to it.
 - **Name the cause, not the fix.** "The list was refreshing while you typed"
   beats "resolved a state reconciliation issue".
-- **Do not pad.** He manages context deliberately — which is why this file
-  exists.
-- **He is not a developer**, but he specified this app precisely and built the
-  previous one himself. Explain mechanisms, not concepts.
+- **He is not a developer.** When he asks for steps, give numbered steps and say
+  *where* — terminal, Supabase, text editor, or the app. He has asked for this
+  twice; both times it was because an answer mixed all four together.
+- **Do not pad.** He manages context deliberately, which is why this file exists.
 
 ### The pattern worth carrying
 
-Of the eight bugs found on his phone so far, **five were shape problems, not
-logic problems** — a value that could hold states which should not exist. Three
-booleans describing eight states when only four are real; one fact owned by two
-files; a run and its children sharing one expansion value.
+Of the bugs found on his phone, **most were shape problems, not logic
+problems** — a value that could hold states which should not exist. Three
+booleans describing eight states when four are real; one fact owned by two
+files; a time plus an "enabled" flag that can disagree.
 
 Each fix made the broken state *unrepresentable* rather than correcting the
-branch that produced it. When something breaks twice in the same component,
-stop fixing the branch and change the shape.
-
-`ARCHITECTURE.md` §19 has the full table, each with the test that now stands
-over it.
+branch that produced it. **When something breaks twice in the same component,
+stop fixing the branch and change the shape.** §19 has the full table, each with
+the test that now stands over it.

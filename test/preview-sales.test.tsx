@@ -57,6 +57,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
   detail: { current: null as unknown },
+  today: { current: null as string | null },
 }));
 
 vi.mock('@/lib/queries/session', () => ({
@@ -124,7 +125,14 @@ vi.mock('@/lib/queries/payments', () => ({
   useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => FIXTURE_TODAY }));
+/*
+ * A knob, not a constant.
+ *
+ * `useSydneyToday` returns null on the real first render. Pinning it to a date
+ * here made the preview unable to show the state that was actually crashing on
+ * the client's phone -- the same blind spot the unit tests had.
+ */
+vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => mocks.today.current }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/sales/new',
@@ -191,6 +199,21 @@ describe('preview', () => {
     const docHtml = doc.container.innerHTML;
     doc.unmount();
 
+    /*
+     * The first render, before the date arrives. This is the state that was
+     * showing "This screen didn't load" on a real phone, and no preview could
+     * show it while the hook was pinned to a fixed date.
+     */
+    mocks.today.current = null;
+    const cold = render(
+      <ToastProvider>
+        <ComposeSalesInvoice />
+      </ToastProvider>,
+    );
+    const coldHtml = cold.container.innerHTML;
+    cold.unmount();
+
+    mocks.today.current = FIXTURE_TODAY;
     const composer = render(
       <ToastProvider>
         <ComposeSalesInvoice />
@@ -224,6 +247,11 @@ describe('preview', () => {
 
     writeFileSync(OUT, page('Invoice document preview', docHtml), 'utf8');
     writeFileSync(OUT.replace(/\.html$/, '-compose.html'), page('Compose preview', composeHtml), 'utf8');
+    writeFileSync(
+      OUT.replace(/\.html$/, '-compose-cold.html'),
+      page('Compose preview, first render', coldHtml),
+      'utf8',
+    );
     writeFileSync(
       OUT.replace(/\.html$/, '-compose-working.html'),
       page('Compose preview, mid-docket', composeWorkingHtml),

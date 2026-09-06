@@ -12,7 +12,7 @@ import { useCustomers } from '@/lib/queries/customers';
 import { useProducts, useCreateProduct, useUpdateProduct } from '@/lib/queries/products';
 import { useCreateSalesInvoice, type NewSalesLine } from '@/lib/queries/sales';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
-import { addDays, formatDay } from '@/lib/date';
+import { addDays, formatDay, isDateStr, type DateStr } from '@/lib/date';
 import { centsToInputValue, formatCents, parseAmountToCents } from '@/lib/money';
 import {
   formatQuantity,
@@ -151,8 +151,16 @@ export function ComposeSalesInvoice({
   const { data: products = [], isLoading: productsLoading } = useProducts(business?.id ?? null);
 
   const [customerId, setCustomerId] = useState(initialCustomerId);
-  const [invoiceDate, setInvoiceDate] = useState<string>('');
-  const [dueDate, setDueDate] = useState<string>('');
+  /*
+   * `DateStr | null`, not `string`, and that type is the whole fix.
+   *
+   * See the note above `issuedOn`. A date input hands back '' when it is
+   * cleared, and '' reached `addDays`, which threw and took the screen with
+   * it. Typing these as nullable makes TypeScript refuse every unguarded call
+   * -- the branch cannot be forgotten because it cannot compile.
+   */
+  const [invoiceDate, setInvoiceDate] = useState<DateStr | null>(null);
+  const [dueDate, setDueDate] = useState<DateStr | null>(null);
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
@@ -162,9 +170,29 @@ export function ComposeSalesInvoice({
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [addingProduct, setAddingProduct] = useState(false);
 
-  // `today` arrives in an effect, so the first render genuinely has none.
-  const issuedOn = invoiceDate || today || '';
-  const dueOn = dueDate || (issuedOn ? addDays(issuedOn, DEFAULT_TERMS_DAYS) : '');
+  /*
+   * ==========================================================================
+   * NULL until the effect runs, and that is not a formality.
+   *
+   * `useSydneyToday` returns null on the FIRST render by design -- the server
+   * cannot know what day it is where the phone is standing, so the date
+   * arrives one frame later. This screen used to fold that into `|| ''` and
+   * then hand the empty string to `addDays`, which asserts 'YYYY-MM-DD' and
+   * throws. The whole screen died on arrival, every time, before a pixel of
+   * it was painted: "This screen didn't load".
+   *
+   * The entire test suite mocked `useSydneyToday` to return a real date, so
+   * the first render every phone actually performed was the one state no test
+   * could reach. `test/unit/sales-invoice.test.tsx` now renders it.
+   *
+   * Kept as `DateStr | null` rather than guarded at each call, because there
+   * were three calls and the next person adds a fourth. Null is what it is,
+   * the type says so, and `tsc` refuses to let it reach `addDays`.
+   * ==========================================================================
+   */
+  const issuedOn: DateStr | null = invoiceDate ?? today;
+  const dueOn: DateStr | null =
+    dueDate ?? (issuedOn === null ? null : addDays(issuedOn, DEFAULT_TERMS_DAYS));
 
   /**
    * Every line that is complete enough to charge for, and what it comes to.
@@ -346,6 +374,12 @@ export function ComposeSalesInvoice({
       setError('Add at least one line with a description, a quantity and a price.');
       return;
     }
+    if (issuedOn === null || dueOn === null) {
+      // Only reachable by clearing a date field outright. An invoice with no
+      // date on it is not an invoice, and the database would refuse it anyway.
+      setError('Give it a date and a due date.');
+      return;
+    }
 
     const payload: NewSalesLine[] = chargeable.map((entry) => ({
       product_id: entry.line.productId,
@@ -433,8 +467,12 @@ export function ComposeSalesInvoice({
           <input
             type="date"
             aria-label="Invoice date"
-            value={issuedOn}
-            onChange={(event) => setInvoiceDate(event.target.value)}
+            value={issuedOn ?? ''}
+            /* Cleared, or half-typed, is null -- never a string nothing can
+               parse. Validated at the edge, once, like every other input. */
+            onChange={(event) =>
+              setInvoiceDate(isDateStr(event.target.value) ? event.target.value : null)
+            }
             className={`figure-date ${field}`}
           />
         </label>
@@ -443,8 +481,10 @@ export function ComposeSalesInvoice({
           <input
             type="date"
             aria-label="Due date"
-            value={dueOn}
-            onChange={(event) => setDueDate(event.target.value)}
+            value={dueOn ?? ''}
+            onChange={(event) =>
+              setDueDate(isDateStr(event.target.value) ? event.target.value : null)
+            }
             className={`figure-date ${field}`}
           />
           <span className="figure-date mt-1 block text-xs text-muted">
@@ -454,21 +494,26 @@ export function ComposeSalesInvoice({
       </div>
 
       <div className="mb-6 flex gap-1">
-        {DUE_PRESETS_DAYS.map((days) => (
-          <button
-            key={days}
-            type="button"
-            onClick={() => setDueDate(addDays(issuedOn, days))}
-            aria-label={`Due in ${days} days`}
-            className={`touch rounded-full border px-3 text-xs ${
-              dueOn === addDays(issuedOn, days)
-                ? 'border-action bg-action text-action-text'
-                : 'border-hairline bg-card text-muted'
-            }`}
-          >
-            {days}d
-          </button>
-        ))}
+        {DUE_PRESETS_DAYS.map((days) => {
+          // Computed once, inside the guard, rather than twice outside it.
+          const preset = issuedOn === null ? null : addDays(issuedOn, days);
+          return (
+            <button
+              key={days}
+              type="button"
+              disabled={preset === null}
+              onClick={() => setDueDate(preset)}
+              aria-label={`Due in ${days} days`}
+              className={`touch rounded-full border px-3 text-xs disabled:opacity-40 ${
+                preset !== null && dueOn === preset
+                  ? 'border-action bg-action text-action-text'
+                  : 'border-hairline bg-card text-muted'
+              }`}
+            >
+              {days}d
+            </button>
+          );
+        })}
       </div>
 
       {/* ---------------------------------------------------------------- *

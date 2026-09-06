@@ -3487,3 +3487,61 @@ because the resting state hides half the screen.
   *this invoice*; deleting from the list is a different act with a different
   blast radius and it keeps its confirmation dialog.
 
+### 39.8 The crash underneath all of it — `null` is a real render
+
+Everything above shipped, and the screen still showed **"This screen didn't
+load"** by every route in. The placement work was real; it was not the bug.
+
+`useSydneyToday()` returns **null on the first render**, by design (§3): the
+server cannot know what day it is where the phone is standing, so the date
+arrives one frame later. The composer folded that into `|| ''` and then, in
+the due-date presets, called `addDays('', days)` **during render**. `addDays`
+asserts `'YYYY-MM-DD'` and throws. The screen died before painting a pixel,
+every single time, and the error boundary said so.
+
+It had been there since Round D. Both reports — "doesn't work" and "still no
+option to create invoice" — were this. The customer-less link and the missing
+menu row were real defects sitting on top of a screen that could never have
+opened.
+
+**Why nothing caught it.** Both test files mocked the hook to a fixed date:
+
+```ts
+vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => FIXTURE_TODAY }));
+```
+
+So the first render every real phone performs was the one state no test could
+reach. The preview harness pinned it the same way, so looking at the screen
+could not show it either. **A fixture that cannot produce a real state is a
+fixture that guarantees bugs in it** — the sibling of §6's "a fence proven to
+keep things out has not been proven to have a gate".
+
+The mock is now a knob, `mocks.today.current`, defaulting to null; five tests
+render the cold frame, and the preview writes `-compose-cold.html`.
+
+**The fix is the type, not the branch.** There were three unguarded calls and
+the next person adds a fourth, so `issuedOn` and `dueOn` are
+`DateStr | null` and `tsc` refuses to let null reach `addDays`. The date state
+is nullable too, validated with `isDateStr` at the input's edge, because a
+cleared date field hands back `''` — the same empty string, by a second route.
+
+Every other consumer of the hook already guarded (`today ? … : …`). The
+composer was the only one, and it was the only screen anybody said was broken.
+
+### 39.9 A door between the two sales paths
+
+`AddSalesInvoiceSheet` — the `+` on Deli's screen — records an invoice that
+already exists, as one amount. Somebody setting out to *build* one lands
+there, finds a box marked Amount and no products, and concludes there is no
+way to make one. Reported twice, and the sheet now opens with a link across to
+`/sales/new`.
+
+Two paths that both produce a sales invoice is not duplication: one writes
+down a total from a docket, the other adds the docket up. What was missing was
+a door between them at the moment the wrong one has been opened.
+
+### 39.10 Where it stands, corrected
+
+- **Tests: 706**, under all three timezones. `tsc` and `next build` clean.
+- **No database change** in this round.
+

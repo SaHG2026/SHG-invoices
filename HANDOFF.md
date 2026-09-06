@@ -87,7 +87,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 701 tests
+npx vitest run       # 706 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -214,7 +214,7 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_016` applied.**
-701 tests under three timezones.
+706 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then five rounds of feedback:
 
@@ -234,6 +234,14 @@ invoice, because from outside a missing permission and a working refusal are
 both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
+
+**A mock that cannot produce a real state guarantees bugs in it.** The compose
+screen threw on every open for a whole round -- `useSydneyToday()` returns
+**null on the first render** and the screen passed that to `addDays`. Both test
+files and the preview harness mocked the hook to a fixed date, so the frame
+every phone actually renders was the one state nothing could reach. It is a
+knob now. **When a hook is documented as returning null first, the test must
+render that.** §39.8.
 
 **A label is a promise, and an unkept one reads as broken.** "New invoice for
 this customer" navigated to a screen asking who the invoice was for, and was

@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, FIXTURE_TODAY, PROFILES } from '../fixtures/invoices';
 import { formatCents } from '@/lib/money';
+import { addDays } from '@/lib/date';
+import { DEFAULT_TERMS_DAYS } from '@/lib/constants';
 import { lineTotalCents, parseQuantityToMilli } from '@/lib/quantity';
 import type { Customer, Product, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
 
@@ -49,6 +51,16 @@ const mocks = vi.hoisted(() => ({
   /* Named, because "the price list was NOT touched" is an assertion. */
   updateProduct: vi.fn(),
   createProduct: vi.fn(),
+  /*
+   * Today, as a knob.
+   *
+   * `useSydneyToday` genuinely returns NULL on the first render -- the server
+   * cannot know the phone's date, so it arrives one frame later. Mocking it to
+   * a fixed date, as this file used to, makes the first render every real
+   * phone performs the one state no test can reach. That is exactly where the
+   * screen was throwing.
+   */
+  today: { current: null as string | null },
 }));
 
 vi.mock('@/lib/queries/session', () => ({
@@ -124,7 +136,7 @@ vi.mock('@/lib/queries/payments', () => ({
   useVoidInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => FIXTURE_TODAY }));
+vi.mock('@/hooks/use-sydney-today', () => ({ useSydneyToday: () => mocks.today.current }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/sales/new',
@@ -171,6 +183,74 @@ beforeEach(() => {
   localStorage.clear();
   mocks.create.mockResolvedValue({ id: 'si-1', invoice_number: 'DDL-0001' });
   mocks.detail.current = null;
+  mocks.today.current = FIXTURE_TODAY;
+});
+
+describe('the first render, before the date arrives', () => {
+  /*
+   * ==========================================================================
+   * The bug that shipped, and the only test that could have caught it.
+   *
+   * `useSydneyToday` returns null on the first render by design. The screen
+   * folded that into `|| ''` and handed the empty string to `addDays`, which
+   * asserts 'YYYY-MM-DD' and throws -- so the compose screen died before
+   * painting a pixel and the client saw "This screen didn't load", every time,
+   * by every route in.
+   *
+   * It passed every assertion in this file because this file mocked the date
+   * as always-present. A fixture that cannot produce the real first render is
+   * a fixture that guarantees this class of bug.
+   * ==========================================================================
+   */
+  it('renders rather than throwing', () => {
+    mocks.today.current = null;
+    expect(() => compose()).not.toThrow();
+    expect(screen.getByRole('heading', { name: 'New invoice' })).toBeInTheDocument();
+  });
+
+  it('shows the product list and its steppers while the date is still unknown', () => {
+    // The crash was in the due-date presets, above the list. Everything below
+    // it was never reached.
+    mocks.today.current = null;
+    compose();
+    expect(screen.getByRole('button', { name: 'One more Momo (pork)' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Customer')).toBeInTheDocument();
+  });
+
+  it('leaves both dates empty rather than inventing one', () => {
+    mocks.today.current = null;
+    compose();
+    expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe('');
+  });
+
+  it('fills both in, and lights the default preset, once it arrives', () => {
+    compose();
+    expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe(FIXTURE_TODAY);
+    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe(
+      addDays(FIXTURE_TODAY, DEFAULT_TERMS_DAYS),
+    );
+  });
+
+  it('falls back to today when the date field is cleared, and still saves', async () => {
+    /*
+     * A date input hands back '' when it is emptied, and '' is what threw.
+     * Now it is null, and null falls through to today -- an invoice always has
+     * a date, so reverting to today beats both a dateless row and a dead
+     * screen. Asserted because the guard in `save()` must never be the thing
+     * somebody meets by clearing a field.
+     */
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.change(screen.getByLabelText('Invoice date'), { target: { value: '' } });
+
+    expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe(FIXTURE_TODAY);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].invoice_date).toBe(FIXTURE_TODAY);
+  });
 });
 
 describe('the running total', () => {

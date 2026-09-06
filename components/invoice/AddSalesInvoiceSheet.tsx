@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentProfile } from '@/lib/queries/session';
@@ -161,6 +163,27 @@ function SheetBody({ onClose }: { onClose: () => void }) {
         </button>
       }
     >
+      {/*
+        The way across to the other kind.
+
+        This sheet records an invoice that already exists, as one amount. The
+        `+` on Deli's screen opens it, so somebody setting out to BUILD an
+        invoice lands here, finds a box marked Amount and no products, and
+        concludes there is no way to make one -- which was reported, twice.
+
+        Two paths that both produce a sales invoice is not duplication: one
+        writes down a total from a docket, the other adds the docket up. What
+        was missing was a door between them, at the moment the wrong one has
+        been opened.
+      */}
+      <Link
+        href={'/sales/new' as Route}
+        onClick={onClose}
+        className="touch mb-4 flex items-center justify-center rounded-sm border border-action bg-action-bg text-sm text-action"
+      >
+        Build one from the price list instead &rsaquo;
+      </Link>
+
       <div className="mb-4">
         <label className="mb-1 block text-xs uppercase tracking-widest text-muted" htmlFor="customer">
           Customer

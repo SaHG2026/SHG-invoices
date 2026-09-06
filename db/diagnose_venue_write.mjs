@@ -147,11 +147,29 @@ console.log('The insert the sheet makes:\n');
 console.log(JSON.stringify(payload, null, 2).replace(/^/gm, '  '));
 console.log('');
 
-const insert = await client
-  .from('invoices')
-  .upsert(payload, { onConflict: 'id', ignoreDuplicates: true });
+/*
+ * A plain insert, matching the app after the fix. The upsert this used to send
+ * is what a venue was always refused: PostgREST compiles it to
+ * `INSERT ... ON CONFLICT`, which pulls the UPDATE policies into the check.
+ */
+const insert = await client.from('invoices').insert(payload);
 
 const failed = report('venue inserts an invoice into its own venue', insert.error);
+
+/*
+ * And the shape that used to be sent, to prove the difference rather than
+ * assert it. This one is EXPECTED to be refused; if it ever stops being, the
+ * boundary has moved.
+ */
+const upsert = await client
+  .from('invoices')
+  .upsert({ ...payload, id: crypto.randomUUID(), invoice_number: 'DIAGNOSTIC-UPSERT' },
+          { onConflict: 'id', ignoreDuplicates: true });
+console.log(
+  upsert.error
+    ? `  ok    the old upsert shape is still refused — [${upsert.error.code}] (this is the bug)`
+    : '  NOTE  the upsert shape now works too; the policy has changed',
+);
 
 /* --------------------------------------------------------------- the note */
 

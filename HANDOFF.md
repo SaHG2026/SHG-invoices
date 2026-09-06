@@ -272,11 +272,22 @@ is either waiting on real usage or waiting on the client.
 
 ### Open, and held deliberately
 
-**A shop cannot save an invoice.** Reported 6 September, not diagnosed. The
-toast said "Couldn't save that invoice. Nothing was written", which named
-nothing — `writeFailureMessage` now appends the Postgres code, and the next
-attempt will say which. Do not guess at a fix before that code arrives; the
-whole point of the improvement is that it stops the guessing.
+**A shop could not save an invoice — FOUND AND FIXED, 6 September.** Not a
+regression: it had never worked. `registerVenueMutations` sent `.upsert()`,
+which PostgREST compiles to `INSERT ... ON CONFLICT`, and that brings the
+table's UPDATE policies into the permission check. A member passes them via
+`member_all`; a venue's `staff_update` wants a row created in the last five
+minutes, which on an insert does not exist. Every venue insert was `42501`.
+
+A plain insert is used now, and a `23505` naming `invoices_pkey` — and only
+that key — counts as the replay succeeding, which is what `ignoreDuplicates`
+was buying. `invoice_notes` had the same wall and the same fix.
+`test/unit/venue-write.test.ts` asserts the request shape.
+
+**The lesson is bigger than the bug.** `verify_staff.mjs` passed throughout,
+because a missing permission and a working refusal are both `42501` from
+outside. Its positive write test was behind `--write` and never run. A fence
+proven to keep things out had not been proven to have a gate.
 
 **Edit is offered on rows the shop did not enter.** `stillCorrectable` gates on
 the clock alone, but `staff_update` also requires `created_by = auth.uid()`.

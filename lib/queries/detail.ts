@@ -15,6 +15,20 @@ import type { ActivityEntry, InvoiceNote, InvoiceRow } from '@/lib/types';
  * status, because a link to a paid or voided one has to keep working.
  */
 
+/**
+ * `23505` on the primary key means this exact row is already there.
+ *
+ * That is a write replayed from the offline queue doing its job, not a
+ * failure: the id was generated on the client before sending precisely so a
+ * retry could be recognised (notes §1.5). Treated as success, and nothing else
+ * is — a `23505` naming any OTHER unique index is a real collision and must
+ * still be thrown.
+ */
+function isReplayOfSameRow(error: { code?: string; message?: string; details?: string } | null, pkey: string): boolean {
+  if (!error || error.code !== '23505') return false;
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(pkey);
+}
+
 const ROW_SELECT =
   '*, supplier:suppliers!inner(id, name), business:businesses!inner(id, code, name)';
 
@@ -97,17 +111,27 @@ export function registerNoteMutations(queryClient: QueryClient) {
       body,
       authorId,
     }: AddNoteInput): Promise<InvoiceNote | null> => {
+      /*
+       * A plain insert, for the same reason `lib/queries/venue.ts` uses one.
+       *
+       * `.upsert()` becomes `INSERT ... ON CONFLICT`, which requires the
+       * table's UPDATE policies — and a venue has none on `invoice_notes`. So
+       * a shop's note was refused `42501` whatever else was true, which is a
+       * second wall in front of the same feature CATCH_UP_016 unblocked.
+       *
+       * Members are unaffected either way; one path is simpler than two, and
+       * the replay guarantee is unchanged because the id still comes from the
+       * client.
+       */
       const { data, error } = await supabase()
         .from('invoice_notes')
-        .upsert(
-          { id, invoice_id: invoiceId, author_id: authorId, body: body.trim() },
-          { onConflict: 'id', ignoreDuplicates: true },
-        )
+        .insert({ id, invoice_id: invoiceId, author_id: authorId, body: body.trim() })
         .select('id, invoice_id, author_id, body, created_at')
         .maybeSingle();
 
+      // Already there: a replayed write, not a failure.
+      if (isReplayOfSameRow(error, 'invoice_notes_pkey')) return null;
       if (error) throw error;
-      // `null` means the note was already there - a replayed write, not a failure.
       return (data as InvoiceNote | null) ?? null;
     },
     onSettled: (_data: unknown, _error: unknown, input: AddNoteInput) => {

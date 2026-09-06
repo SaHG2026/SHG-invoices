@@ -29,6 +29,20 @@ import type { InvoiceWrite } from '@/lib/invoice-form';
  * ---------------------------------------------------------------------------
  */
 
+/**
+ * `23505` on the primary key means this exact row is already there.
+ *
+ * That is a write replayed from the offline queue doing its job, not a
+ * failure: the id was generated on the client before sending precisely so a
+ * retry could be recognised (notes §1.5). Treated as success, and nothing else
+ * is — a `23505` naming any OTHER unique index is a real collision and must
+ * still be thrown.
+ */
+function isReplayOfSameRow(error: { code?: string; message?: string; details?: string } | null, pkey: string): boolean {
+  if (!error || error.code !== '23505') return false;
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(pkey);
+}
+
 /** Every column the view has. Named rather than `*`, so a widened view is visible here. */
 const VIEW_SELECT =
   'id, business_id, supplier_id, supplier_name, invoice_number, internal_ref, invoice_date, due_date, amount_cents, created_at';
@@ -149,10 +163,27 @@ export function registerVenueMutations(queryClient: QueryClient) {
      * rather than a second identical invoice (notes §1.5).
      */
     mutationFn: async ({ payload }: CreateVenueInvoiceInput): Promise<void> => {
-      const { error } = await supabase()
-        .from('invoices')
-        .upsert(payload, { onConflict: 'id', ignoreDuplicates: true });
+      /*
+       * A plain insert, NOT an upsert, and this is the whole of why a venue
+       * could never save an invoice.
+       *
+       * PostgREST compiles `.upsert()` to `INSERT ... ON CONFLICT`, which
+       * brings the table's UPDATE policies into the permission check. A member
+       * passes those through `member_all`. A venue's only update policy is
+       * `staff_update`, which requires a row created in the last five minutes
+       * — and on an insert there is no such row — so every venue insert came
+       * back `42501`, for a payload that was correct in every particular.
+       *
+       * Proven rather than reasoned: signed in as the shop, the same payload
+       * is ACCEPTED as an insert and REFUSED as an upsert.
+       *
+       * What `ignoreDuplicates` was buying is kept below. The id is generated
+       * on the client, so a replayed write collides on the primary key, and a
+       * collision on THAT key is the replay succeeding.
+       */
+      const { error } = await supabase().from('invoices').insert(payload);
 
+      if (isReplayOfSameRow(error, 'invoices_pkey')) return;
       if (error) throw error;
     },
 

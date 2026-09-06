@@ -28,6 +28,25 @@
  * surface three ways without touching the view, and the checks for all three
  * are below — the supplier lockdown, notes, and approval.
  *
+ * ---------------------------------------------------------------------------
+ * THE BLIND SPOT THIS FILE HAD, AND WHAT IT COST
+ *
+ * Everything below the identity checks proves the boundary REFUSES what it
+ * should. All of it passed while a venue could not save a single invoice,
+ * because a missing permission and a working refusal look identical from
+ * outside: both are `42501`.
+ *
+ * The one check that would have caught it — a venue inserting a legitimate
+ * invoice — sat behind `--write` and was never run, on the reasoning that a
+ * refusal writes nothing and refusals are what matter for security. That is
+ * true and it is half a test suite. A fence proven to keep things out has not
+ * been proven to have a gate.
+ *
+ * `db/diagnose_venue_write.mjs` is the other half and it does write, once, one
+ * cent, into the review queue where a tap disposes of it. Run it after any
+ * change to the staff policies, alongside this.
+ * ---------------------------------------------------------------------------
+ *
  * Add `--write` to also test that inserting is allowed. OFF BY DEFAULT, because
  * it puts a real invoice into a live ledger that nothing in the app can delete.
  * The refusal tests below need no such thing — a refused insert writes nothing —

@@ -1,5 +1,5 @@
 import { describe, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, FIXTURE_TODAY, PROFILES } from './fixtures/invoices';
@@ -36,9 +36,21 @@ const CUSTOMERS: Customer[] = [
   },
 ];
 
+/*
+ * Long names on purpose.
+ *
+ * The client's own list is "Sliced Swiss Browns", "Flat White Mushrooms",
+ * "Red Cherry Tomatoes" -- names that are only distinguishable in their last
+ * word. The first version of the product row truncated at 66px on a 375px
+ * phone and every one of those read as the same row. A preview whose fixture
+ * is "Achar" cannot show that.
+ */
 const PRODUCTS: Product[] = [
   { id: 'p-1', business_id: deli.id, name: 'Momo (pork)', unit: 'box', unit_price_cents: 2_500, active: true },
   { id: 'p-2', business_id: deli.id, name: 'Achar', unit: 'jar', unit_price_cents: 899, active: true },
+  { id: 'p-3', business_id: deli.id, name: 'Sliced Swiss Browns', unit: 'kg', unit_price_cents: 1_450, active: true },
+  { id: 'p-4', business_id: deli.id, name: 'Flat White Mushrooms', unit: 'kg', unit_price_cents: 1_290, active: true },
+  { id: 'p-5', business_id: deli.id, name: 'Red Cherry Tomatoes', unit: 'punnet', unit_price_cents: 450, active: true },
 ];
 
 const mocks = vi.hoisted(() => ({
@@ -185,6 +197,20 @@ describe('preview', () => {
       </ToastProvider>,
     );
     const composeHtml = composer.container.innerHTML;
+
+    /*
+     * A second shot, mid-docket, because the resting state hides half the
+     * screen: a row that is ON, and a row with its pencil open. The pencil
+     * panel is two side-by-side fields on a 375px phone and is exactly the
+     * kind of thing that looks right in an assertion and wrong on glass.
+     */
+    fireEvent.click(screen.getByRole('button', { name: 'One more Sliced Swiss Browns' }));
+    fireEvent.click(screen.getByRole('button', { name: 'One more Sliced Swiss Browns' }));
+    fireEvent.change(screen.getByLabelText('Quantity of Flat White Mushrooms'), {
+      target: { value: '1.5' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Flat White Mushrooms' }));
+    const composeWorkingHtml = composer.container.innerHTML;
     composer.unmount();
 
     const css = CSS ? readFileSync(CSS, 'utf8') : '';
@@ -198,5 +224,10 @@ describe('preview', () => {
 
     writeFileSync(OUT, page('Invoice document preview', docHtml), 'utf8');
     writeFileSync(OUT.replace(/\.html$/, '-compose.html'), page('Compose preview', composeHtml), 'utf8');
+    writeFileSync(
+      OUT.replace(/\.html$/, '-compose-working.html'),
+      page('Compose preview, mid-docket', composeWorkingHtml),
+      'utf8',
+    );
   });
 });

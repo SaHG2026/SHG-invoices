@@ -30,7 +30,7 @@ end to end. Grep for the section you need:
 | Roles, notifications, push | §8.1 |
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
-| Rounds A–D, the most recent work | §35–§38 |
+| Rounds A–E, the most recent work | §35–§39 |
 
 ---
 
@@ -87,7 +87,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 697 tests
+npx vitest run       # 701 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -214,9 +214,9 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_016` applied.**
-697 tests under three timezones.
+701 tests under three timezones.
 
-Phases 1–7, the venue accounts (§34), then four rounds of feedback:
+Phases 1–7, the venue accounts (§34), then five rounds of feedback:
 
 | | |
 |---|---|
@@ -224,6 +224,7 @@ Phases 1–7, the venue accounts (§34), then four rounds of feedback:
 | §36 | **Round B** — a shop's invoice waits to be approved; shops choose a supplier rather than creating one; a note on every entry |
 | §37 | **Round C** — a daily reminder at a time each person chooses |
 | §38 | **Round D** — Deli's products, line items and printable invoice |
+| §39 | **Round E** — Deli's price list became the compose screen, and the two ways in |
 
 ### The two lessons worth more than the features
 
@@ -233,6 +234,11 @@ invoice, because from outside a missing permission and a working refusal are
 both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
+
+**A label is a promise, and an unkept one reads as broken.** "New invoice for
+this customer" navigated to a screen asking who the invoice was for, and was
+reported as "doesn't work" — correctly. Before hunting for a crash, check what
+the control said it would do. §39.1.
 
 **`.upsert()` is not `.insert()` under RLS.** PostgREST compiles an upsert to
 `INSERT ... ON CONFLICT`, which brings the table's **UPDATE** policies into the
@@ -280,8 +286,9 @@ without upsert: generate the id on the client, use a plain insert, and treat a
    having before deciding what a file should contain. §33.2 has the one
    question to ask first: what happens to the file when it arrives.
 
-6. **A global list of issued invoices.** Deli's are reachable per customer.
-   Worth adding when a customer becomes the wrong index, not before.
+6. **A global list of issued invoices.** Deli's are reachable per customer,
+   and now from `/b/ddl` as well. Worth adding when a customer becomes the
+   wrong index, not before.
 
 7. **Tidying the audit left behind** (§33.1): three unused packages, the
    `/specimen` page, the middleware's `offline` exemption. Harmless.

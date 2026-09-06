@@ -120,14 +120,25 @@ export function WeekView({ scope }: { scope: Scope }) {
                 [pendingHref(scope), 'Pending'],
                 [historyHref(scope), 'History'],
                 /*
-                  Customers, only here.
-                  It is in the side menu too, but Deli Delights is the only
-                  business that sells, so this is where somebody goes looking
-                  for it — ARCHITECTURE §17. Showing it under the other three
-                  would imply they have customers as well.
+                  The selling side, only here.
+
+                  All three are in the side menu too, but Deli Delights is the
+                  only business that sells, so this is where somebody stands
+                  when they go looking for them -- ARCHITECTURE 17. Showing
+                  them under the other three would imply those have customers
+                  as well.
+
+                  Issuing an invoice leads, because it is the verb. The report
+                  was "still no option to create invoice ... when I am in the
+                  deli's interface", and a menu row somewhere else is not an
+                  answer to standing on Deli's own screen and looking for it.
                 */
                 ...(scope === 'ddl'
-                  ? ([['/customers' as Route, 'Customers']] as const)
+                  ? ([
+                      ['/sales/new' as Route, 'New invoice for a customer'],
+                      ['/customers' as Route, 'Customers'],
+                      ['/products' as Route, 'Products'],
+                    ] as const)
                   : []),
               ] as const
             ).map(([href, label]) => (

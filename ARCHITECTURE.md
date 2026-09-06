@@ -3355,3 +3355,135 @@ which is invisible until it is on paper.
 - **Not built:** a global list of issued invoices. They are reachable from each
   customer, which is where somebody looks for one. Worth adding when there are
   enough of them that a customer is the wrong index.
+
+
+---
+
+## 39. Round E — the price list is the compose screen
+
+Two reports, one sentence each, and both were about the same thing being in
+the wrong place:
+
+> "cant go to deli > customers > selected a customer > new invoice for the
+> customer. doesn't wrk"
+
+> "still no option to create invoice. I want to be able to issue an invoice
+> when I am in the deli's interface."
+
+With a photograph of somebody else's ordering screen: a plain list of stock —
+Sliced Swiss Browns, Flat White Mushrooms, Green Capsicum — each row a name,
+a unit, and a `−  0  +` stepper, with a pencil and a cross on the end.
+
+### 39.1 What "doesn't work" actually was
+
+Neither report was a crash, and looking for one cost time. `/sales/new` built,
+rendered and saved. The deployed build was current — checked against
+`vercel ls`, not assumed.
+
+**The link was the defect.** `CustomerDetail` offered *"+ New invoice for this
+customer"* and navigated to `/sales/new` **with no customer on it**. You
+arrived at a screen whose first field said "Choose a customer". The label made
+a promise the destination did not keep, and "doesn't work" is the correct
+verdict on that — notes §6, do not offer what cannot be done, of which this is
+the softer cousin: do not offer what will not be honoured.
+
+Fixed by putting the customer in the query string, `/sales/new?customer=<id>`,
+unwrapped in the route and handed to the screen as a plain string — the same
+split every dynamic route here uses, HANDOFF §5.
+
+### 39.2 A menu row is not an answer to "in the deli's interface"
+
+Round D's follow-up put *New invoice for a customer* in the side drawer,
+because the previous report was "I could not find create invoice feature".
+That was still true afterwards, and the reason is in the second report's own
+words: **the client is standing on Deli's screen when he goes looking.**
+
+`/b/ddl` already carried a Customers link, on the reasoning that Deli is the
+only business that sells. Issuing an invoice belongs in exactly the same place
+and belongs first, because it is the verb. `/b/ddl` now leads with **New
+invoice for a customer**, then Customers, then Products.
+
+The drawer row stays. A thing reachable from two places is not duplication
+when one of them is where somebody actually stands.
+
+### 39.3 The screen rebuilt around the list
+
+The old composer asked you to add an empty row, choose a product into it from
+a `<select>`, then type a quantity — three taps and a native picker per item,
+with the list of what Deli sells hidden inside the picker. The client's
+photograph is the correction: **the stock list IS the screen.**
+
+So every active product renders as a row with a stepper, and:
+
+**Quantity is the only state a row has.** A product with a quantity is on the
+invoice; a product on zero is not. There is no second "added" flag to
+disagree with it. This is §19's shape lesson applied before the bug rather
+than after it — the two-fields-that-can-disagree failure is simply not
+representable.
+
+One array still holds every line (rule 4). Product rows are matched to it by
+`productId`; the "Other lines" section below is the same array filtered to
+lines with no product. The footer total is `useMemo` over that one array, so
+the figure about to be printed is the sum of what is on screen.
+
+### 39.4 Two prices, named separately
+
+The pencil opens both edits somebody wants mid-docket, under two headings:
+
+| | reaches |
+|---|---|
+| **On this invoice** | this line, this piece of paper |
+| **In the price list** | what the NEXT invoice suggests, and nothing issued |
+
+They are deliberately not one Save. The price list rewritten by accident, by
+somebody correcting one docket, is the kind of thing nobody notices for a
+month. `test/unit/sales-invoice.test.tsx` asserts that changing the line price
+never calls `useUpdateProduct`.
+
+**+ Add a new product** creates it in the price list and puts one on the
+invoice from the values typed — not by waiting for the list to come back,
+which offline it never would.
+
+### 39.5 The zero that is not a zero
+
+`parseQuantityToMilli` answers `null` for both `"0"` and `"1."`. One is a
+settled zero and one is somebody halfway through typing 1.5, and they must be
+treated **oppositely**: the first takes the row off the invoice, the second
+must leave it exactly where it is. Nothing downstream can tell them apart, so
+`meansNone()` separates them once, at the top.
+
+Stepping works in thousandths and formats back out rather than operating on
+the string: `"1.5"` plus one is `"2.5"`, never 2.5000000000000004. Which is
+what `lib/quantity.ts` exists for.
+
+### 39.6 Two lines per row, and the four pixels
+
+Measured, not eyeballed — HANDOFF §5, and it found a real defect twice before.
+
+On one line the row spends **224px of a 375px phone** on controls before the
+name gets a pixel, because `touch` sets a 44px minimum on every one of them.
+The name was measured at **66px**: enough for "Momo (...", nowhere near enough
+to tell *Sliced Swiss Browns* from *Flat White Mushrooms*. A price list you
+cannot read is not a price list.
+
+So the name owns a full-width line and the controls own the one beneath it.
+That still left the unit and price with 54px for something needing 58, which
+truncated `kg · $14.50` to `kg · $14...` — losing the price off a price list.
+The four pixels came out of the gaps (`gap-2` → `gap-1`), never out of the
+targets.
+
+`test/preview-sales.test.tsx` now uses the client's own names as its fixture,
+and writes a second page mid-docket — a row switched on and a pencil open —
+because the resting state hides half the screen.
+
+### 39.7 Where it stands
+
+- **Tests: 701**, up from 697, under all three timezones. `tsc` and
+  `next build` clean.
+- **No database change.** Nothing in this round touches the schema, so this
+  deploy has no SQL to run before or after it.
+- **Not built:** removing a product from the price list is still on
+  `/products` rather than on the cross here. The cross takes something off
+  *this invoice*; deleting from the list is a different act with a different
+  blast radius and it keeps its confirmation dialog.
+

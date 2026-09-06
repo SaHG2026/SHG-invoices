@@ -9,7 +9,7 @@ import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useBusinesses } from '@/lib/queries/reference';
 import { useCustomers } from '@/lib/queries/customers';
-import { useProducts } from '@/lib/queries/products';
+import { useProducts, useCreateProduct, useUpdateProduct } from '@/lib/queries/products';
 import { useCreateSalesInvoice, type NewSalesLine } from '@/lib/queries/sales';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { addDays, formatDay } from '@/lib/date';
@@ -41,6 +41,28 @@ import type { Product } from '@/lib/types';
  * first casualty.
  * ---------------------------------------------------------------------------
  *
+ * ===========================================================================
+ * The price list is the screen. Round E.
+ *
+ * The first version of this screen asked you to add an empty row, then pick a
+ * product into it from a dropdown, then type a quantity — three taps and a
+ * scroll per item, and the dropdown hid the list of what Deli actually sells
+ * behind a native picker. The report was that it did not work, which is the
+ * right verdict on an interface where the thing you came to do is not on
+ * screen when you arrive.
+ *
+ * So the price list itself is the body of the screen: every product, one row
+ * each, with a stepper. **Quantity is the only state a row has** — a product
+ * with a quantity is on the invoice, a product on zero is not. There is no
+ * second "added" flag that could disagree with it, which is the shape lesson
+ * from HANDOFF §8: make the broken state unrepresentable rather than keeping
+ * the two in step.
+ *
+ * A pencil on each row opens the two edits somebody actually wants mid-docket
+ * — the price *on this invoice*, and the price *in the list* — and they are
+ * labelled separately because they are different acts with different reach.
+ * ===========================================================================
+ *
  * The running total is `useMemo` over the same array the lines render, which
  * is rule 4 in the place it matters most: this figure is going on a piece of
  * paper. And the database recomputes it from the lines it is sent and ignores
@@ -63,7 +85,56 @@ function emptyLine(): DraftLine {
   return { key: crypto.randomUUID(), productId: null, description: '', unit: '', quantity: '1', price: '' };
 }
 
-export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: string }) {
+/** A product's line, ready to price. Quantity starts at one of it. */
+function lineForProduct(product: Product): DraftLine {
+  return {
+    key: crypto.randomUUID(),
+    productId: product.id,
+    description: product.name,
+    unit: product.unit ?? '',
+    quantity: '1',
+    // Copied, not linked. The line keeps this price forever; changing the
+    // product later never reaches an invoice already issued.
+    price: centsToInputValue(product.unit_price_cents),
+  };
+}
+
+/**
+ * Step a typed quantity up or down by whole units.
+ *
+ * Works in thousandths and formats back out, rather than on the string, so
+ * "1.5" plus one is "2.5" and never 1.5000000000000002 — the reason
+ * `lib/quantity.ts` exists at all. Unparseable text steps from zero, which is
+ * the only answer that cannot make the total wrong.
+ */
+function step(quantity: string, by: number): string {
+  const current = parseQuantityToMilli(quantity) ?? 0;
+  const next = current + by * 1000;
+  return next <= 0 ? '0' : formatQuantity(next);
+}
+
+/**
+ * Whether what was typed means "none of this".
+ *
+ * `parseQuantityToMilli` answers null for BOTH "0" and "1." — a settled zero
+ * and somebody halfway through typing 1.5 — and those must be treated
+ * oppositely: one takes the row off the invoice, the other must leave it
+ * exactly where it is. Nothing downstream can tell them apart, so they are
+ * separated here, once.
+ */
+function meansNone(quantity: string): boolean {
+  const cleaned = quantity.trim().replace(/[\s ,]/g, '');
+  return cleaned === '' || /^0*(?:\.0*)?$/.test(cleaned);
+}
+
+export function ComposeSalesInvoice({
+  businessCode = 'DDL',
+  customerId: initialCustomerId = '',
+}: {
+  businessCode?: string;
+  /** Pre-chosen when you arrived from a customer's page. */
+  customerId?: string;
+}) {
   const toast = useToast();
   const router = useRouter();
   const today = useSydneyToday();
@@ -71,18 +142,25 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
   const { data: businesses = [] } = useBusinesses();
   const { data: customers = [] } = useCustomers();
   const createInvoice = useCreateSalesInvoice();
+  const createProduct = useCreateProduct();
+  const updateProduct = useUpdateProduct();
 
   const business = businesses.find(
     (entry) => entry.code.toLowerCase() === businessCode.toLowerCase(),
   );
-  const { data: products = [] } = useProducts(business?.id ?? null);
+  const { data: products = [], isLoading: productsLoading } = useProducts(business?.id ?? null);
 
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId);
   const [invoiceDate, setInvoiceDate] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>('');
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
+
+  const [query, setQuery] = useState('');
+  /** Which product row has its pencil open. One at a time, like the price list. */
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [addingProduct, setAddingProduct] = useState(false);
 
   // `today` arrives in an effect, so the first render genuinely has none.
   const issuedOn = invoiceDate || today || '';
@@ -129,22 +207,131 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
   const chargeable = priced.filter((entry) => entry.complete);
   const total = sumLineTotals(chargeable);
 
+  /**
+   * The lines that are not a product — the "anything else" section.
+   *
+   * Derived from the one array rather than kept in a second one, so a free
+   * line and a product line can never disagree about what is on the invoice.
+   * The index here is what numbers them on screen and in their labels.
+   */
+  const freeLines = priced.filter((entry) => entry.line.productId === null);
+
+  /** What the price list shows, filtered. Removed products are not choices. */
+  const visibleProducts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return needle
+      ? products.filter((product) => product.name.toLowerCase().includes(needle))
+      : products;
+  }, [products, query]);
+
   function update(key: string, changes: Partial<DraftLine>) {
     setLines((current) =>
       current.map((line) => (line.key === key ? { ...line, ...changes } : line)),
     );
   }
 
-  /** Choosing a product fills the line in — that is the whole point of the list. */
-  function choose(key: string, product: Product) {
-    update(key, {
-      productId: product.id,
-      description: product.name,
-      unit: product.unit ?? '',
-      // Copied, not linked. The line keeps this price forever; changing the
-      // product later never reaches an invoice already issued.
-      price: centsToInputValue(product.unit_price_cents),
+  /** The line this product is on, or null when it is not on the invoice. */
+  function lineOf(productId: string): DraftLine | null {
+    return lines.find((line) => line.productId === productId) ?? null;
+  }
+
+  /**
+   * Move a product's quantity. The one control on the row, and the only place
+   * "is this on the invoice" is decided.
+   *
+   * Stepping up from nothing creates the line; stepping down to zero removes
+   * it. There is deliberately no third state — a line sitting at zero would
+   * print as a row charging nothing.
+   */
+  function setQuantity(product: Product, quantity: string) {
+    const milli = parseQuantityToMilli(quantity);
+
+    setLines((current) => {
+      const existing = current.find((line) => line.productId === product.id);
+
+      if (meansNone(quantity)) {
+        return current.filter((line) => line.productId !== product.id);
+      }
+
+      if (milli === null) {
+        // Mid-typing ("1." on the way to "1.5"). Keep the text, keep the row.
+        // Nothing is charged for it meanwhile: `priced` skips it as incomplete.
+        return existing
+          ? current.map((line) =>
+              line.productId === product.id ? { ...line, quantity } : line,
+            )
+          : current;
+      }
+
+      return existing
+        ? current.map((line) => (line.productId === product.id ? { ...line, quantity } : line))
+        : [...current, { ...lineForProduct(product), quantity }];
     });
+  }
+
+  /** Save a change to the price list itself. Reaches the next invoice, not this one. */
+  async function saveProduct(product: Product, changes: Partial<Product>) {
+    try {
+      await updateProduct.mutateAsync({ id: product.id, ...changes });
+      setEditingProductId(null);
+      toast.show(`Saved ${(changes.name ?? product.name).trim()} to the price list.`);
+    } catch (caught) {
+      toast.show(caught instanceof Error ? caught.message : 'Couldn’t save that.', 'problem');
+    }
+  }
+
+  /** Add something the price list did not have, and put one of it on the invoice. */
+  async function addProduct(name: string, unit: string, price: string) {
+    if (!profile || !business) return;
+
+    const trimmed = name.trim();
+    const cents = parseAmountToCents(price, { allowZero: true });
+    if (trimmed === '') return;
+    if (cents === null && price.trim() !== '') {
+      toast.show('That price doesn’t look right. Use digits, like 4.50', 'problem');
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    const outcome = await submitWrite(createProduct, {
+      id,
+      business_id: business.id,
+      name: trimmed,
+      unit: unit.trim() || null,
+      unit_price_cents: cents ?? 0,
+      created_by: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that product.'), 'problem');
+      return;
+    }
+
+    /*
+     * Put it on the invoice from the values typed, not by waiting for the
+     * product list to come back. Queued offline it never will, and the point
+     * of adding it here was to charge for it now.
+     */
+    setLines((current) => [
+      ...current,
+      {
+        ...lineForProduct({
+          id,
+          business_id: business.id,
+          name: trimmed,
+          unit: unit.trim() || null,
+          unit_price_cents: cents ?? 0,
+          active: true,
+        }),
+      },
+    ]);
+    setAddingProduct(false);
+    setQuery('');
+    toast.show(
+      outcome.kind === 'queued'
+        ? `Added ${trimmed} — the price list will catch up when you’re back online.`
+        : `Added ${trimmed}.`,
+    );
   }
 
   async function save() {
@@ -216,6 +403,8 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
   }
 
   const busy = createInvoice.isPending;
+  const field =
+    'touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
 
   return (
     <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
@@ -227,7 +416,7 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
           value={customerId}
           onChange={(event) => setCustomerId(event.target.value)}
           aria-label="Customer"
-          className="touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+          className={field}
         >
           <option value="">Choose a customer</option>
           {customers.map((customer) => (
@@ -246,7 +435,7 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
             aria-label="Invoice date"
             value={issuedOn}
             onChange={(event) => setInvoiceDate(event.target.value)}
-            className="figure-date touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+            className={`figure-date ${field}`}
           />
         </label>
         <label className="block">
@@ -256,7 +445,7 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
             aria-label="Due date"
             value={dueOn}
             onChange={(event) => setDueDate(event.target.value)}
-            className="figure-date touch w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+            className={`figure-date ${field}`}
           />
           <span className="figure-date mt-1 block text-xs text-muted">
             {dueOn ? formatDay(dueOn) : ' '}
@@ -264,7 +453,7 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
         </label>
       </div>
 
-      <div className="mb-4 flex gap-1">
+      <div className="mb-6 flex gap-1">
         {DUE_PRESETS_DAYS.map((days) => (
           <button
             key={days}
@@ -282,16 +471,218 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
         ))}
       </div>
 
-      <h2 className="text-h2 mb-2 text-ink">Lines</h2>
+      {/* ---------------------------------------------------------------- *
+        The price list, as the body of the screen.
+       * ---------------------------------------------------------------- */}
+      <h2 className="text-h2 mb-2 text-ink">Products</h2>
+
+      <div className="mb-2 flex items-center rounded-sm border border-hairline bg-card">
+        <span aria-hidden className="pl-3 text-sm text-muted">
+          &#9906;
+        </span>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Find a product"
+          aria-label="Search products"
+          className="touch min-w-0 flex-1 bg-transparent px-2 text-base text-ink outline-none"
+        />
+      </div>
+
+      {!business ? (
+        <p className="mb-4 rounded-sm border border-edge bg-card p-4 text-sm text-muted">
+          No such business, so there is no price list to show.
+        </p>
+      ) : productsLoading ? (
+        <p className="mb-4 text-sm text-muted">Loading the price list…</p>
+      ) : visibleProducts.length === 0 ? (
+        <p className="mb-3 rounded-sm border border-edge bg-card p-4 text-sm text-muted">
+          {query
+            ? `No product matches “${query}”. Add it below, or put it on as a one-off line.`
+            : 'No products yet. Add the first one below.'}
+        </p>
+      ) : (
+        <ul className="mb-3 overflow-hidden rounded-sm border border-edge bg-card">
+          {visibleProducts.map((product) => {
+            const line = lineOf(product.id);
+            const on = line !== null;
+            const priceCents =
+              line && line.price.trim() !== ''
+                ? parseAmountToCents(line.price, { allowZero: true })
+                : product.unit_price_cents;
+            const milli = line ? parseQuantityToMilli(line.quantity) : null;
+
+            return (
+              <li key={product.id} className="border-b border-hairline last:border-b-0">
+                {/*
+                  Two lines, not one, and that is a 360px decision.
+
+                  On one line the stepper, the pencil and the cross take 244px
+                  of a 375px screen and the NAME gets what is left -- measured
+                  at 66px, enough for "Momo (..." and not enough to tell
+                  "Sliced Swiss Browns" from "Flat White Mushrooms". A price
+                  list you cannot read is not a price list. So the name owns a
+                  full-width line and the controls own the one beneath it.
+                */}
+                <div
+                  className="px-3 py-2"
+                  style={on ? { backgroundColor: 'var(--action-bg)' } : undefined}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                      {product.name}
+                    </span>
+                    {/* The line total, only once there is one. */}
+                    {on && milli !== null && priceCents !== null ? (
+                      <span className="money shrink-0 text-sm font-medium text-action">
+                        {formatCents(lineTotalCents(milli, priceCents) ?? 0)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/*
+                    gap-1, not gap-2, and it is load-bearing.
+
+                    `touch` sets a 44px minimum on every control here, so this
+                    row spends 224px of a 375px phone before the unit and price
+                    get a pixel -- and at gap-2 they got 54px for something
+                    needing 58, which truncated "kg $14.50" to "kg $14...".
+                    Losing the price off a price list is losing the point of
+                    it. The four pixels come out of the gaps, never out of the
+                    targets.
+                  */}
+                  <div className="mt-1 flex items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                      {product.unit ? product.unit : 'each'}
+                      {' · '}
+                      <span className="money">{formatCents(priceCents ?? 0)}</span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(product, step(line?.quantity ?? '0', -1))}
+                      aria-label={`One less ${product.name}`}
+                      disabled={!on}
+                      className="touch flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-hairline bg-card text-h2 text-ink disabled:opacity-30"
+                    >
+                      &minus;
+                    </button>
+
+                    {/*
+                      The figure, and the field. One element, not a label plus
+                      a hidden input: a quantity you can read but not correct
+                      is what sends somebody back to the top of the screen to
+                      start the row again. It is also the only way to enter
+                      1.5 kg, which a stepper cannot reach.
+                    */}
+                    <input
+                      value={line?.quantity ?? '0'}
+                      inputMode="decimal"
+                      onChange={(event) => setQuantity(product, event.target.value)}
+                      onFocus={(event) => event.currentTarget.select()}
+                      aria-label={`Quantity of ${product.name}`}
+                      className={`money touch w-12 shrink-0 rounded-sm border bg-card text-center text-base outline-none focus:border-action ${
+                        on ? 'border-hairline font-medium text-ink' : 'border-transparent text-muted'
+                      }`}
+                      style={{ textAlign: 'center' }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(product, step(line?.quantity ?? '0', 1))}
+                      aria-label={`One more ${product.name}`}
+                      className="touch flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-hairline bg-card text-h2 text-ink"
+                    >
+                      +
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingProductId((current) =>
+                          current === product.id ? null : product.id,
+                        )
+                      }
+                      aria-expanded={editingProductId === product.id}
+                      aria-label={`Edit ${product.name}`}
+                      className="touch flex h-11 w-7 shrink-0 items-center justify-center text-sm text-muted"
+                    >
+                      &#9998;
+                    </button>
+
+                    {/* Only when there is something to take off. A control
+                        that does nothing is a control people stop trusting. */}
+                    {on ? (
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(product, '')}
+                        aria-label={`Take ${product.name} off this invoice`}
+                        className="touch flex h-11 w-7 shrink-0 items-center justify-center text-sm text-muted"
+                      >
+                        &#10005;
+                      </button>
+                    ) : (
+                      <span aria-hidden className="w-7 shrink-0" />
+                    )}
+                  </div>
+                </div>
+
+                {editingProductId === product.id ? (
+                  <ProductRowEditor
+                    product={product}
+                    linePrice={line?.price ?? null}
+                    busy={updateProduct.isPending}
+                    onLinePrice={(value) => {
+                      // Only meaningful once it is on the invoice; putting it
+                      // on is the same act as pricing it.
+                      if (line) update(line.key, { price: value });
+                      else setLines((current) => [...current, { ...lineForProduct(product), price: value }]);
+                    }}
+                    onSaveToList={(changes) => void saveProduct(product, changes)}
+                    onClose={() => setEditingProductId(null)}
+                  />
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {addingProduct ? (
+        <NewProductForm
+          busy={createProduct.isPending}
+          onCancel={() => setAddingProduct(false)}
+          onAdd={(name, unit, price) => void addProduct(name, unit, price)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddingProduct(true)}
+          disabled={!business}
+          className="touch mb-6 w-full rounded-sm border border-hairline bg-card text-sm text-action disabled:opacity-40"
+        >
+          + Add a new product
+        </button>
+      )}
+
+      {/* ---------------------------------------------------------------- *
+        Anything the price list does not have.
+       * ---------------------------------------------------------------- */}
+      <h2 className="text-h2 mb-1 text-ink">Other lines</h2>
+      <p className="mb-2 text-sm text-muted">
+        A delivery charge, a one-off, anything not on the price list. Nothing typed here is saved
+        to the list.
+      </p>
 
       <ul className="mb-3 flex flex-col gap-2">
-        {priced.map((entry, index) => (
+        {freeLines.map((entry, index) => (
           <li key={entry.line.key} className="rounded-sm border border-edge bg-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs uppercase tracking-widest text-muted">
                 Line {index + 1}
               </span>
-              {lines.length > 1 ? (
+              {freeLines.length > 1 ? (
                 <button
                   type="button"
                   onClick={() =>
@@ -304,36 +695,12 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
               ) : null}
             </div>
 
-            {products.length > 0 ? (
-              <select
-                aria-label={`Product for line ${index + 1}`}
-                value={entry.line.productId ?? ''}
-                onChange={(event) => {
-                  const product = products.find((item) => item.id === event.target.value);
-                  if (product) choose(entry.line.key, product);
-                  else update(entry.line.key, { productId: null });
-                }}
-                className="touch mb-2 w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
-              >
-                <option value="">Pick a product, or type below</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
-                    {product.unit ? ` (per ${product.unit})` : ''} ·{' '}
-                    {formatCents(product.unit_price_cents)}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-
             <input
               aria-label={`Description for line ${index + 1}`}
               value={entry.line.description}
-              onChange={(event) =>
-                update(entry.line.key, { description: event.target.value, productId: null })
-              }
+              onChange={(event) => update(entry.line.key, { description: event.target.value })}
               placeholder="Description"
-              className="touch mb-2 w-full rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+              className={`mb-2 ${field}`}
             />
 
             <div className="flex items-center gap-2">
@@ -439,6 +806,194 @@ export function ComposeSalesInvoice({ businessCode = 'DDL' }: { businessCode?: s
 
       <div aria-hidden className="h-24" />
     </AppChrome>
+  );
+}
+
+/**
+ * The pencil, open.
+ *
+ * Two edits, named separately, because they reach different distances. The
+ * first changes what this customer is charged on this piece of paper. The
+ * second changes what the next invoice suggests, and nothing already issued
+ * (CATCH_UP_015 §2). Putting them under one "Save" would make the second one
+ * happen by accident, and a price list quietly rewritten by somebody fixing
+ * one docket is the kind of thing nobody notices for a month.
+ */
+function ProductRowEditor({
+  product,
+  linePrice,
+  busy,
+  onLinePrice,
+  onSaveToList,
+  onClose,
+}: {
+  product: Product;
+  linePrice: string | null;
+  busy: boolean;
+  onLinePrice: (value: string) => void;
+  onSaveToList: (changes: Partial<Product>) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(product.name);
+  const [unit, setUnit] = useState(product.unit ?? '');
+  const [listPrice, setListPrice] = useState(centsToInputValue(product.unit_price_cents));
+
+  const field =
+    'touch w-full min-w-0 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
+
+  const listChanged =
+    name.trim() !== product.name ||
+    (unit.trim() || null) !== (product.unit ?? null) ||
+    parseAmountToCents(listPrice, { allowZero: true }) !== product.unit_price_cents;
+
+  return (
+    <div className="border-t border-hairline px-3 py-3">
+      <p className="mb-1 text-xs uppercase tracking-widest text-muted">On this invoice</p>
+      <div className="mb-4 flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center rounded-sm border border-hairline bg-card">
+          <span className="money pl-3 text-base text-muted" style={{ textAlign: 'left' }}>
+            $
+          </span>
+          <input
+            value={linePrice ?? centsToInputValue(product.unit_price_cents)}
+            inputMode="decimal"
+            onChange={(event) => onLinePrice(event.target.value)}
+            aria-label={`Price of ${product.name} on this invoice`}
+            className="money touch w-full bg-transparent px-2 text-base text-ink outline-none"
+            style={{ textAlign: 'left' }}
+          />
+        </div>
+        <span className="shrink-0 text-xs text-muted">per {product.unit || 'each'}</span>
+      </div>
+
+      <p className="mb-1 text-xs uppercase tracking-widest text-muted">In the price list</p>
+      <div className="mb-2 flex gap-2">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          aria-label={`Name of ${product.name} in the price list`}
+          autoCapitalize="words"
+          className={`flex-[2] ${field}`}
+        />
+        <input
+          value={unit}
+          onChange={(event) => setUnit(event.target.value)}
+          placeholder="kg"
+          aria-label={`Unit of ${product.name} in the price list`}
+          className={`flex-1 ${field}`}
+        />
+      </div>
+      <div className="flex gap-2">
+        <div className="flex min-w-0 flex-1 items-center rounded-sm border border-hairline bg-card">
+          <span className="money pl-3 text-base text-muted" style={{ textAlign: 'left' }}>
+            $
+          </span>
+          <input
+            value={listPrice}
+            inputMode="decimal"
+            onChange={(event) => setListPrice(event.target.value)}
+            aria-label={`Price of ${product.name} in the price list`}
+            className="money touch w-full bg-transparent px-2 text-base text-ink outline-none"
+            style={{ textAlign: 'left' }}
+          />
+        </div>
+        <button
+          type="button"
+          disabled={busy || !listChanged || name.trim() === ''}
+          onClick={() =>
+            onSaveToList({
+              name: name.trim(),
+              unit: unit.trim() || null,
+              unit_price_cents: parseAmountToCents(listPrice, { allowZero: true }) ?? 0,
+            })
+          }
+          className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
+        >
+          {busy ? 'Saving…' : 'Save to list'}
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="touch mt-2 w-full text-sm text-muted"
+      >
+        Done
+      </button>
+    </div>
+  );
+}
+
+/** Add something to the price list without leaving the invoice. */
+function NewProductForm({
+  busy,
+  onAdd,
+  onCancel,
+}: {
+  busy: boolean;
+  onAdd: (name: string, unit: string, price: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [unit, setUnit] = useState('');
+  const [price, setPrice] = useState('');
+
+  const field =
+    'touch min-w-0 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action';
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onAdd(name, unit, price);
+      }}
+      className="mb-6 rounded-sm border border-edge bg-card p-3"
+    >
+      <p className="mb-2 text-xs uppercase tracking-widest text-muted">New product</p>
+      <div className="mb-2 flex gap-2">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Product"
+          aria-label="New product name"
+          autoCapitalize="words"
+          className={`flex-[2] ${field}`}
+        />
+        <input
+          value={unit}
+          onChange={(event) => setUnit(event.target.value)}
+          placeholder="kg"
+          aria-label="New product unit"
+          className={`flex-1 ${field}`}
+        />
+      </div>
+      <div className="flex gap-2">
+        <div className="flex min-w-0 flex-1 items-center rounded-sm border border-hairline bg-card">
+          <span className="money pl-3 text-base text-muted" style={{ textAlign: 'left' }}>
+            $
+          </span>
+          <input
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            placeholder="0.00"
+            aria-label="New product price"
+            inputMode="decimal"
+            className="money touch w-full bg-transparent px-2 text-base text-ink outline-none"
+            style={{ textAlign: 'left' }}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={busy || name.trim() === ''}
+          className="touch shrink-0 rounded-full bg-action px-5 text-sm text-action-text disabled:opacity-40"
+        >
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+        <button type="button" onClick={onCancel} className="touch shrink-0 px-2 text-sm text-muted">
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

@@ -46,6 +46,9 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
   detail: { current: null as unknown },
+  /* Named, because "the price list was NOT touched" is an assertion. */
+  updateProduct: vi.fn(),
+  createProduct: vi.fn(),
 }));
 
 vi.mock('@/lib/queries/session', () => ({
@@ -73,8 +76,16 @@ vi.mock('@/lib/queries/customers', () => ({
 vi.mock('@/lib/queries/products', () => ({
   useProducts: () => ({ data: PRODUCTS, isLoading: false }),
   useAllProducts: () => ({ data: PRODUCTS, isLoading: false }),
-  useCreateProduct: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateProduct: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateProduct: () => ({
+    mutate: mocks.createProduct,
+    mutateAsync: mocks.createProduct,
+    isPending: false,
+  }),
+  useUpdateProduct: () => ({
+    mutate: mocks.updateProduct,
+    mutateAsync: mocks.updateProduct,
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/lib/queries/sales', () => ({
@@ -200,16 +211,57 @@ describe('the running total', () => {
   });
 });
 
-describe('picking a product', () => {
-  it('copies the name, unit and price onto the line', () => {
+describe('the product list', () => {
+  /*
+   * The body of the compose screen, and the thing that was reported broken.
+   *
+   * Quantity is the ONLY state a row has: a product with a quantity is on the
+   * invoice, a product on zero is not. These tests are written against that
+   * single fact deliberately, because the version before this one carried a
+   * separate row-exists flag and a quantity that could disagree with it.
+   */
+  it('puts a product on the invoice with one tap, and takes it off again', () => {
     compose();
-    fireEvent.change(screen.getByLabelText('Product for line 1'), { target: { value: 'p-1' } });
+    expect(runningTotal()).toBe(formatCents(0));
 
-    expect((screen.getByLabelText('Description for line 1') as HTMLInputElement).value).toBe(
-      'Momo (pork)',
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    expect(runningTotal()).toBe(formatCents(2_500));
+    expect((screen.getByLabelText('Quantity of Momo (pork)') as HTMLInputElement).value).toBe('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    expect(runningTotal()).toBe(formatCents(5_000));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Take Momo (pork) off this invoice' }));
+    expect(runningTotal()).toBe(formatCents(0));
+  });
+
+  it('steps a fractional quantity without drifting', () => {
+    // The reason lib/quantity.ts exists. Stepping the string would give
+    // 2.5000000000000004 and a line that does not add up on paper.
+    compose();
+    fireEvent.change(screen.getByLabelText('Quantity of Momo (pork)'), {
+      target: { value: '1.5' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+
+    expect((screen.getByLabelText('Quantity of Momo (pork)') as HTMLInputElement).value).toBe(
+      '2.5',
     );
-    expect((screen.getByLabelText('Unit for line 1') as HTMLInputElement).value).toBe('box');
-    expect((screen.getByLabelText('Price for line 1') as HTMLInputElement).value).toBe('25.00');
+    expect(runningTotal()).toBe(formatCents(lineTotalCents(2_500, 2_500)!));
+  });
+
+  it('will not go below nothing', () => {
+    // A line sitting at zero would print as a row charging nothing, so
+    // stepping down through zero takes the row off rather than parking it.
+    compose();
+    fireEvent.click(screen.getByRole('button', { name: 'One more Achar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'One less Achar' }));
+
+    expect(runningTotal()).toBe(formatCents(0));
+    expect((screen.getByLabelText('Quantity of Achar') as HTMLInputElement).value).toBe('0');
+    expect(
+      screen.queryByRole('button', { name: 'Take Achar off this invoice' }),
+    ).not.toBeInTheDocument();
   });
 
   it('sends the copied price, not a reference to the product', async () => {
@@ -220,8 +272,7 @@ describe('picking a product', () => {
      */
     compose();
     fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
-    fireEvent.change(screen.getByLabelText('Product for line 1'), { target: { value: 'p-1' } });
-    fireEvent.change(screen.getByLabelText('Quantity for line 1'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Quantity of Momo (pork)'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalled());
@@ -234,6 +285,39 @@ describe('picking a product', () => {
       quantity_milli: 2_000,
       unit_price_cents: 2_500,
     });
+  });
+
+  it('charges the price typed on the line, and leaves the price list alone', async () => {
+    /*
+     * The pencil opens two prices that reach different distances. This one is
+     * "on this invoice" and must not touch the list — a price list quietly
+     * rewritten by somebody fixing one docket is the kind of thing nobody
+     * notices for a month.
+     */
+    compose();
+    fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'c-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Momo (pork)' }));
+    fireEvent.change(screen.getByLabelText('Price of Momo (pork) on this invoice'), {
+      target: { value: '20.00' },
+    });
+
+    expect(runningTotal()).toBe(formatCents(2_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].lines[0].unit_price_cents).toBe(2_000);
+    expect(mocks.updateProduct).not.toHaveBeenCalled();
+  });
+
+  it('carries a customer chosen before the screen opened', () => {
+    // "New invoice for THIS customer" has to actually be for that customer.
+    render(
+      <ToastProvider>
+        <ComposeSalesInvoice customerId="c-1" />
+      </ToastProvider>,
+    );
+    expect((screen.getByLabelText('Customer') as HTMLSelectElement).value).toBe('c-1');
   });
 });
 

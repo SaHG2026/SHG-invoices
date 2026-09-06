@@ -174,9 +174,14 @@ export function CustomerDetail({ id }: { id: string }) {
         The way in to building one. It sits under "Owes us" because that is the
         figure it changes, and the flow the client described starts here:
         choose who it is for, then the products, then print.
+
+        The customer travels in the query string. It went without one at first,
+        so a link that said "for this customer" landed on a screen asking who
+        it was for -- which is the link not working, and was reported as
+        exactly that.
       */}
       <Link
-        href={'/sales/new' as Route}
+        href={`/sales/new?customer=${customer.id}` as Route}
         className="touch mb-4 flex items-center justify-center rounded-sm border border-action bg-action-bg text-sm text-action"
       >
         + New invoice for this customer

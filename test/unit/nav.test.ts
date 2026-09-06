@@ -192,9 +192,23 @@ describe('the review section', () => {
 });
 
 describe('composing an invoice for a customer', () => {
-  it('has a row of its own, because it was not findable without one', () => {
-    expect(NAV_ITEMS.some((item) => item.section === 'newSale')).toBe(true);
-    expect(activeSection('/sales/new')).toBe('newSale');
+  it('has NO row of its own — the + is the way in', () => {
+    /*
+     * It had one for two rounds, added after two reports of not being able to
+     * find it, and then: *"Remove new invoice for a customer option on side
+     * menu. The plus button does it all."*
+     *
+     * Every other row in this menu is a PLACE. That one was the only verb,
+     * which is why it never sat right — and the `+` is global and already
+     * asks which ledger you mean on Deli's screens.
+     */
+    expect(NAV_ITEMS.some((item) => item.label.startsWith('New invoice'))).toBe(false);
+  });
+
+  it('lights nothing, rather than lighting somebody else', () => {
+    // Highlighting Customers on a screen you did not reach through Customers
+    // is the menu telling you where you are not.
+    expect(activeSection('/sales/new')).toBeNull();
   });
 
   it('but a printed document belongs to the customer side', () => {

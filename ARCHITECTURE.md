@@ -3708,3 +3708,134 @@ is the top of a piece of paper somebody is handed.
 - **Not changed:** payables rows, which already expanded on tap. The report
   named both directions; only one of them was actually missing it.
 
+
+---
+
+## 41. Round G — the design, and why the app felt slow
+
+Five items, after *"using for a fair bit"*, with a two-screen design attached.
+
+### 41.1 The date came off the home page
+
+> *"remove the date from the home page, looks cluttered with so many things
+> going on. Center aligned greeting and name."*
+
+It was the one line on that screen answering a question nobody had — **the
+phone's own clock is two centimetres above it, permanently.** Every other date
+on the home screen is attached to an invoice, which is a fact about the
+invoice rather than about today.
+
+Centring the greeting also gave it a job: it is the lid of the page now,
+rather than a left-aligned label competing with four left-aligned figures.
+
+### 41.2 The dark band, and two tokens instead of one
+
+The design puts the header and the total-outstanding card on deep green. Both
+use a new `--hero` family, **not `--brand`** — brand is the PWA splash and
+browser-chrome colour and has to keep matching the installed icon exactly, so
+it was not available to be nudged for a header. Two tokens because they answer
+two different questions.
+
+Measured on `--hero` (#05412a), because that is what this file is for:
+
+| | | |
+|---|---|---|
+| `--hero-text` | #ffffff | 11.69:1 |
+| `--hero-muted` | #b8d6c4 | 7.49:1 |
+| `--hero-line` | #1d5b41 | 1.46:1 — **never text**, rules and icon wells only |
+
+`--hero-muted` is deliberately not 50% white, which resolves to #82a094 and
+measures 4.12:1 — under AA on exactly the small uppercase labels that say what
+each figure means.
+
+A dark header costs every control inside it. `ConnectionStatus` and the
+`ActivityBell` button both used `text-muted`, which is 1.9:1 on this ground;
+both now take the light pair, while the bell's dropdown panel keeps its own
+colours because it is still a white card.
+
+**The hero figure is the same number as before.** It is `summary.total_cents`,
+which the "Invoices overview" row at the bottom of the same screen has always
+shown, promoted to the top — same array, rule 4, so there is still exactly one
+total outstanding in this app. It scales to its own card with `cqw` like
+`StatCard` does, at `0.72` rather than `0.58` because it shares its row with a
+44px icon well; measured at 39px against a 12px clearance on the widest
+fixture.
+
+### 41.3 Attribution on the side that issues
+
+> *"Added by indicator needed on issued invoices too. and indicator of who
+> Marked it paid as well."*
+
+Spec §9 makes the chip permanent and says it appears everywhere the invoice
+appears afterwards. `InvoiceRow` has done that for payables since Phase 2 —
+and `InvoiceDetail` has said "Paid by X" since Phase 4. **Sales invoices never
+got either.** Both facts were on the row the whole time (`created_by`,
+`received_by`) and were being written correctly; nothing was ever showing them.
+
+The chip is in the same position and at the same size as the payables one, so
+the two ledgers read as one app rather than two screens sharing a header.
+
+The test asserts on the person's **name**, not their initials: `PersonChip`
+renders a photograph where there is one, so an initials assertion would pass
+or fail depending on who happens to have a picture. The name is what both
+branches put in the accessibility tree.
+
+### 41.4 The menu row that was a verb
+
+> *"Remove new invoice for a customer option on side menu. The plus button
+> does it all."*
+
+Right, and worth recording why. **Every other row in that menu is a place.**
+That one was the only verb, which is why it never sat right — and the `+` is
+global (§16) and now asks which ledger you mean on Deli's screens, so the
+composer is one tap from anywhere, from a control that is always in the same
+corner. A menu row pointing at the same place is a second door onto one room.
+
+`activeSection('/sales/new')` now returns `null` rather than lighting
+Customers. Highlighting a section you did not arrive through is the menu
+telling you where you are *not*.
+
+### 41.5 "It doesn't feel smooth" — mostly not the animations
+
+> *"Could we also work on better animations please. it doesnt feel smooth."*
+
+The instinct is to reach for the keyframes. Two of the four causes were not
+animation at all:
+
+1. **`touch-action: manipulation` was missing.** Every button in this app was
+   waiting ~300ms for a possible double-tap-to-zoom before dispatching a tap.
+   **No amount of animation work can cover a delay that happens before the
+   animation starts.** This is the single biggest item in this section.
+2. **Chrome's grey tap flash** fired instantly, squarely on top of the
+   considered 140ms pressed-state transition. The animation was being drawn
+   over by a hard flash on every press. Removing it is only safe because every
+   pressable thing here has its own `:active` state — this deletes the second,
+   uglier copy of the feedback, not the feedback.
+3. **Push and pop had no opacity.** They animated transform alone, so the
+   outgoing screen vanished on the same frame the incoming one began moving: a
+   hard cut with a slide bolted onto it. The eye sees the cut, not the 300ms of
+   easing after it. They cross-fade now, and the distance came down from 28px
+   to 16px — a long slide is only smooth if the frames underneath it are cheap,
+   and these screens are doing a React render and a query resolve in the same
+   window.
+4. **Round F's four expanding panels appeared instantly.** Next to a 300ms
+   screen transition that reads as the app stuttering rather than as it being
+   fast. They fade and rise 4px now.
+
+`translate3d` replaced `translateY`/`translateX` throughout, to hold the
+compositor layer for the whole run rather than promoting and dropping it at
+the seams.
+
+**Height is deliberately not animated** on the panels. `auto` cannot be
+interpolated without measuring, and measuring a panel of unknown length on
+every open is exactly the main-thread work that causes the jank it would be
+trying to hide.
+
+### 41.6 Where it stands
+
+- **Tests: 729**, under all three timezones. `tsc` and `next build` clean.
+- **No database change** in this round.
+- The preview harness now covers the dashboard, the customer page shut and
+  open, and the receivables list — all four were checked at 375px and 360px
+  with no clipping and no horizontal scroll.
+

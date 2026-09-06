@@ -107,14 +107,34 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         the rule only exists on paper. Marking the element is the version that
         cannot silently stop matching.
       */}
-      <header className="no-print sticky top-0 z-30 border-b border-edge bg-card">
+      {/*
+        The dark band. Round G, from the client's design.
+
+        It is `--hero`, the same material as the total-outstanding card, not
+        `--brand`: brand is the PWA splash and browser-chrome colour and has to
+        keep matching the installed icon exactly, so it is not available to be
+        adjusted for a header. Two tokens because they answer two questions.
+
+        Everything inside it switches to the light pair. That is the whole cost
+        of a dark header and it is why the colours are tokens rather than
+        utility classes — `text-ink` on this ground is 1.3:1.
+      */}
+      <header
+        className="no-print sticky top-0 z-30"
+        style={{
+          backgroundColor: 'var(--hero)',
+          backgroundImage: 'linear-gradient(160deg, var(--hero) 0%, var(--hero-deep) 100%)',
+          color: 'var(--hero-text)',
+        }}
+      >
         {/* relative, so the bell panel can hang beneath the bar */}
         <div className="relative mx-auto flex h-14 max-w-[560px] items-center gap-1 px-4">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Menu"
-            className="touch -ml-3 flex shrink-0 items-center justify-center px-2 text-ink"
+            className="touch -ml-3 flex shrink-0 items-center justify-center px-2"
+            style={{ color: 'var(--hero-text)' }}
           >
             <MenuGlyph />
           </button>
@@ -122,7 +142,8 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
           {back ? (
             <Link
               href={back.href}
-              className="touch flex min-w-0 items-center gap-1 pr-1 text-sm text-action"
+              className="touch flex min-w-0 items-center gap-1 pr-1 text-sm"
+              style={{ color: 'var(--hero-text)' }}
             >
               <span aria-hidden>‹</span>
               <span className="truncate">{back.label}</span>
@@ -143,11 +164,29 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
                 height={28}
                 className="shrink-0 rounded-sm"
               />
-              <span
-                className="truncate text-h2 text-ink"
-                style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}
-              >
-                SHG Invoices
+              {/*
+                Two lines, from the design. The tagline appears ONLY here —
+                on a deep screen the header shows a back link instead of the
+                wordmark, and a strapline over somebody's invoice list is
+                decoration in the one place the app is meant to be a tool.
+              */}
+              <span className="min-w-0">
+                <span
+                  className="block truncate text-h2 leading-tight"
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    letterSpacing: '-0.02em',
+                    color: 'var(--hero-text)',
+                  }}
+                >
+                  SHG Invoices
+                </span>
+                <span
+                  className="block truncate text-xs"
+                  style={{ color: 'var(--hero-muted)' }}
+                >
+                  Manage. Track. Get paid.
+                </span>
               </span>
             </span>
           )}
@@ -163,7 +202,8 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
           <Link
             href={'/' as Route}
             aria-label="Home"
-            className="touch flex shrink-0 items-center justify-center px-1 text-muted"
+            className="touch flex shrink-0 items-center justify-center px-1"
+            style={{ color: 'var(--hero-muted)' }}
           >
             <HomeGlyph />
           </Link>

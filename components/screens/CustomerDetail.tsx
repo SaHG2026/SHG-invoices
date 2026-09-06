@@ -186,7 +186,7 @@ export function CustomerDetail({ id }: { id: string }) {
         </button>
 
         {detailsOpen ? (
-          <div className="border-t border-hairline px-4 py-3">
+          <div className="panel-in border-t border-hairline px-4 py-3">
             {editing ? (
               <CustomerForm
                 customer={customer}
@@ -253,11 +253,11 @@ export function CustomerDetail({ id }: { id: string }) {
 
         {historyOpen ? (
           settled.length === 0 ? (
-            <p className="border-t border-hairline px-4 py-3 text-sm text-muted">
+            <p className="panel-in border-t border-hairline px-4 py-3 text-sm text-muted">
               Nothing received from {customer.name} yet.
             </p>
           ) : (
-            <ul className="border-t border-hairline">
+            <ul className="panel-in border-t border-hairline">
               {settled.slice(0, 50).map((row) => (
                 <SalesInvoiceRowItem key={row.id} row={row} today={today} />
               ))}

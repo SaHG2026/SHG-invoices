@@ -350,3 +350,74 @@ describe('the chrome', () => {
     }
   });
 });
+
+
+describe('the home screen, uncluttered — Round G', () => {
+  /*
+   * ==========================================================================
+   * *"remove the date from the home page, looks cluttered with so many things
+   * going on. Center aligned greeting and name."*
+   *
+   * The date was the one line on this screen answering a question nobody had:
+   * the phone's own clock is two centimetres above it, permanently. Every
+   * other date here is attached to an invoice, which is a fact about the
+   * invoice rather than about today.
+   * ==========================================================================
+   */
+  it('shows no date of its own', () => {
+    open();
+    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    // Not "contains no digits" — the greeting could gain some. The date was a
+    // full "Sat 6 Sep 2026", so a four-digit year is what to look for.
+    expect(header.textContent).not.toMatch(/\b20\d{2}\b/);
+  });
+
+  it('still greets by name, and that greeting is still the h1', () => {
+    // The greeting is the page heading, not decoration above one. A screen
+    // whose first heading is "Coming up" has no h1 at all.
+    open();
+    // PROFILES[3] is who this file signs in as.
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.textContent).toContain(PROFILES[3]!.display_name);
+  });
+
+  it('centres it', () => {
+    open();
+    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    expect(header.className).toContain('text-center');
+  });
+});
+
+describe('the total outstanding hero — Round G', () => {
+  /*
+   * Promoted to the top of the screen from the "Invoices overview" row at the
+   * bottom, and given the weight the client's design gives it.
+   *
+   * The point of these two tests is rule 4: it is the SAME number, derived
+   * from the same array the lists render. A hero figure fed by its own query
+   * is exactly the disagreement the notes call trust-destroying, and it would
+   * be on the largest text on the screen.
+   */
+  it('is the sum of every outstanding invoice', () => {
+    open();
+    const hero = screen.getByLabelText(/^Total outstanding/);
+    expect(hero.textContent).toContain(formatCents(sumCents(invoices)));
+  });
+
+  it('agrees with the overall figure further down the same screen', () => {
+    open();
+    const hero = screen.getByLabelText(/^Total outstanding/);
+    const overall = formatCents(sumCents(invoices));
+    expect(hero.textContent).toContain(overall);
+    // Twice on the page, and identical both times.
+    expect(screen.getAllByText(overall).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('leads to the pending list rather than being a dead figure', () => {
+    open();
+    expect(screen.getByLabelText(/^Total outstanding/)).toHaveAttribute(
+      'href',
+      expect.stringContaining('/pending'),
+    );
+  });
+});

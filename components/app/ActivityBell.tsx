@@ -97,7 +97,10 @@ export function ActivityBell() {
         onClick={toggle}
         aria-expanded={open}
         aria-label={unseen > 0 ? `Activity, ${unseen} new` : 'Activity'}
-        className="touch relative flex items-center justify-center px-1 text-base text-muted"
+        /* The button sits in the dark header; the panel below it is a white
+           card and keeps its own colours. */
+        className="touch relative flex items-center justify-center px-1 text-base"
+        style={{ color: 'var(--hero-muted)' }}
       >
         <BellGlyph />
         {unseen > 0 ? (

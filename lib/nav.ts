@@ -22,7 +22,6 @@ export type NavSection =
   | 'suppliers'
   | 'customers'
   | 'products'
-  | 'newSale'
   | 'receivables'
   | 'history'
   | 'settings';
@@ -57,20 +56,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
      of the ledger that sends invoices out. */
   { section: 'products', label: 'Products', href: '/products' as Route },
   /*
-   * The one row in this menu that is a verb.
+   * Composing an invoice is NOT in this menu, and its absence is deliberate.
    *
-   * It was reachable only from inside a customer, and the report was "I could
-   * not find create invoice feature for Deli" — which is the correct verdict
-   * on a feature buried one level below where somebody looks for it. Composing
-   * an invoice is a thing you set out to do, not something you discover while
-   * reading a customer's page.
-   */
-  { section: 'newSale', label: 'New invoice for a customer', href: '/sales/new' as Route },
-  /*
-   * Under it, because it is the other half of the same ledger: one issues an
-   * invoice, this one watches for the money. Deli's own screen leads with this
-   * rather than the composer -- §40 -- but the drawer keeps both, because the
-   * drawer is how somebody who is not standing on Deli gets to either.
+   * It had a row for two rounds, added after two reports of not being able to
+   * find it, and then: *"Remove new invoice for a customer option on side
+   * menu. The plus button does it all."* He is right, and the reason is worth
+   * keeping. The `+` is global (ARCHITECTURE §16) and on Deli's screens it
+   * asks which ledger you mean -- so the composer is one tap from anywhere,
+   * from a control that is always in the same corner. A menu row pointing at
+   * the same place is a second door onto one room, and the menu is the
+   * navigation, not the actions.
+   *
+   * Every other row here is a PLACE. This one was the only verb, which is why
+   * it never sat right.
    */
   { section: 'receivables', label: 'Receivables', href: '/receivables' as Route },
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
@@ -95,8 +93,14 @@ export function activeSection(pathname: string): NavSection | null {
   if (path.startsWith('/customers')) return 'customers';
   if (path.startsWith('/products')) return 'products';
   if (path.startsWith('/receivables')) return 'receivables';
-  // Composing lights its own row; a printed document belongs to the customer.
-  if (path.startsWith('/sales/new')) return 'newSale';
+  /*
+   * Composing has no row of its own any more, so it lights nothing rather
+   * than lighting somebody else's. `/sales/new` is reached from the `+` and
+   * from a customer, and highlighting Customers while you are on a screen you
+   * did not reach through Customers is the menu telling you where you are not.
+   * A printed document does belong to the customer, and still says so.
+   */
+  if (path.startsWith('/sales/new')) return null;
   if (path.startsWith('/sales')) return 'customers';
   if (path.startsWith('/settings')) return 'settings';
   return null;

@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { Route } from 'next';
 import { useToast } from '@/components/ui/Toast';
+import { PersonChip } from '@/components/ui/PersonChip';
+import { useProfiles } from '@/lib/queries/session';
 import { useMarkReceived, useSalesInvoice, useUnmarkReceived } from '@/lib/queries/sales';
 import { formatCents } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
@@ -50,6 +52,22 @@ export function SalesInvoiceRowItem({
 }) {
   const toast = useToast();
   const [expanded, setExpanded] = useState(false);
+  /*
+   * Attribution, on the side that issues rather than the side that pays.
+   *
+   * Spec §9 makes the chip permanent and says it appears everywhere the
+   * invoice appears afterwards -- and `InvoiceRow` has done exactly that for
+   * payables since Phase 2. Sales invoices simply never got it, which the
+   * client noticed the moment he was using both sides daily: *"Added by
+   * indicator needed on issued invoices too. and indicator of who Marked it
+   * paid as well."*
+   *
+   * Both facts were already on the row (`created_by`, `received_by`) and were
+   * being written correctly. Nothing was ever showing them.
+   */
+  const { data: people = [] } = useProfiles();
+  const author = people.find((person) => person.id === row.created_by);
+  const receiver = people.find((person) => person.id === row.received_by);
   const markReceived = useMarkReceived();
   const unmarkReceived = useUnmarkReceived();
 
@@ -75,6 +93,10 @@ export function SalesInvoiceRowItem({
         aria-expanded={expanded}
         className="flex min-h-row w-full min-w-0 items-center gap-2 px-3 py-2 text-left active:bg-pressed"
       >
+        {/* Same position and size as InvoiceRow's, so the two ledgers read as
+            one app rather than as two screens that happen to share a header. */}
+        {author ? <PersonChip profile={author} /> : <span className="size-6 shrink-0" />}
+
         <span className="min-w-0 flex-1">
           <span className={`block truncate text-sm text-ink ${settled ? 'line-through' : ''}`}>
             {showCustomer
@@ -112,7 +134,7 @@ export function SalesInvoiceRowItem({
       </button>
 
       {expanded ? (
-        <div className="border-t border-hairline px-3 py-3">
+        <div className="panel-in border-t border-hairline px-3 py-3">
           {isLoading ? (
             <p className="text-sm text-muted">Loading the lines…</p>
           ) : lines.length === 0 ? (
@@ -149,8 +171,24 @@ export function SalesInvoiceRowItem({
             {/* Absent, and said so. A blank line labelled Due reads as
                 something that failed to load. */}
             <Fact label="Due">{row.due_date ? formatDay(row.due_date) : 'No due date'}</Fact>
+            <Fact label="Added by">
+              <span className="flex items-center justify-end gap-2">
+                {author ? <PersonChip profile={author} /> : null}
+                {author?.display_name ?? 'Somebody no longer listed'}
+              </span>
+            </Fact>
             {row.received_at ? (
-              <Fact label="Received">{formatDateTime(row.received_at)}</Fact>
+              <Fact label="Received">
+                {/* Who ticked it off, not just when. The payables side has
+                    said this since Phase 4; this is the same sentence. */}
+                <span className="flex items-center justify-end gap-2">
+                  {receiver ? <PersonChip profile={receiver} /> : null}
+                  <span>
+                    {receiver ? `${receiver.display_name} · ` : ''}
+                    {formatDateTime(row.received_at)}
+                  </span>
+                </span>
+              </Fact>
             ) : null}
             {row.note ? <Fact label="Note">{row.note}</Fact> : null}
           </dl>

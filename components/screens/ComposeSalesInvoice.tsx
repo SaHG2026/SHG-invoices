@@ -532,7 +532,7 @@ export function ComposeSalesInvoice({
       </div>
 
       {dueDateOn ? (
-        <div className="mb-6">
+        <div className="panel-in mb-6">
           <label className="mb-1 block">
             <span className="mb-1 block text-xs uppercase tracking-widest text-muted">Due</span>
             <input
@@ -954,7 +954,7 @@ function ProductRowEditor({
     parseAmountToCents(listPrice, { allowZero: true }) !== product.unit_price_cents;
 
   return (
-    <div className="border-t border-hairline px-3 py-3">
+    <div className="panel-in border-t border-hairline px-3 py-3">
       <p className="mb-1 text-xs uppercase tracking-widest text-muted">On this invoice</p>
       <div className="mb-4 flex items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center rounded-sm border border-hairline bg-card">

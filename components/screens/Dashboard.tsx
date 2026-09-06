@@ -144,20 +144,100 @@ export default function Dashboard() {
         The mockup does not show it; dropping a signed-off thing during a
         visual pass is not a visual decision, so it stays until asked.
       */}
-      <header className="mb-4">
+      <header className="mb-4 text-center">
         {/*
           The greeting is the page heading, not decoration above one. Made
           small rather than demoted to a <p>: a screen whose first heading is
           "Coming up" has no h1 at all, which is a real navigation problem for
           anybody moving by headings.
+
+          The date under it is gone — *"remove the date from the home page,
+          looks cluttered with so many things going on."* He is right, and it
+          was the one line here answering a question nobody had: the phone's
+          own clock is two centimetres above it, permanently. Every other date
+          on this screen is attached to an invoice.
+
+          Centred, as asked. It also gives the line a job — it is the lid of
+          the page now, rather than a left-aligned label competing with the
+          four left-aligned figures under it.
         */}
         <h1 className="text-base text-ink">
           {today && profile ? greet(profile.display_name) : ' '}
         </h1>
-        <p className="figure-date text-xs uppercase tracking-widest text-muted">
-          {today ? formatDayWithYear(today) : ' '}
-        </p>
       </header>
+
+      {/*
+        The hero figure, on the dark band. Round G, from the client's design.
+
+        It is the same number the "Invoices overview" row at the bottom of this
+        screen has always carried, promoted to the top and given the weight the
+        design gives it. Same `summary`, derived from the same array the lists
+        below render — rule 4 — so there is still exactly one total outstanding
+        in this app, and it cannot disagree with itself.
+      */}
+      <Link
+        href={pendingHref('all')}
+        aria-label={`Total outstanding ${formatCents(summary.total_cents)}, ${count(
+          summary.invoice_count,
+          'invoice',
+        )}`}
+        className="mb-3 flex items-center gap-3 overflow-hidden rounded-sm px-4 py-4"
+        style={{
+          backgroundImage: 'linear-gradient(150deg, var(--hero) 0%, var(--hero-deep) 100%)',
+          color: 'var(--hero-text)',
+          // Same device as StatCard below: the figure is sized against THIS
+          // card's width, so it fits on any screen without the component
+          // knowing what screen it is on.
+          containerType: 'inline-size',
+        }}
+      >
+        <span className="min-w-0 flex-1">
+          <span
+            className="block text-xs uppercase tracking-widest"
+            style={{ color: 'var(--hero-muted)' }}
+          >
+            Total outstanding
+          </span>
+          {/*
+            The group total is the longest number in the app -- it is the sum
+            of every other figure on this screen -- so it is the one that runs
+            off the edge first. `0.72` rather than StatCard's `0.58` because
+            this figure shares its row with a 44px icon well and a chevron,
+            and the arithmetic has to leave them their space.
+          */}
+          <span
+            className="money block text-total"
+            style={{
+              textAlign: 'left',
+              color: 'var(--hero-text)',
+              fontSize: `min(var(--text-total), ${(
+                100 /
+                (Math.max(formatCents(summary.total_cents).length, 1) * 0.72)
+              ).toFixed(2)}cqw)`,
+            }}
+          >
+            {formatCents(summary.total_cents)}
+          </span>
+          <span className="block truncate text-xs" style={{ color: 'var(--hero-muted)' }}>
+            {summary.invoice_count === 0
+              ? 'Nothing outstanding'
+              : `across ${count(summary.invoice_count, 'invoice')} · ${count(
+                  summary.supplier_count,
+                  'supplier',
+                )}`}
+          </span>
+        </span>
+        <span
+          aria-hidden
+          className="flex size-11 shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: 'var(--hero-line)' }}
+        >
+          <WalletGlyph />
+        </span>
+        <span aria-hidden className="shrink-0 text-sm" style={{ color: 'var(--hero-muted)' }}>
+          &rsaquo;
+        </span>
+      </Link>
 
       {/*
         Above the money, and present at zero.
@@ -398,6 +478,34 @@ function count(n: number, noun: string): string {
  * anything else.
  * ---------------------------------------------------------------------------
  */
+/**
+ * The mark in the hero card's well. Drawn here rather than imported, like
+ * every other glyph in this app: three of these would be a dependency, and
+ * an icon set is rule 7's "costs more than it saves" in its purest form.
+ *
+ * `currentColor` throughout, so it takes --hero-text from the card and would
+ * take anything else from anywhere else. It never needs a colour of its own.
+ */
+function WalletGlyph() {
+  return (
+    <svg aria-hidden width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path
+        d="M2.8 6.2A1.6 1.6 0 0 1 4.4 4.6h9.2a1.6 1.6 0 0 1 1.6 1.6v1H4.4a1.6 1.6 0 0 1-1.6-1.6Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.8 6.2v7.6a1.6 1.6 0 0 0 1.6 1.6h11.2a1.6 1.6 0 0 0 1.6-1.6V8.6a1.6 1.6 0 0 0-1.6-1.6H4.4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <circle cx="13.6" cy="11.2" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
 function StatCard({
   label,
   href,

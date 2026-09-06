@@ -26,6 +26,30 @@
   --muted: #3f5147; /* secondary text, dates, counts — 6.9:1 on --page */
   --pressed: #eef6f0; /* row/button pressed state */
 
+  /* ---- 1b. The dark band: header, and the one hero figure -----
+     Round G. The client sent a design with the app header and the total
+     outstanding card on deep green, and everything else on the light page.
+
+     These are surface tokens, NOT a second brand. `--brand` stays exactly
+     what it was — the PWA splash and browser chrome colour, which must keep
+     matching the installed icon. `--hero` is a shade lighter so that the
+     header and the card read as the same material without either of them
+     going black on an OLED phone at night.
+
+     Contrast, measured on --hero (#05412a):
+       --hero-text  #ffffff  11.69:1  figures and titles
+       --hero-muted #b8d6c4   7.49:1  labels and counts (AA at any size)
+     Both pass. `--hero-muted` is deliberately NOT 50% white, which resolves
+     to #82a094 and measures 4.12:1 — under AA for the small uppercase labels
+     that say what each figure means, which is where it would have been used.
+     --hero-line is 1.46:1 on --hero and is therefore never text: it draws
+     rules and the wells behind icons, nothing that has to be read. */
+  --hero: #05412a;
+  --hero-deep: #032b1b; /* the gradient's far end */
+  --hero-text: #ffffff;
+  --hero-muted: #b8d6c4;
+  --hero-line: #1d5b41; /* rules and icon wells inside the dark band */
+
   /* ---- 2. Due spine (urgency sequence) ------------------ */
   /* Read as one ramp: hot -> warm -> cool -> inert.
      DELIBERATELY UNCHANGED by the repaint. This ramp is semantic, not brand:
@@ -142,6 +166,10 @@
   --color-pressed: var(--pressed);
   --color-brand: var(--brand);
   --color-brand-mark: var(--brand-mark);
+  --color-hero: var(--hero);
+  --color-hero-text: var(--hero-text);
+  --color-hero-muted: var(--hero-muted);
+  --color-hero-line: var(--hero-line);
 
   --color-overdue: var(--spine-overdue);
   --color-today: var(--spine-today);
@@ -270,6 +298,33 @@
      * same class of problem from a different direction).
      */
     overscroll-behavior-y: none;
+  }
+
+  /*
+   * Two lines that are most of "it doesn't feel smooth" on Android.
+   *
+   * `touch-action: manipulation` drops the browser's ~300ms wait for a
+   * possible double-tap-to-zoom before it dispatches a tap. Every button in
+   * this app was a third of a second behind the finger, on every press, and
+   * no amount of animation work can cover a delay that happens BEFORE the
+   * animation starts.
+   *
+   * `-webkit-tap-highlight-color` removes Chrome's grey flash, which fires
+   * instantly and squarely on top of the 140ms pressed-state transition
+   * below — so the considered animation was being drawn over by a hard flash
+   * every time. Removing it is only safe because every pressable thing here
+   * has its own `:active` state; this is not deleting the feedback, it is
+   * deleting the second, uglier copy of it.
+   */
+  a,
+  button,
+  [role='button'],
+  input,
+  select,
+  textarea,
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1,
@@ -438,10 +493,18 @@
    ---------------------------------------------------------------------------
    ------------------------------------------------------------------------- */
 
+/*
+ * `translate3d`, not `translateY`, on all three of these.
+ *
+ * It is the documented way to keep the animated element on its own
+ * compositor layer for the whole run. With the 2D form, mobile Chrome
+ * promotes the layer, runs the animation, then drops it — and the two
+ * repaints at the seams are visible as a flicker on a long list.
+ */
 @keyframes screen-in {
   from {
-    opacity: 0.4;
-    transform: translateY(3px);
+    opacity: 0;
+    transform: translate3d(0, 3px, 0);
   }
   to {
     opacity: 1;
@@ -453,11 +516,25 @@
   animation: screen-in var(--dur-fade) var(--ease-ios) both;
 }
 
+/*
+ * Push and pop CROSS-FADE as well as slide. Round G.
+ *
+ * They used to animate transform alone, so the outgoing screen vanished on
+ * the same frame the incoming one started moving — a hard cut with a slide
+ * bolted onto it. That discontinuity is most of what read as "jerky": the eye
+ * sees the cut, not the 300ms of easing after it.
+ *
+ * The distance came down from 28px to 16px at the same time. A long slide is
+ * only smooth if the frames underneath it are cheap, and these screens are
+ * doing a React render and a query resolve in the same window.
+ */
 @keyframes screen-push {
   from {
-    transform: translateX(28px);
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
   }
   to {
+    opacity: 1;
     transform: none;
   }
 }
@@ -468,15 +545,44 @@
 
 @keyframes screen-pop {
   from {
-    transform: translateX(-28px);
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
   }
   to {
+    opacity: 1;
     transform: none;
   }
 }
 
 @utility screen-pop {
   animation: screen-pop var(--dur-screen) var(--ease-ios) both;
+}
+
+/*
+ * A section opening where it stands: the details panel, the history panel,
+ * an invoice expanding into its bill.
+ *
+ * Round F added four of these and every one of them appeared instantly, which
+ * next to a 300ms screen transition reads as the app stuttering rather than
+ * as it being fast. Height is deliberately NOT animated — `auto` cannot be
+ * interpolated without measuring, and measuring a panel of unknown length on
+ * every open is exactly the main-thread work that causes the jank it would be
+ * trying to hide. Fading a panel that is already at its full height reads as
+ * "this opened" without asking the browser to lay anything out twice.
+ */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility panel-in {
+  animation: panel-in 160ms var(--ease-ios) both;
 }
 
 /* Tick-off: the spine segment fills to the paid colour over 200ms, then the

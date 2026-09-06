@@ -47,7 +47,10 @@ export function ConnectionStatus() {
       aria-live="polite"
       aria-label={label}
       title={label}
-      className={`flex shrink-0 items-center gap-1 px-1 ${online ? 'text-muted' : 'text-ink'}`}
+      /* Inside the dark header band, so the light pair — `text-muted` on
+         --hero is 1.9:1. Offline is the louder of the two, as before. */
+      className="flex shrink-0 items-center gap-1 px-1"
+      style={{ color: online ? 'var(--hero-muted)' : 'var(--hero-text)' }}
     >
       <WifiGlyph online={online} />
 

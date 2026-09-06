@@ -91,6 +91,29 @@ const SALES: SalesInvoiceRow[] = [
     note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
   },
+  {
+    /* One already received, so "who ticked it off" has something to show.
+       Added by Mani, received by Milan — deliberately two different people,
+       because a fixture where they are the same cannot tell the two labels
+       apart and would pass with either one wired to the wrong column. */
+    id: 'sv-3',
+    business_id: 'b-ddl',
+    customer_id: 'c-1',
+    invoice_number: 'DD-1003',
+    invoice_date: '2026-07-02',
+    due_date: '2026-07-16',
+    amount_cents: 45_000,
+    status: 'received',
+    received_at: '2026-07-20T03:00:00Z',
+    received_by: 'p-milan',
+    payment_ref: null,
+    void_reason: null,
+    created_by: 'p-mani',
+    created_at: '2026-07-02T00:00:00Z',
+    updated_at: '2026-07-20T03:00:00Z',
+    note: null,
+    customer: { id: 'c-1', name: 'Harris Farm Markets' },
+  },
 ];
 
 const mocks = vi.hoisted(() => ({
@@ -544,6 +567,51 @@ describe('before the migration has been run', () => {
  *
  * Skipped unless PREVIEW_OUT is set.
  * -------------------------------------------------------------------------- */
+describe('who added it, and who ticked it off — Round G', () => {
+  /*
+   * ==========================================================================
+   * *"Added by indicator needed on issued invoices too. and indicator of who
+   * Marked it paid as well."*
+   *
+   * Spec §9 makes the attribution chip permanent and says it appears
+   * everywhere the invoice appears afterwards. `InvoiceRow` has done that for
+   * payables since Phase 2; the sales rows never got it. Both facts were on
+   * the row all along (`created_by`, `received_by`) and were being written
+   * correctly — nothing was ever showing them.
+   * ==========================================================================
+   */
+  it('puts the author chip on the row, like the payables side', () => {
+    openDetail('c-1');
+    /*
+     * By the person's NAME, not their initials. PersonChip renders a
+     * photograph where there is one and initials where there is not, and Mani
+     * has a photograph — so asserting on "MA" would pass or fail depending on
+     * which people happen to have pictures, which is not what this is about.
+     * The name is what both branches put in the accessibility tree.
+     */
+    const row = screen.getByRole('button', { name: /#DD-1001/ });
+    expect(within(row).getByAltText('Mani')).toBeInTheDocument();
+  });
+
+  it('names the author in the opened bill', () => {
+    openDetail('c-1');
+    fireEvent.click(screen.getByRole('button', { name: /#DD-1001/ }));
+    expect(screen.getByText('Added by')).toBeInTheDocument();
+    expect(screen.getAllByText('Mani').length).toBeGreaterThan(0);
+  });
+
+  it('names who recorded the money as received', () => {
+    // The half he had to ask for twice. "Received" used to be a timestamp
+    // with nobody's name on it.
+    openDetail('c-1');
+    // Settled, so it lives in History — which is collapsed by default.
+    fireEvent.click(screen.getByRole('button', { name: /History/ }));
+    fireEvent.click(screen.getByRole('button', { name: /#DD-1003/ }));
+    const received = screen.getByText('Received').closest('div')!;
+    expect(received.textContent).toContain('Milan');
+  });
+});
+
 describe('preview', () => {
   const OUT = process.env.PREVIEW_OUT ?? '';
   const CSS = process.env.PREVIEW_CSS ?? '';

@@ -30,7 +30,7 @@ end to end. Grep for the section you need:
 | Roles, notifications, push | §8.1 |
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
-| Rounds A–F, the most recent work | §35–§40 |
+| Rounds A–G, the most recent work | §35–§41 |
 
 ---
 
@@ -87,7 +87,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 719 tests
+npx vitest run       # 729 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -214,9 +214,9 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_017` applied.**
-719 tests under three timezones.
+729 tests under three timezones.
 
-Phases 1–7, the venue accounts (§34), then six rounds of feedback:
+Phases 1–7, the venue accounts (§34), then seven rounds of feedback:
 
 | | |
 |---|---|
@@ -226,6 +226,7 @@ Phases 1–7, the venue accounts (§34), then six rounds of feedback:
 | §38 | **Round D** — Deli's products, line items and printable invoice |
 | §39 | **Round E** — Deli's price list became the compose screen, and the two ways in |
 | §40 | **Round F** — due dates optional, Receivables, invoices that open into their bill |
+| §41 | **Round G** — the dark band, attribution on issued invoices, and the tap delay |
 
 ### The two lessons worth more than the features
 
@@ -235,6 +236,12 @@ invoice, because from outside a missing permission and a working refusal are
 both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
+
+**"It doesn't feel smooth" is usually not the animations.** Two of the four
+causes in §41.5 were not animation at all — a missing `touch-action:
+manipulation` putting every tap ~300ms behind the finger, and Chrome's grey
+flash painting over the considered transition. **Check what happens BEFORE the
+animation starts before touching a keyframe.**
 
 **A default is a claim.** A due date filled in because the field wanted one
 prints a deadline nobody agreed to, and drives every overdue figure off it.

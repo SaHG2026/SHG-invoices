@@ -270,6 +270,26 @@ with `within()`.
 **Nothing is blocking. The app is live and in daily use.** Everything below
 is either waiting on real usage or waiting on the client.
 
+### Open, and held deliberately
+
+**A shop cannot save an invoice.** Reported 6 September, not diagnosed. The
+toast said "Couldn't save that invoice. Nothing was written", which named
+nothing — `writeFailureMessage` now appends the Postgres code, and the next
+attempt will say which. Do not guess at a fix before that code arrives; the
+whole point of the improvement is that it stops the guessing.
+
+**Edit is offered on rows the shop did not enter.** `stillCorrectable` gates on
+the clock alone, but `staff_update` also requires `created_by = auth.uid()`.
+So a venue is offered Edit on any invoice for its venue created in the last
+five minutes, including one of the four's, and tapping it is refused — notes
+§6, do not offer what cannot be done.
+
+The fix needs the boundary view to answer "is this mine". `created_by` itself
+should NOT be added: an `is_mine` boolean answers the question without handing
+over a row, which is the same shape as everything else in §34. **Held, to batch
+with whatever the blocker above needs** — each SQL file is a round trip through
+a person.
+
 ### The two things that are built and not proven
 
 Read these before concluding anything works end to end.

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, FIXTURE_TODAY, PROFILES } from '../fixtures/invoices';
@@ -208,6 +208,23 @@ function fillLine(index: number, description: string, quantity: string, price: s
   });
   fireEvent.change(screen.getByLabelText(`Price for line ${index}`), { target: { value: price } });
 }
+
+/*
+ * The share stubs do not survive their own test.
+ *
+ * `Object.defineProperty(navigator, 'share', ...)` is not undone by
+ * `vi.clearAllMocks`, so without this the "does not offer Share" test passes
+ * or fails depending on whether it ran before or after the ones that install
+ * a stub -- an order-dependent failure, which is the worst kind to diagnose
+ * because it comes and goes with unrelated edits.
+ */
+afterEach(() => {
+  for (const name of ['share', 'canShare'] as const) {
+    if (name in window.navigator) {
+      Reflect.deleteProperty(window.navigator, name);
+    }
+  }
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -722,6 +739,102 @@ describe('the printed document', () => {
     // the one nobody looks at on screen. There is exactly one .print-sheet.
     document_();
     expect(window.document.querySelectorAll('.print-sheet')).toHaveLength(1);
+  });
+
+  /* ---------------------------------------------------------------- *
+     Download, Share, Print. J3, ARCHITECTURE §48.2.
+   * ---------------------------------------------------------------- */
+
+  it('always offers Download, and always offers Print', () => {
+    // Download is the stated main goal and the fallback everywhere Share is
+    // missing -- desktop browsers, older iOS. Print is unchanged.
+    document_();
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+  });
+
+  it('does not offer Share on a browser that cannot take a file', () => {
+    /*
+     * `navigator.share` exists on browsers that cannot accept files, and
+     * `canShare` exists separately from both. A button offered on the
+     * strength of the first two throws when it is pressed, which is notes §6
+     * in its most annoying form -- so the question asked is the only one that
+     * answers it, `canShare({ files })`, and the button is ABSENT rather than
+     * disabled.
+     */
+    document_();
+    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument();
+  });
+
+  it('offers Share where the phone can take one, and says what it does', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'share', { value: share, configurable: true });
+    Object.defineProperty(window.navigator, 'canShare', {
+      value: () => true,
+      configurable: true,
+    });
+
+    document_();
+    const button = await screen.findByRole('button', { name: 'Share' });
+    // The client asked for a Mail button that opens Gmail with the invoice
+    // attached. A web page cannot attach a file to a mail client -- `mailto:`
+    // carries a subject and a body and nothing else. This is the thing that
+    // does what he described, so the screen says so in his terms.
+    expect(screen.getByText(/pick Gmail/)).toBeInTheDocument();
+
+    fireEvent.click(button);
+    await waitFor(() => expect(share).toHaveBeenCalled());
+
+    const shared = share.mock.calls[0]![0];
+    expect(shared.files).toHaveLength(1);
+    expect(shared.files[0].name).toBe('DDL-0001.pdf');
+    expect(shared.files[0].type).toBe('application/pdf');
+  });
+
+  it('says nothing at all when somebody backs out of the share sheet', async () => {
+    /*
+     * `AbortError` is what a share sheet returns when somebody opens it and
+     * changes their mind, which is an ordinary thing to do. A toast saying
+     * "couldn't share that" every time would teach them to ignore the one
+     * that means it.
+     */
+    const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    Object.defineProperty(window.navigator, 'share', {
+      value: vi.fn().mockRejectedValue(abort),
+      configurable: true,
+    });
+    Object.defineProperty(window.navigator, 'canShare', {
+      value: () => true,
+      configurable: true,
+    });
+
+    document_();
+    fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+
+    await waitFor(() => expect(window.navigator.share).toHaveBeenCalled());
+    expect(screen.queryByText(/Couldn/)).not.toBeInTheDocument();
+  });
+
+  it('warns when a character could not survive the PDF font', async () => {
+    /*
+     * The limitation stated out loud rather than hidden. The standard-14
+     * fonts are drawn through WinAnsiEncoding, so Devanagari becomes question
+     * marks -- and a customer receiving a document with their name spelled in
+     * punctuation is worse than being told beforehand. Print is unaffected,
+     * and the message says so, because that is the way out.
+     */
+    mocks.customers.current = [{ ...CUSTOMERS[0]!, name: 'नमस्ते Grocers' }];
+    mocks.detail.current = {
+      invoice: { ...INVOICE, customer: { id: 'c-1', name: 'नमस्ते Grocers' } },
+      lines: LINES,
+    };
+
+    document_();
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/aren.t in the PDF.s font/)).toBeInTheDocument(),
+    );
   });
 
   it('marks the chrome as chrome so the stylesheet can take it away', () => {

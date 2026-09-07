@@ -4764,3 +4764,173 @@ one sheet and dates on the next.
 holds exactly two `.print-rule` blocks — and the browser confirmed the rest:
 the `@media print` rules lifted out of their query with JS, all three lines
 measured at `rgb(0, 0, 0)`, 0.8px, 114px wide, on white.
+
+
+---
+
+## 48. J3 — Download, Share, Print
+
+The invoice becomes a file. §44.4.
+
+**No database change** — the first phase of the roadmap that needs none, so
+this one is a deploy on its own with nothing to run first. 831 tests, up from
+797.
+
+---
+
+### 48.1 The PDF is written, not imported
+
+`lib/pdf/` is three files and about four hundred lines: `text.ts` encodes and
+measures, `writer.ts` assembles objects and the cross-reference table,
+`invoice.ts` decides where the ink goes.
+
+Against that, a library is ~350KB downloaded onto a phone on shop wifi plus a
+supply-chain dependency in a project that has just removed three. Rule 7 rules
+out dependencies that restructure the app and this is not that judgement — an
+encoder is a leaf that takes data and returns bytes. The judgement is narrower:
+this document is stable enough to own, and a dependency whose whole surface is
+`bytes = f(invoice)` can be replaced in an afternoon if that turns out wrong.
+
+**Nothing is compressed, deliberately.** A `FlateDecode` stream would save a
+few kilobytes on a file that is already 3KB and cost the ability to read what
+is in it — which is what every content assertion in `pdf.test.ts` does.
+
+#### The second copy of one document, and why it is allowed
+
+Notes §1.3 warns against two renderings of one invoice: they drift, and the
+one that drifts is the one nobody looks at. `SalesInvoiceDocument` prints
+*itself* for exactly that reason.
+
+This is a second rendering and the warning still applies. What holds it
+together is that **every value on both comes from the same three formatters** —
+`formatCents`, `formatQuantity`, `formatDayWithYear`. Nothing in `invoice.ts`
+formats anything itself. If a total is wrong on the PDF it is wrong on the
+screen too, which is the property worth having; what differs is only where the
+ink goes.
+
+#### The alphabet, which is a real limitation
+
+The two fonts are Helvetica and Helvetica-Bold — standard 14, present in every
+viewer, embedded nowhere. That is what keeps the file at 3KB, and its price is
+`WinAnsiEncoding`: Latin-1 plus some typographic extras, and **no Devanagari,
+Chinese, Greek or Cyrillic**.
+
+Making those work means embedding a Unicode font, hundreds of kilobytes on
+every phone — the exact cost the write-it-yourself decision existed to avoid.
+
+So the limitation is **made visible rather than hidden**:
+
+- characters the app's own formatters emit (`’ — · …`) are flattened to ASCII
+  equivalents, so our own sentences never come out as question marks
+- anything with no glyph becomes `?` and sets a `lossy` flag
+- the screen says so when that happens, and says that **Print keeps them** —
+  because `window.print()` renders whatever the phone can render, in any
+  script, and is still on the page
+
+Silently drawing a wrong glyph would put a customer's name incorrectly on a
+document they keep. A `?` is honest about not knowing.
+
+#### Three things that break the file rather than looking wrong
+
+Worth naming because none of them produces anything a person can diagnose:
+
+1. **`startxref`** must be the byte offset the word `xref` really starts at.
+2. **Each object's xref entry** must land on its own `N 0 obj`.
+3. **`/Length`** must equal the stream's real byte count.
+
+All three are asserted the way a viewer checks them — by seeking to the offset
+and reading what is there — rather than by looking plausible.
+
+And a fourth that is not about offsets: **`(`, `)` and `\` must be escaped**
+inside a string literal. "Smith (Wholesale)" is an ordinary supplier name and
+an unescaped bracket ends the string early.
+
+#### Page breaks, because the failure is invisible
+
+The screen gets repeated table headings free from the browser
+(`thead { display: table-header-group }`). Nothing does that in a PDF, so
+`invoice.ts` does it — and the failure it prevents is the worst this document
+has: **an invoice whose last rows fell off the bottom still prints a total
+that includes them.** It does not look wrong; it is wrong.
+
+The total and the signature block go on the **last** page only, which is
+asserted per content stream rather than by the strings being present
+somewhere in the file. A total stranded on page one, above rows it does not
+include, is the same lie by another route.
+
+---
+
+### 48.2 Download, Share, Print
+
+| | |
+|---|---|
+| **Download** | always present — the stated main goal, and the fallback wherever Share is missing |
+| **Share** | only when `navigator.canShare({ files })` says yes |
+| **Print** | unchanged, `window.print()` |
+
+**What was asked for and cannot be built, said first.** The client asked for a
+Mail button that opens Gmail with the invoice attached. **A web page cannot
+attach a file to a mail client.** `mailto:` carries a subject and a body and
+nothing else; that is the URL scheme, not a browser restriction, and no
+library changes it.
+
+`navigator.share({ files })` does exactly what he described — the file goes to
+Android, he picks Gmail, Gmail opens with the attachment on it. Same three
+taps, through the phone's own list of apps rather than one we chose. The
+caption on the screen says so in those terms.
+
+**Three questions, all of which have to be asked.** `navigator.share` exists on
+browsers that cannot take files; `canShare` exists separately; only
+`canShare({ files })` answers the real question. A button offered on the
+strength of the first two throws when pressed. It is probed in an effect
+rather than during render — `navigator` does not exist on the server, and a
+value that differs between the server's HTML and the first client render is a
+hydration mismatch — and the button is **absent until the answer is yes**,
+never disabled and never present-then-gone.
+
+**`AbortError` is not a failure.** It is what a share sheet returns when
+somebody opens it and changes their mind. A toast saying "couldn't share that"
+every time would teach them to ignore the one that means it, so that path says
+nothing at all.
+
+**The object URL is revoked a frame later, not synchronously.** Revoking
+straight after `click()` races the browser's own fetch on some Android builds
+and produces a zero-byte download — which looks exactly like a bug in the PDF
+writer and is not.
+
+---
+
+### 48.3 What a test could not have told me
+
+Every assertion in `pdf.test.ts` is this program checking its own arithmetic,
+and HANDOFF §6 is precisely about that: a fence proven to keep things out has
+not been proven to have a gate. **The only proof that a PDF is a PDF is a PDF
+reader opening it.**
+
+So `PDF_OUT=... npx vitest run test/unit/pdf.test.ts` writes real files —
+the ordinary invoice, a 45-line one, and the no-bank-details one the app is
+actually live with — and they were opened in Chrome's viewer. Which is how two
+things were found that no assertion had:
+
+- the money columns line up, which is the entire reason `text.ts` carries a
+  glyph-width table rather than guessing
+- **"Download PDF" wraps to two lines inside a 44px pill at 320px** once Share
+  is present. Three buttons cannot hold that label on a narrow phone. It says
+  "Download" now — next to Share and Print, under a heading reading *Invoice
+  DDL-0001*, what is being downloaded is not in doubt. Measured again after:
+  104 / 106 / 63px, one row, no overflow.
+
+---
+
+### 48.4 The logo, deferred on purpose
+
+§44.4 anticipated this: uploaded artwork is PNG in a storage bucket, embedding
+PNG means implementing zlib, and re-encoding to JPEG through a canvas avoids
+that — *"if it proves awkward, v1 ships the wordmark without the logo rather
+than shipping late."*
+
+**It ships without.** The PDF puts the business name in bold where the mark
+sits on screen. Deli has no artwork uploaded, so today there is nothing to
+embed and the wordmark is what the screen shows too — `BusinessMark` already
+falls back to letters. When artwork exists, the canvas route is the way in and
+nothing here blocks it.

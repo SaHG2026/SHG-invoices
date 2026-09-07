@@ -33,6 +33,7 @@ end to end. Grep for the section you need:
 | Rounds A–H, the most recent work | §35–§42 |
 | J1 — the two bugs, and the tiers | §46 |
 | J2 — what is printed on an invoice | §47 |
+| J3 — the PDF, and how a file leaves the app | §48 |
 | The audit from scratch, and what it found | §43 |
 
 ---
@@ -99,7 +100,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 796 tests
+npx vitest run       # 831 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -125,6 +126,19 @@ needs a customer, products and an issued invoice.
 Two unit test files write pages the same way, from mocks they already had:
 `test/unit/customers.test.tsx` (a customer, shut and open, plus Receivables)
 and `test/unit/settings.test.tsx`. Same two variables, same skip.
+
+**And the PDF writes real files**, which matters more than the rest: every
+assertion about it is the program checking its own arithmetic, and the only
+proof a PDF is a PDF is a reader opening it (§48.3).
+
+```bash
+PDF_OUT=/tmp/shg/invoice.pdf npx vitest run test/unit/pdf.test.ts
+```
+
+Three files — the ordinary invoice, a 45-line one for the page break, and the
+no-bank-details one the app is live with. A static file server sends a `.pdf`
+as a download rather than rendering it, so put them in an `<iframe>` on a
+scratch HTML page to look at them.
 
 ### Deploying — and the trap that cost two rounds
 
@@ -153,8 +167,7 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 019**.
-  **020 is written and NOT yet run** — §7 below
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -230,8 +243,8 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_019` applied;
-`CATCH_UP_020` is written and waiting.** 796 tests under three timezones.
+**Live and in daily use. All database files through `CATCH_UP_020` applied.**
+831 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -247,6 +260,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §42 | **Round H** — the Himalaya, softer greens, the review card archived |
 | §46 | **J1** — the two bugs, and three real tiers |
 | §47 | **J2** — the contact block, the bank details and the signature line |
+| §48 | **J3** — a PDF written by hand, Download and Share |
 
 ### The two lessons worth more than the features
 
@@ -306,16 +320,15 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 ## 6b. What is being built next — J1 to J5
 
-**J1 (§46) and J2 (§47) are built. J3–J5 are agreed, not started.**
-ARCHITECTURE §44 has the design and the reasoning for each; §46 and §47 have
-what was actually done, including where §44 was overruled. J3 renders the
-document J2 just defined, so it is next.
+**J1 (§46), J2 (§47) and J3 (§48) are built and live. J4 and J5 are agreed,
+not started.** ARCHITECTURE §44 has the design and the reasoning for each;
+§46–§48 have what was actually done, including where §44 was overruled.
 
 | | | |
 |---|---|---|
 | **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
 | **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
-| **J3** | Download, Share, Print | A hand-written PDF, shared through the phone's own share sheet. **Gmail-with-attachment is not buildable as asked** — `mailto:` cannot carry a file; the share sheet does the same job. §44.4 |
+| **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, 3KB, nothing compressed), then Download always and Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
 | **J4** | Export and the wipe | Full-history CSV, and an owner-only in-app wipe behind four conscious acts. §44.5 |
 | **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
@@ -342,21 +355,17 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**One thing is blocking, and it is a round trip through a person.**
+**Nothing is blocking.** Every database file through `CATCH_UP_020` is
+applied and confirmed by `verify_catchups.mjs`. **J3 needed no SQL at all**, so
+it deploys on its own with nothing to run first — the only phase so far where
+that is true.
 
-0. **`db/CATCH_UP_020.sql` has not been run**, and the ordering is not a
-   preference this time. The new bundle asks `businesses` for `contact_block`
-   and `bank_details` by name; a missing column is 42703 and fails the whole
-   request, and `useBusinesses()` is what the add-invoice sheet waits on. **SQL
-   first, then deploy** — the other way round, the app does not work at all.
-
-   Afterwards: as Mani, Settings has **On your invoices**; type Deli's address
-   and bank details, then open any Deli invoice and confirm both print. As
-   Milan, that section is absent.
-
-   *(CATCH_UP_019 is applied and confirmed — `verify_catchups.mjs` reports
-   `is_member()` gone and the three new functions present. Checked on Sujan's
-   account, nothing amiss.)*
+0. **Two things about J3 that only a real phone can answer**, because the
+   builder's machine cannot: does the Share button appear on the client's
+   Android, and does picking Gmail actually attach the PDF. Everything up to
+   `navigator.share()` is tested; what the phone does with the file after
+   that is the phone's business. If Share never appears, the browser is
+   answering `canShare({ files })` false and Download is the path.
 
 1. **Done** — CATCH_UP_018 added `is_mine` to `staff_invoices` and
    `stillCorrectable` checks it (§43.1). **Still unverified behaviourally:**

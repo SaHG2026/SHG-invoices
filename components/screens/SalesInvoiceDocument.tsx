@@ -1,7 +1,9 @@
 'use client';
 
 import type { Route } from 'next';
+import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
+import { useToast } from '@/components/ui/Toast';
 import { BusinessMark } from '@/components/ui/BusinessMark';
 import { useSalesInvoice } from '@/lib/queries/sales';
 import { useBusinesses } from '@/lib/queries/reference';
@@ -9,6 +11,8 @@ import { useAllCustomers } from '@/lib/queries/customers';
 import { formatCents } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
 import { formatDayWithYear } from '@/lib/date';
+import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
+import { canShareFile, downloadFile, shareFile } from '@/lib/pdf/share';
 
 /**
  * The document. What gets printed and handed over.
@@ -34,9 +38,32 @@ import { formatDayWithYear } from '@/lib/date';
  * schema change together.
  */
 export function SalesInvoiceDocument({ id }: { id: string }) {
+  const toast = useToast();
   const { data, isLoading, isError } = useSalesInvoice(id);
   const { data: businesses = [] } = useBusinesses();
   const { data: customers = [] } = useAllCustomers();
+
+  /*
+   * Whether this phone can hand a file to another app.
+   *
+   * In state rather than read during render, because `navigator` does not
+   * exist on the server and a value that differs between the server's HTML and
+   * the first client render is a hydration mismatch. Null means "not asked
+   * yet", and the Share button is absent until the answer is yes -- never
+   * disabled, and never present-then-gone.
+   */
+  const [canShare, setCanShare] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    /*
+     * Probed with an empty PDF rather than the real one, so nothing is built
+     * on mount for a page that may only ever be looked at. Safari's answer
+     * depends on the file's TYPE, which this carries; it does not look at the
+     * bytes.
+     */
+    setCanShare(canShareFile(new File([], 'invoice.pdf', { type: 'application/pdf' })));
+  }, []);
 
   if (isLoading || isError || !data) {
     return (
@@ -52,21 +79,120 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
   const business = businesses.find((entry) => entry.id === invoice.business_id);
   const customer = customers.find((entry) => entry.id === invoice.customer_id);
 
+  /**
+   * Build the file, and say so when a character could not survive the trip.
+   *
+   * `lossy` is not decoration. The PDF uses the fonts every viewer already
+   * has, whose alphabet is Latin-1 — so a name in Devanagari becomes question
+   * marks, and a customer receiving a document with their name spelled in
+   * punctuation is worse than being told beforehand. Print is unaffected and
+   * the message says so, because that is the way out rather than a limitation
+   * with no answer.
+   */
+  function build(): File {
+    const { bytes, lossy } = renderInvoicePdf({
+      invoice,
+      lines,
+      business: business ?? null,
+      customer: customer ?? null,
+    });
+
+    if (lossy) {
+      toast.show(
+        'Some characters aren’t in the PDF’s font and came out as “?”. Print keeps them.',
+        'queued',
+      );
+    }
+
+    return new File([bytes as BlobPart], invoiceFileName(invoice), {
+      type: 'application/pdf',
+    });
+  }
+
+  async function onDownload() {
+    setBusy(true);
+    try {
+      downloadFile(build());
+    } catch {
+      toast.show('Couldn’t make that PDF. Print still works.', 'problem');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onShare() {
+    setBusy(true);
+    try {
+      const outcome = await shareFile(build(), `Invoice ${invoice.invoice_number ?? ''}`.trim());
+      /* Backing out of a share sheet is an ordinary thing to do and gets no
+         message at all. Saying "couldn't share" every time somebody changed
+         their mind would teach them to ignore the one that means it. */
+      if (outcome === 'failed') {
+        toast.show('Couldn’t hand that to another app. Download still works.', 'problem');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
-      <div className="no-print mb-4 flex items-center justify-between gap-3">
+      <div className="no-print mb-3 flex items-center justify-between gap-3">
         <h1 className="text-h2 text-ink">Invoice {invoice.invoice_number}</h1>
+      </div>
+
+      {/*
+        Three controls, and which of them appear is a fact about the phone.
+
+        Download is always here: it is the stated main goal, and the fallback
+        everywhere Share is missing — desktop browsers, older iOS. Share
+        appears only when `navigator.canShare({ files })` says yes, so it is
+        never a button that throws when pressed (notes §6).
+
+        Share is what the client actually asked for. He asked for a Mail
+        button that opens Gmail with the invoice attached, and **a web page
+        cannot attach a file to a mail client** — `mailto:` carries a subject
+        and a body and nothing else. The share sheet does the same job in the
+        same three taps, through the phone's own list of apps. §48.2.
+      */}
+      <div className="no-print mb-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void onDownload()}
+          disabled={busy}
+          className="touch flex-1 whitespace-nowrap rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
+        >
+          {/* "Download", not "Download PDF". Measured at 320px with all three
+              buttons up, the longer label wraps to two lines inside a 44px
+              pill -- and next to Share and Print on a screen headed "Invoice
+              DDL-0001", what is being downloaded is not in doubt. */}
+          Download
+        </button>
+
+        {canShare ? (
+          <button
+            type="button"
+            onClick={() => void onShare()}
+            disabled={busy}
+            className="touch flex-1 whitespace-nowrap rounded-full border border-action bg-action-bg px-4 text-sm text-action disabled:opacity-40"
+          >
+            Share
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={() => window.print()}
-          className="touch shrink-0 rounded-full bg-action px-5 text-sm text-action-text"
+          className="touch shrink-0 whitespace-nowrap rounded-full border border-hairline bg-card px-4 text-sm text-ink"
         >
           Print
         </button>
       </div>
 
       <p className="no-print mb-4 text-xs text-muted">
-        Print opens your phone’s or laptop’s own dialog — AirPrint, or Save as PDF to send it.
+        {canShare
+          ? 'Share hands the file to another app — pick Gmail and it opens with the invoice attached.'
+          : 'Print opens your phone’s or laptop’s own dialog — AirPrint, or Save as PDF to send it.'}
       </p>
 
       {/* Everything below is the document. `print-sheet` is what survives. */}

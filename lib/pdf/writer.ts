@@ -127,6 +127,24 @@ export class Page {
     );
   }
 
+  /**
+   * Draw the document's one image, at a given size.
+   *
+   * PDF draws an image into the **unit square** and lets the transformation
+   * matrix decide where and how big -- so `cm` here carries width, height and
+   * position in one operator. `q`/`Q` bracket it, because that matrix would
+   * otherwise apply to everything drawn afterwards and the rest of the page
+   * would come out scaled to the size of the logo.
+   */
+  image(name: string, x: number, y: number, width: number, height: number) {
+    this.ops.push(
+      'q',
+      `${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${x.toFixed(2)} ${(this.at(y) - height).toFixed(2)} cm`,
+      `/${name} Do`,
+      'Q',
+    );
+  }
+
   stream(): string {
     return this.ops.join('\n');
   }
@@ -156,12 +174,37 @@ export interface PdfResult {
  * `blob:https://...` in a share sheet is the sort of thing that gets sent to a
  * customer looking like nothing.
  */
-export function buildPdf(pages: Page[], title: string): PdfResult {
+export interface PdfImage {
+  /** The file's own bytes, embedded untouched. See lib/pdf/jpeg.ts. */
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  components: 1 | 3;
+}
+
+/**
+ * One object's body: text, or text wrapped around raw bytes.
+ *
+ * A JPEG is the only thing in this document that is not Latin-1, and it must
+ * not go through `latin1Bytes` -- the two agree below 0x80 and disagree above
+ * it, so a photograph pushed through it comes out subtly corrupt rather than
+ * obviously wrong.
+ *
+ * The tempting shortcut is a placeholder in the text, spliced afterwards. It
+ * does not work, and the reason is worth writing down: **the cross-reference
+ * table is byte offsets**, and swapping a short marker for 295KB of image
+ * moves every object that follows it. The offsets would all be wrong and the
+ * file would not open. So the image is a part from the start, and the
+ * serialiser counts real bytes as it goes.
+ */
+type ObjectBody = Array<string | Uint8Array>;
+
+export function buildPdf(pages: Page[], title: string, image?: PdfImage): PdfResult {
   if (pages.length === 0) throw new Error('A PDF needs at least one page.');
 
-  const objects: string[] = [];
+  const objects: ObjectBody[] = [];
   /** 1-based, because PDF object numbers start at 1 and object 0 is special. */
-  const add = (body: string): number => {
+  const add = (body: ObjectBody): number => {
     objects.push(body);
     return objects.length;
   };
@@ -169,57 +212,101 @@ export function buildPdf(pages: Page[], title: string): PdfResult {
   // Reserved in this order so the Catalog can name the Pages object before the
   // pages themselves exist. PDF is happy with forward references; a human
   // reading the file is happier when the first object is the root.
-  const catalogId = add('');
-  const pagesId = add('');
-  const helvetica = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  const bold = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const catalogId = add([]);
+  const pagesId = add([]);
+  const helvetica = add([
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  ]);
+  const bold = add([
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+  ]);
+
+  /*
+   * The image, if there is one: a single XObject shared by every page.
+   *
+   * `DCTDecode` means "this stream is a JPEG", and the bytes go in exactly as
+   * they came off the wire. That is why nothing in this project decodes an
+   * image or implements zlib (§48.5) -- and why the bytes are their own part
+   * rather than text.
+   */
+  let imageId: number | null = null;
+  if (image) {
+    imageId = add([
+      `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} ` +
+        `/ColorSpace ${image.components === 1 ? '/DeviceGray' : '/DeviceRGB'} ` +
+        `/BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n`,
+      image.bytes,
+      '\nendstream',
+    ]);
+  }
 
   const pageIds: number[] = [];
 
   for (const page of pages) {
     const stream = page.stream();
-    const contentsId = add(
+    const contentsId = add([
       `<< /Length ${latin1Bytes(stream).length} >>\nstream\n${stream}\nendstream`,
-    );
+    ]);
     pageIds.push(
-      add(
+      add([
         `<< /Type /Page /Parent ${pagesId} 0 R ` +
           `/MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] ` +
-          `/Resources << /Font << /F1 ${helvetica} 0 R /F2 ${bold} 0 R >> >> ` +
+          `/Resources << /Font << /F1 ${helvetica} 0 R /F2 ${bold} 0 R >>` +
+          (imageId === null ? '' : ` /XObject << /Logo ${imageId} 0 R >>`) +
+          ` >> ` +
           `/Contents ${contentsId} 0 R >>`,
-      ),
+      ]),
     );
   }
 
-  const info = add(`<< /Title (${encodeWinAnsi(title).literal}) /Producer (Sagarmatha Payments) >>`);
+  const info = add([
+    `<< /Title (${encodeWinAnsi(title).literal}) /Producer (Sagarmatha Payments) >>`,
+  ]);
 
-  objects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
-  objects[pagesId - 1] =
-    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  objects[catalogId - 1] = [`<< /Type /Catalog /Pages ${pagesId} 0 R >>`];
+  objects[pagesId - 1] = [
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`,
+  ];
 
-  // ---- Serialise, recording where every object starts -----------------
-  let body = '%PDF-1.4\n';
+  // ---- Serialise, recording where every object starts --------------------
+  const parts: Uint8Array[] = [];
+  let at = 0;
+  const push = (part: string | Uint8Array) => {
+    const bytes = typeof part === 'string' ? latin1Bytes(part) : part;
+    parts.push(bytes);
+    at += bytes.length;
+  };
+
+  push('%PDF-1.4\n');
   const offsets: number[] = [];
 
-  for (const [index, object] of objects.entries()) {
-    offsets.push(latin1Bytes(body).length);
-    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  for (const [index, body] of objects.entries()) {
+    offsets.push(at);
+    push(`${index + 1} 0 obj\n`);
+    for (const part of body) push(part);
+    push('\nendobj\n');
   }
 
-  const xrefAt = latin1Bytes(body).length;
+  const xrefAt = at;
 
   // Entry zero is the head of the free list and is always exactly this.
   let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   for (const offset of offsets) {
     xref += `${offset.toString().padStart(10, '0')} 00000 n \n`;
   }
+  push(xref);
 
-  const trailer =
+  push(
     `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R /Info ${info} 0 R >>\n` +
-    `startxref\n${xrefAt}\n%%EOF\n`;
+      `startxref\n${xrefAt}\n%%EOF\n`,
+  );
 
-  return {
-    bytes: latin1Bytes(body + xref + trailer),
-    lossy: pages.some((page) => page.lossy),
-  };
+  const bytes = new Uint8Array(at);
+  let cursor = 0;
+  for (const part of parts) {
+    bytes.set(part, cursor);
+    cursor += part.length;
+  }
+
+  return { bytes, lossy: pages.some((page) => page.lossy) };
 }

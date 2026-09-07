@@ -4773,7 +4773,7 @@ measured at `rgb(0, 0, 0)`, 0.8px, 114px wide, on white.
 The invoice becomes a file. §44.4.
 
 **No database change** — the first phase of the roadmap that needs none, so
-this one is a deploy on its own with nothing to run first. 838 tests, up from
+this one is a deploy on its own with nothing to run first. 847 tests, up from
 797.
 
 ---
@@ -4950,8 +4950,18 @@ payment block, rather than comparing the two labels — the labels are ~60pt
 apart by construction, and a test on those would have failed the design while
 it was working.
 
-**And the row moved down.** *"Maybe place that row just a little bit below.
-Kinda saving the space."*
+**And the row moved down** — *"maybe place that row just a little bit below"* —
+**which I then overdid.** The first version pinned it with
+`Math.max(y + 24, PAGE_FLOOR + 45)`, so on a two-line invoice the bank details
+landed most of a page under the total. Reported straight back: *"bank details
+are way too below. Revert that bit, I only meant low by a little bit."*
+
+The mistake is worth naming because it is not a typo: **"a little bit below"
+is a gap, and I built an anchor.** A gap is 30 points. An anchor is however
+much white the invoice happens to leave, which on a short one is most of the
+page. It follows the content now, and the only thing the anchor was doing for
+free — keeping the block off the bottom edge of a long invoice — is a
+page-break check instead.
 
 All four went into **both renderings in the same commit**, which is the whole
 discipline of §48.1: the PDF and the screen are two renderings of one
@@ -4961,32 +4971,83 @@ rather than merely both existing.
 
 ---
 
-### 48.5 The logo, deferred on purpose
+### 48.5 The logo, which turned out to be the easy part
 
-§44.4 anticipated this: uploaded artwork is PNG in a storage bucket, embedding
-PNG means implementing zlib, and re-encoding to JPEG through a canvas avoids
-that — *"if it proves awkward, v1 ships the wordmark without the logo rather
-than shipping late."*
+§44.4 called this *"the one complication"*: uploaded artwork is PNG, embedding
+PNG means implementing zlib, and the way around it would be re-encoding
+through a canvas. It allowed shipping without one rather than shipping late.
 
-**It ships without.** The PDF puts the business name in bold where the mark
-sits on screen. Deli has no artwork uploaded, so today there is nothing to
-embed and the wordmark is what the screen shows too — `BusinessMark` already
-falls back to letters.
+**None of that applied.** Deli's logo is a **baseline JPEG**, and a PDF embeds
+a JPEG *as a JPEG* — filter `DCTDecode`, the file's own bytes, untouched.
+Nothing in this project decodes an image or implements zlib. `lib/pdf/jpeg.ts`
+walks the markers far enough to read width, height and channel count out of
+the SOF, and that is the whole of it.
 
-He expects it there: *"obviously the logo will be in front of the name and
-address."* **On the screen it already is** — the mark sits to the left of the
-name with the contact block under it, aligned to the top, so the day Deli's
-artwork is uploaded on the Brand screen it appears with no code change. That
-was already true and stays true.
+It was found by asking rather than assuming: the bucket had `businesses/ddl`
+at 295KB, `image/jpeg`, 1103×1176, three components, SOF0.
 
-**In the PDF it is not**, and that is the honest state of it. The work is
-real: fetch the PNG, draw it to a canvas, export JPEG, embed it as an image
-XObject with `DCTDecode` — which takes raw JPEG bytes and is the reason the
-canvas step exists at all, since embedding PNG would mean implementing zlib.
+#### The two JPEGs that must be refused
 
-What is missing is something to build it against. **There is no artwork in the
-bucket**, so every part of that pipeline would be written blind and the canvas
-re-encode cannot be exercised in jsdom, which has no canvas. Building it
-against a real file is one short session; building it against nothing is how
-you ship a feature that works on a fixture and not on a phone (§39.8, again).
-So it waits on a logo, deliberately, and not on anything technical.
+- **Progressive.** `DCTDecode` is baseline only. A progressive JPEG opens and
+  shows a blank or corrupt image — worse than no logo, because the invoice
+  looks damaged rather than plain.
+- **CMYK.** Four-channel JPEGs need `/Decode [1 0 1 0 1 0 1 0]` and
+  Adobe-specific inversion, and getting it wrong prints a photographic
+  negative on a customer's invoice.
+
+Both return null, the name is printed where the mark would be, and the invoice
+is finished. So do a missing file, no signal, and a PNG in the bucket. **A
+missing logo is never the reason somebody cannot download an invoice.**
+
+#### The cross-reference table is why the bytes are not a placeholder
+
+The obvious implementation is to build the document as text with a marker
+where the image goes and splice the bytes in afterwards. It does not work, and
+the reason is the same one that makes this writer a class rather than a
+template: **the xref is byte offsets.** Swapping a 19-byte marker for 295KB
+moves every object after it, and the file stops opening.
+
+So `buildPdf` serialises an array of parts — strings and raw byte arrays —
+counting real bytes as it goes. A JPEG must also never pass through
+`latin1Bytes`: the two agree below 0x80 and disagree above it, so a
+photograph pushed through it comes out subtly corrupt rather than obviously
+wrong. A test compares the embedded bytes to the source byte for byte.
+
+#### Shrinking it, as an optimisation and deliberately not as a step
+
+The mark is drawn at 34 points — under half an inch — from a 1103px source.
+Embedded raw, the logo was **98% of the invoice**: a 3KB document became
+298KB, emailed from a phone on shop wifi, every time.
+
+`lib/pdf/logo.ts` re-encodes it through a canvas at 300px. Measured on the
+real file in a real browser: **295,166 bytes → 24,986**, still baseline SOF0,
+281×300, aspect preserved.
+
+**It is shaped as an optimisation, and that shape is the point.** This is the
+one part of the PDF path that cannot run in a test — jsdom has no canvas, no
+`createImageBitmap`, and `toBlob` does nothing. That is survivable only
+because every failure returns null and null means *send the original*, which
+still embeds correctly. The worst this function can do is make the file
+bigger. A canvas re-encode the invoice *depended* on would be untestable and
+load-bearing at once, which is exactly how §39.8 happened.
+
+The one thing that had to be checked by hand, because it would fail silently:
+**Chrome's `toBlob` emits baseline, not progressive.** A progressive result
+would be refused by `readJpeg` and the logo would quietly vanish. Verified in
+the browser against the real file.
+
+#### And on the screen
+
+*"Obviously the logo will be in front of the name and address."* On the screen
+it already was — `BusinessMark` sits left of the name with the contact block
+under it — and it picked up the uploaded artwork with no code change, which is
+what §22 built that indirection for.
+
+In the PDF the name and address now shift right to make room, and with no logo
+they start at the margin exactly as before rather than leaving a hole where a
+picture will one day go.
+
+**One bug, found by looking and by nothing else.** `Page.image()` takes the
+*top* edge and subtracts the height itself; the call site added the height as
+well, so the mark rendered a whole logo below the name. Every assertion
+passed. A viewer showed it immediately. There is now a test on the top edge.

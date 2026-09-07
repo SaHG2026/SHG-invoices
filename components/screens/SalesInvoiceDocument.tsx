@@ -13,6 +13,7 @@ import { formatQuantity } from '@/lib/quantity';
 import { formatDayWithYear } from '@/lib/date';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
 import { canShareFile, downloadFile, shareFile } from '@/lib/pdf/share';
+import { fetchLogoBytes } from '@/lib/pdf/logo';
 
 /**
  * The document. What gets printed and handed over.
@@ -89,12 +90,25 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
    * the message says so, because that is the way out rather than a limitation
    * with no answer.
    */
-  function build(): File {
+  async function build(): Promise<File> {
+    /*
+     * The mark is fetched at the moment it is needed, not held in state.
+     *
+     * It is wanted twice at most in the life of this screen and never on
+     * arrival, so loading it on mount would spend a request on every person
+     * who opens an invoice to look at it. `fetchLogoBytes` answers null for
+     * every failure there is -- no artwork, no signal, a PNG, a progressive
+     * JPEG -- and the document prints the business name instead. A missing
+     * logo is never the reason somebody cannot download an invoice.
+     */
+    const logo = await fetchLogoBytes(business?.code);
+
     const { bytes, lossy } = renderInvoicePdf({
       invoice,
       lines,
       business: business ?? null,
       customer: customer ?? null,
+      logo,
     });
 
     if (lossy) {
@@ -112,7 +126,7 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
   async function onDownload() {
     setBusy(true);
     try {
-      downloadFile(build());
+      downloadFile(await build());
     } catch {
       toast.show('Couldn’t make that PDF. Print still works.', 'problem');
     } finally {
@@ -123,7 +137,10 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
   async function onShare() {
     setBusy(true);
     try {
-      const outcome = await shareFile(build(), `Invoice ${invoice.invoice_number ?? ''}`.trim());
+      const outcome = await shareFile(
+        await build(),
+        `Invoice ${invoice.invoice_number ?? ''}`.trim(),
+      );
       /* Backing out of a share sheet is an ordinary thing to do and gets no
          message at all. Saying "couldn't share" every time somebody changed
          their mind would teach them to ignore the one that means it. */

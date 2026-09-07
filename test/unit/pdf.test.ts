@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { encodeWinAnsi, textWidth, wrapText } from '@/lib/pdf/text';
 import { buildPdf, Page, PAGE_WIDTH } from '@/lib/pdf/writer';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
+import { readJpeg } from '@/lib/pdf/jpeg';
+import { BASELINE_JPEG, GREYSCALE_JPEG, PROGRESSIVE_JPEG } from '../fixtures/jpeg';
 import { BUSINESSES } from '../fixtures/invoices';
 import { formatCents } from '@/lib/money';
 import type { SalesInvoice, SalesInvoiceLine } from '@/lib/types';
@@ -429,6 +431,137 @@ describe('the invoice on the page', () => {
   });
 });
 
+describe('the logo', () => {
+  /*
+   * ==========================================================================
+   * §44.4 expected this to be the hard part and it was not.
+   *
+   * The plan assumed uploaded artwork is PNG -- embedding PNG means
+   * implementing zlib, and the way around it was a canvas re-encode. Deli's
+   * logo turned out to be a **baseline JPEG**, and a PDF embeds a JPEG as a
+   * JPEG: filter `DCTDecode`, the file's own bytes, untouched.
+   *
+   * So nothing here decodes an image. All that is needed is the width, height
+   * and channel count out of the SOF marker -- and the discipline to refuse
+   * the two kinds of JPEG that would produce a broken page.
+   * ==========================================================================
+   */
+
+  it('reads the size and colour out of a baseline JPEG', () => {
+    expect(readJpeg(BASELINE_JPEG)).toEqual({ width: 120, height: 90, components: 3 });
+    expect(readJpeg(GREYSCALE_JPEG)).toEqual({ width: 40, height: 40, components: 1 });
+  });
+
+  it('refuses a progressive JPEG rather than embedding a broken one', () => {
+    /*
+     * DCTDecode is baseline only. A progressive JPEG produces a file that
+     * opens and shows a blank or corrupt image, which is worse than no logo --
+     * an invoice that looks damaged rather than one that looks plain.
+     */
+    expect(readJpeg(PROGRESSIVE_JPEG)).toBeNull();
+  });
+
+  it('refuses anything that is not a usable JPEG at all', () => {
+    // Every one of these is a real possibility -- a PNG in the bucket, a
+    // truncated download, an empty response -- and all of them have to end the
+    // same way, because a missing logo must never break an invoice.
+    expect(readJpeg(new Uint8Array([]))).toBeNull();
+    expect(readJpeg(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(readJpeg(BASELINE_JPEG.slice(0, 6))).toBeNull();
+  });
+
+  it('puts the bytes in untouched, as a DCTDecode stream', () => {
+    const { bytes, text } = render({ logo: BASELINE_JPEG });
+
+    expect(text).toContain('/Subtype /Image');
+    expect(text).toContain('/Filter /DCTDecode');
+    expect(text).toContain('/Width 120');
+    expect(text).toContain('/Height 90');
+    expect(text).toContain('/ColorSpace /DeviceRGB');
+
+    /*
+     * The bytes themselves, byte for byte, somewhere in the file. This is the
+     * assertion that would have caught pushing a JPEG through `latin1Bytes`:
+     * the two agree below 0x80 and disagree above it, so a corrupted image is
+     * still a valid-looking PDF with a broken picture in it.
+     */
+    const haystack = Array.from(bytes).join(',');
+    expect(haystack).toContain(Array.from(BASELINE_JPEG).join(','));
+  });
+
+  it('keeps the cross-reference table correct with an image in the file', () => {
+    /*
+     * The reason the image is a part of the object rather than a placeholder
+     * spliced in afterwards. The xref is BYTE OFFSETS -- swapping a short
+     * marker for a real image moves every object after it, and the file stops
+     * opening. Same check as the text-only case, with the image present.
+     */
+    const { bytes, text } = render({ logo: BASELINE_JPEG });
+    const table = /xref\n0 (\d+)\n([\s\S]*?)\ntrailer/.exec(text)!;
+    const entries = table[2]!.trim().split('\n').slice(1);
+
+    for (const [index, entry] of entries.entries()) {
+      const offset = Number(entry.slice(0, 10));
+      const here = new TextDecoder('latin1').decode(bytes.slice(offset, offset + 12));
+      expect(here.startsWith(`${index + 1} 0 obj`)).toBe(true);
+    }
+  });
+
+  it('names the image only on pages that can draw it', () => {
+    expect(render({ logo: BASELINE_JPEG }).text).toContain('/XObject << /Logo');
+    // No image, no XObject entry -- rather than an empty one pointing nowhere.
+    expect(render().text).not.toContain('/XObject');
+  });
+
+  it('draws it square, without stretching a brand out of shape', () => {
+    /*
+     * A logo squashed to the wrong aspect ratio is worse than no logo: it is
+     * somebody's brand, printed wrong, on a document they hand to a customer.
+     * The `cm` operator carries width and height, so this reads them back.
+     */
+    const { text } = render({ logo: BASELINE_JPEG });
+    const cm = /q\n([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/.exec(text)!;
+    const width = Number(cm[1]);
+    const height = Number(cm[2]);
+
+    expect(width / height).toBeCloseTo(120 / 90, 3);
+    expect(Math.max(width, height)).toBeCloseTo(34, 1);
+
+    /*
+     * And its TOP edge, which the first render got wrong: `image()` takes the
+     * top and subtracts the height itself, so adding the height at the call
+     * site put the mark a whole logo below the name. Visible instantly in a
+     * viewer, invisible to every assertion until this one.
+     *
+     * PDF y is measured up from the bottom, so the top of a 34pt mark whose
+     * top edge is 46pt down the page is 841.89 - 46 = 795.89.
+     */
+    const bottom = Number(cm[4]);
+    expect(bottom + height).toBeCloseTo(841.89 - 46, 1);
+  });
+
+  it('moves the name across to make room, and back when there is none', () => {
+    // *"Obviously the logo will be in front of the name and address."* With no
+    // logo the name starts at the margin, rather than leaving a hole where a
+    // picture will one day go.
+    const withLogo = /1 0 0 1 ([\d.]+) [\d.]+ Tm\n\(Deli Delights\)/.exec(
+      render({ logo: BASELINE_JPEG }).text,
+    )!;
+    const without = /1 0 0 1 ([\d.]+) [\d.]+ Tm\n\(Deli Delights\)/.exec(render().text)!;
+
+    expect(Number(without[1])).toBeCloseTo(45, 1);
+    expect(Number(withLogo[1])).toBeGreaterThan(Number(without[1]));
+  });
+
+  it('prints the invoice anyway when the logo cannot be used', () => {
+    // The property that matters more than any of the above.
+    const { text } = render({ logo: PROGRESSIVE_JPEG });
+    expect(text).not.toContain('/DCTDecode');
+    expect(text).toContain('DDL-0001');
+    expect(text).toContain('Deli Delights');
+  });
+});
+
 describe('what the file is called', () => {
   it('is the invoice number', () => {
     expect(invoiceFileName(INVOICE)).toBe('DDL-0001.pdf');
@@ -471,7 +604,22 @@ describe('preview', () => {
   it.skipIf(!PDF_OUT)('writes a real file', async () => {
     const { writeFileSync } = await import('node:fs');
 
-    writeFileSync(PDF_OUT, render().bytes);
+    /*
+     * Deli's ACTUAL logo, off the bucket, not a fixture.
+     *
+     * This is the file the app will embed, and the only thing that proves the
+     * embedding works is a PDF reader drawing it. The fixtures above prove the
+     * marker walk; a 295KB photograph proves the rest.
+     */
+    const { readFileSync } = await import('node:fs');
+    let logo: Uint8Array | null = null;
+    try {
+      logo = new Uint8Array(readFileSync(process.env.PDF_LOGO ?? ''));
+    } catch {
+      logo = null;
+    }
+
+    writeFileSync(PDF_OUT, render({ logo }).bytes);
 
     /* A long one too, because the page break is the part that cannot be
        checked by reading bytes: whether the second page LOOKS like a
@@ -487,13 +635,14 @@ describe('preview', () => {
     }));
     writeFileSync(
       PDF_OUT.replace(/\.pdf$/, '-long.pdf'),
-      render({ lines: many, invoice: { ...INVOICE, note: 'Delivered to the back dock.' } }).bytes,
+      render({ logo, lines: many, invoice: { ...INVOICE, note: 'Delivered to the back dock.' } })
+        .bytes,
     );
 
     /* And the state the app actually shipped in: an address, no bank details. */
     writeFileSync(
       PDF_OUT.replace(/\.pdf$/, '-no-bank.pdf'),
-      render({ business: { ...DELI, bank_details: null } }).bytes,
+      render({ logo, business: { ...DELI, bank_details: null } }).bytes,
     );
   });
 });

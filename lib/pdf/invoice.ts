@@ -1,4 +1,5 @@
-import { buildPdf, Page, PAGE_WIDTH, type PdfResult } from './writer';
+import { buildPdf, Page, PAGE_HEIGHT, PAGE_WIDTH, type PdfImage, type PdfResult } from './writer';
+import { readJpeg } from './jpeg';
 import { wrapText } from './text';
 import { formatCents } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
@@ -38,8 +39,10 @@ const AMOUNT_RIGHT = RIGHT;
 /** Description wraps inside its own column and never runs under Qty. */
 const DESCRIPTION_WIDTH = QTY_RIGHT - 40 - MARGIN;
 
-/** Below this, start a new page. Leaves room for the total and the rules. */
+/** Below this, a table row starts a new page. Leaves room for the total. */
 const PAGE_FLOOR = 700;
+/** The last line of ink allowed on a page. */
+const PAGE_BOTTOM = PAGE_HEIGHT - MARGIN;
 
 const GREY = 0.42;
 
@@ -48,7 +51,24 @@ export interface InvoicePdfInput {
   lines: SalesInvoiceLine[];
   business: Business | null;
   customer: Pick<Customer, 'name' | 'contact_name' | 'contact_phone' | 'contact_email'> | null;
+  /**
+   * The business's uploaded logo, as the bytes of a JPEG.
+   *
+   * Optional, and absent is an ordinary state rather than a failure: three of
+   * the four businesses have no artwork, the fetch can fail on a bad
+   * connection, and a JPEG this writer cannot use (progressive, CMYK) is
+   * refused by `readJpeg`. All four end the same way -- the name is printed
+   * where the mark would be, and the invoice is finished either way.
+   *
+   * Bytes rather than a url, because this function is synchronous and must
+   * stay that way: it is called from a click handler, and a `renderInvoicePdf`
+   * that could suspend is a Download button that sometimes does nothing.
+   */
+  logo?: Uint8Array | null;
 }
+
+/** How big the mark is on the page, in points. Square-ish, like the screen. */
+const LOGO_SIZE = 34;
 
 /** What a saved file should be called. `DDL-0001.pdf`, or the id if unnumbered. */
 export function invoiceFileName(invoice: SalesInvoice): string {
@@ -68,6 +88,7 @@ export function renderInvoicePdf({
   lines,
   business,
   customer,
+  logo,
 }: InvoicePdfInput): PdfResult {
   const pages: Page[] = [];
   let page = new Page();
@@ -76,7 +97,42 @@ export function renderInvoicePdf({
   let y = MARGIN + 14;
 
   // ---- Who sent it -------------------------------------------------------
-  page.text(business?.name ?? 'Invoice', MARGIN, y, { font: 'Helvetica-Bold', size: 18 });
+  /*
+   * The mark, in front of the name and the address.
+   *
+   * Asked for: *"obviously the logo will be in front of the name and
+   * address."* It is where it sits on the screen, and the block beside it
+   * shifts right to make room -- so with no logo the name starts at the
+   * margin, exactly as before, rather than leaving a hole where a picture
+   * will one day go.
+   *
+   * §44.4 expected this to be the hard part, assuming uploaded artwork is
+   * PNG: embedding PNG means implementing zlib, and the plan was to re-encode
+   * through a canvas. Deli's is a JPEG, so the bytes go straight in as a
+   * DCTDecode stream and none of that is needed.
+   */
+  const jpeg = logo ? readJpeg(logo) : null;
+  let image: PdfImage | undefined;
+  let textLeft = MARGIN;
+
+  if (jpeg && logo) {
+    image = { bytes: logo, width: jpeg.width, height: jpeg.height, components: jpeg.components };
+
+    /* Fitted inside a square rather than stretched to fill it. A logo squashed
+       to the wrong aspect ratio is worse than no logo -- it is somebody's
+       brand, printed wrong, on a document they hand over. */
+    const scale = LOGO_SIZE / Math.max(jpeg.width, jpeg.height);
+    const drawWidth = jpeg.width * scale;
+    const drawHeight = jpeg.height * scale;
+
+    /* `y` is the TOP edge, points down from the top of the page -- `image()`
+       subtracts the height itself. Adding it here put the mark a whole logo
+       below where it belonged, which is what the first render showed. */
+    page.image('Logo', MARGIN, y - 13, drawWidth, drawHeight);
+    textLeft = MARGIN + LOGO_SIZE + 12;
+  }
+
+  page.text(business?.name ?? 'Invoice', textLeft, y, { font: 'Helvetica-Bold', size: 18 });
 
   page.textRight('INVOICE', RIGHT, y - 6, { size: 7.5, grey: GREY });
   page.textRight(invoice.invoice_number ?? '', RIGHT, y + 7, { size: 11 });
@@ -92,9 +148,13 @@ export function renderInvoicePdf({
    */
   for (const line of (business?.contact_block ?? '').split('\n')) {
     if (line.trim() === '') continue;
-    page.text(line, MARGIN, y, { size: 8.5, grey: GREY });
+    page.text(line, textLeft, y, { size: 8.5, grey: GREY });
     y += 11;
   }
+
+  /* Never overlap the mark, even where the contact block is short or absent.
+     The logo is 34pt and the name's baseline is 13pt into it. */
+  y = Math.max(y, image ? MARGIN + 14 + LOGO_SIZE : y);
 
   y += 22;
 
@@ -232,8 +292,35 @@ export function renderInvoicePdf({
      line, beside the payment block rather than under it, gives the two
      halves of "what happens next" a row of their own.
    * ---------------------------------------------------------------- */
-  const footTop = Math.max(y + 24, PAGE_FLOOR + 45);
+  /*
+   * It follows the content. It is NOT pinned to the bottom of the page.
+   *
+   * The first version pinned it -- `Math.max(y + 24, PAGE_FLOOR + 45)` -- and
+   * on a two-line invoice that pushed the bank details most of a page below
+   * the total, which was reported straight back: *"bank details are way too
+   * below. Revert that bit, I only meant low by a little bit."*
+   *
+   * "A little bit below" is a gap, not an anchor. A gap is 30 points; an
+   * anchor is however much white the invoice happens to leave, which on a
+   * short one is most of the page.
+   */
+  let footTop = y + 30;
   const halfway = MARGIN + (RIGHT - MARGIN) / 2 + 10;
+
+  /*
+   * The one thing the anchor did do for free: keep this off the bottom edge.
+   * A long invoice can end near the floor, and half a signature line printed
+   * at the page boundary is worse than a second page.
+   */
+  const footHeight = business?.bank_details
+    ? 13 + business.bank_details.split('\n').filter((line) => line.trim() !== '').length * 12 + 20
+    : 50;
+
+  if (footTop + footHeight > PAGE_BOTTOM) {
+    page = new Page();
+    pages.push(page);
+    footTop = MARGIN + 20;
+  }
 
   page.rule(MARGIN, RIGHT, footTop - 16, { width: 0.4, grey: 0.8 });
 
@@ -260,5 +347,5 @@ export function renderInvoicePdf({
   page.rule(halfway, RIGHT, signBaseline, { width: 0.6 });
   page.text('SIGNATURE', halfway, signBaseline + 11, { size: 7.5, grey: GREY });
 
-  return buildPdf(pages, `Invoice ${invoice.invoice_number ?? ''}`.trim());
+  return buildPdf(pages, `Invoice ${invoice.invoice_number ?? ''}`.trim(), image);
 }

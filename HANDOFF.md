@@ -100,7 +100,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 838 tests
+npx vitest run       # 847 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -244,7 +244,7 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_020` applied.**
-838 tests under three timezones.
+847 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -328,7 +328,7 @@ not started.** ARCHITECTURE §44 has the design and the reasoning for each;
 |---|---|---|
 | **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
 | **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
-| **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, 3KB, nothing compressed), then Download always and Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
+| **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, nothing compressed), with Deli's logo embedded as a JPEG. Download always, Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
 | **J4** | Export and the wipe | Full-history CSV, and an owner-only in-app wipe behind four conscious acts. §44.5 |
 | **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 

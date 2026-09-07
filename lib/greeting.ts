@@ -33,8 +33,15 @@ const GREETING: Record<TimeOfDay, (name: string) => string> = {
  *
  * `now` is injectable so the four cases can be tested at fixed instants
  * rather than by waiting until evening.
+ *
+ * OPTIONAL, not defaulted to `new Date()`, and the difference is the point.
+ * HANDOFF rule 2 is that `new Date()` appears in `lib/date.ts` and nowhere
+ * else; a default here was a second place, found by the Round I audit. The
+ * behaviour was already correct — it handed the instant straight to
+ * `sydneyHour`, which converts — but the rule is only enforceable if it is
+ * true, and `sydneyHour` supplies exactly the same default one layer down.
  */
-export function greet(displayName: string, now: Date = new Date()): string {
+export function greet(displayName: string, now?: Date): string {
   const name = displayName.trim();
   if (name === '') return 'Hello';
   return GREETING[timeOfDay(sydneyHour(now))](name);

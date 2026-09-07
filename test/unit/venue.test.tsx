@@ -38,6 +38,7 @@ const rows: StaffInvoice[] = [
     due_date: '2026-09-17',
     amount_cents: 522000,
     created_at: '2026-09-03T09:00:00.000Z',
+    is_mine: true,
   },
   {
     id: 'v-2',
@@ -50,6 +51,7 @@ const rows: StaffInvoice[] = [
     due_date: '2026-09-16',
     amount_cents: 118050,
     created_at: '2026-09-02T09:00:00.000Z',
+    is_mine: true,
   },
   {
     id: 'v-3',
@@ -62,6 +64,9 @@ const rows: StaffInvoice[] = [
     due_date: '2026-08-26',
     amount_cents: 300000,
     created_at: '2026-08-12T09:00:00.000Z',
+    /* Entered by one of the four FOR this venue, not by the shop. CATCH_UP_018
+       — the row `staff_update` refuses and the app used to offer Edit on. */
+    is_mine: false,
   },
   {
     id: 'v-4',
@@ -74,6 +79,7 @@ const rows: StaffInvoice[] = [
     due_date: '2026-08-19',
     amount_cents: 45000,
     created_at: '2026-08-05T09:00:00.000Z',
+    is_mine: true,
   },
 ];
 
@@ -565,6 +571,52 @@ describe('the five-minute correction window', () => {
     const now = 1_800_000_000_000;
     const ahead = { ...rows[0]!, created_at: at(now + 30_000) };
     expect(stillCorrectable(ahead, now)).toBe(true);
+  });
+
+  /*
+   * ==========================================================================
+   * Whose it is, not just how old. CATCH_UP_018.
+   *
+   * `staff_update` requires `created_by = auth.uid()` as well as the clock,
+   * and this gated on the clock alone — so a shop was offered Edit on an
+   * invoice one of the FOUR had entered for that venue, and tapping it was
+   * refused. Notes §6: do not offer what cannot be done.
+   *
+   * Nothing was ever at risk, which is why it waited to be batched. The policy
+   * refused every one of these; the app was simply lying about what it could
+   * do. `is_mine` comes from the view, which does the comparison in the
+   * database rather than handing a shop somebody else's user id.
+   * ==========================================================================
+   */
+  it('never offers Edit on a row this shop did not enter, at any age', () => {
+    const now = 1_800_000_000_000;
+    const theirs = { ...rows[0]!, is_mine: false, created_at: at(now - 1_000) };
+    // One second old, and still not this account's to correct.
+    expect(stillCorrectable(theirs, now)).toBe(false);
+  });
+
+  it('offers it on a fresh row this shop entered itself', () => {
+    const now = 1_800_000_000_000;
+    const mine = { ...rows[0]!, is_mine: true, created_at: at(now - 1_000) };
+    expect(stillCorrectable(mine, now)).toBe(true);
+  });
+
+  it('hides the button on another account entry in the rendered list', async () => {
+    // The half that matters on glass: both rows are inside the window, and
+    // only one of them gets a button.
+    const fresh = new Date(Date.now() - 30_000).toISOString();
+    mocks.venue = {
+      data: [
+        { ...rows[0]!, id: 'mine', created_at: fresh, is_mine: true },
+        { ...rows[1]!, id: 'theirs', created_at: fresh, is_mine: false },
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    open();
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /^Correct / })).toHaveLength(1),
+    );
   });
 
   it('offers Edit on a fresh row and not on an old one', async () => {

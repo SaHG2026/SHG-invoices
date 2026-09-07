@@ -20,8 +20,14 @@
  * PGRST205; a missing function answers PGRST202; anything else — including a
  * flat refusal — means the thing is there. So:
  *
- *   provable here      tables, views and functions exist   (001, 004, 005)
- *   NOT provable here  indexes, constraints, row contents  (002, 003)
+ *   provable here      tables, views, functions and COLUMNS exist
+ *   NOT provable here  indexes, constraints, nullability, row contents
+ *
+ * The column check was added by the Round I audit. Without it this file
+ * covered 001-005 of eighteen migrations, and every CATCH_UP after 005 mostly
+ * adds columns to tables that already exist — so `relation()` answered "ok"
+ * whether the migration had been run or not. It was reporting on a fifth of
+ * the schema and reading as though it had checked all of it.
  *
  * db/verify_catchups.sql covers the rest. It is read-only and goes in the
  * Supabase SQL editor, where it runs as a real session and can see rows.
@@ -93,6 +99,24 @@ async function fn(label, name, args) {
   report(label, present, present ? (error ? `exists, refused (${error.code})` : 'exists') : 'no such function');
 }
 
+/**
+ * A COLUMN exists if asking for it by name produces anything other than
+ * "column does not exist" (42703).
+ *
+ * This is the check the file was missing, and it is the one that matters for
+ * every CATCH_UP after 005: most of them add a column to a table that already
+ * exists, so `relation()` says "ok" whether the migration ran or not.
+ */
+async function column(label, table, name) {
+  const { error } = await anon.from(table).select(name).limit(1);
+  const present = error?.code !== '42703' && error?.code !== NO_RELATION;
+  report(
+    label,
+    present,
+    present ? (error ? `exists, refused (${error.code})` : 'exists') : `${table}.${name} is not there`,
+  );
+}
+
 const NO_SUCH_ID = '00000000-0000-0000-0000-000000000000';
 
 console.log('\nCATCH_UP_001 — notification setting and push tables\n');
@@ -106,6 +130,39 @@ console.log('\nCATCH_UP_005 — sales invoices\n');
 await relation('sales_invoices table', 'sales_invoices');
 await fn('mark_sales_received', 'mark_sales_received', { p_ids: [], p_ref: null });
 await fn('unmark_sales_received', 'unmark_sales_received', { p_id: NO_SUCH_ID });
+
+console.log('\nCATCH_UP_006 — only Mani hears about payments\n');
+await column('profiles.notify_on_payment', 'profiles', 'notify_on_payment');
+
+console.log('\nCATCH_UP_010 — venue staff accounts\n');
+await relation('staff_invoices view', 'staff_invoices');
+await fn('is_staff', 'is_staff', {});
+await fn('staff_venue', 'staff_venue', {});
+await fn('find_duplicate_invoices_staff', 'find_duplicate_invoices_staff', {
+  p_supplier_id: NO_SUCH_ID,
+  p_invoice_number: 'x',
+  p_lookback_days: 1,
+});
+
+console.log('\nCATCH_UP_013 — a shop entry waits to be approved\n');
+await column('invoices.approved_at', 'invoices', 'approved_at');
+await column('invoices.approved_by', 'invoices', 'approved_by');
+
+console.log('\nCATCH_UP_014 — a daily reminder at a time each person chooses\n');
+await column('profiles.reminder_time', 'profiles', 'reminder_time');
+await column('profiles.reminder_last_sent_on', 'profiles', 'reminder_last_sent_on');
+
+console.log('\nCATCH_UP_015 — Deli products, line items and numbering\n');
+await relation('products table', 'products');
+await relation('sales_invoice_lines table', 'sales_invoice_lines');
+await relation('sales_invoice_counters table', 'sales_invoice_counters');
+await fn('create_sales_invoice', 'create_sales_invoice', { p_invoice: {}, p_lines: [] });
+
+console.log('\nCATCH_UP_017 — a sales invoice may have no due date\n');
+console.log('  ?      sales_invoices.due_date is nullable  — needs a session; see the SQL file');
+
+console.log('\nCATCH_UP_018 — a shop is only offered Edit on its own entries\n');
+await column('staff_invoices.is_mine', 'staff_invoices', 'is_mine');
 
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');

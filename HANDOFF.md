@@ -31,6 +31,7 @@ end to end. Grep for the section you need:
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
 | Rounds A–H, the most recent work | §35–§42 |
+| The audit from scratch, and what it found | §43 |
 
 ---
 
@@ -87,7 +88,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 731 tests
+npx vitest run       # 757 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -137,7 +138,7 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 017**
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 018**
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -213,8 +214,8 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_017` applied.**
-731 tests under three timezones.
+**Live and in daily use. All database files through `CATCH_UP_018` applied.**
+757 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -243,6 +244,12 @@ causes in §41.5 were not animation at all — a missing `touch-action:
 manipulation` putting every tap ~300ms behind the finger, and Chrome's grey
 flash painting over the considered transition. **Check what happens BEFORE the
 animation starts before touching a keyframe.**
+
+**A check that is never extended stops being a check and becomes a claim.**
+`verify_rls.mjs` was proving 8 of 11 tables and reading as though it proved
+all of them; `verify_catchups.mjs` covered 5 of 18 migrations and could not
+see a column at all. Both had been green for months. **When you add a table or
+a column, add it to the verifier in the same commit.** §43.2.
 
 **A default is a claim.** A due date filled in because the field wanted one
 prints a deadline nobody agreed to, and drives every overdue figure off it.
@@ -276,13 +283,11 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 **Nothing is blocking.**
 
-1. **Edit is offered on rows a shop did not enter.** `stillCorrectable` gates on
-   the clock alone; `staff_update` also requires `created_by = auth.uid()`. So
-   a venue is offered Edit on one of the four's invoices and tapping it is
-   refused — notes §6, do not offer what cannot be done. The fix needs the
-   boundary view to answer "is this mine". **Add an `is_mine` boolean, not
-   `created_by`** — answer the question, do not hand over the row. Held to
-   batch with the next SQL file. Re-run `verify_staff.mjs` after.
+1. **Done** — CATCH_UP_018 added `is_mine` to `staff_invoices` and
+   `stillCorrectable` checks it (§43.1). **Still unverified behaviourally:**
+   `verify_staff.mjs` needs `STAFF_EMAIL`/`STAFF_PASSWORD` in `.env.local` and
+   they are not on the builder's machine. Run it, or run the query at the
+   bottom of `db/CATCH_UP_018.sql` signed in as a shop.
 
 2. **The app feels a touch slower on a phone.** Reported long ago, never
    diagnosed, and the client was going to watch which pattern it follows. The
@@ -312,8 +317,13 @@ without upsert: generate the id on the client, use a plain insert, and treat a
    Left here as the shape of the answer: it was held until chasing money
    across customers became the actual job, and then it was one screen.
 
-7. **Tidying the audit left behind** (§33.1): three unused packages, the
-   `/specimen` page, the middleware's `offline` exemption. Harmless.
+7. **Mostly done** (§43.2). The three unused packages are gone. `/specimen`
+   and the middleware's `offline` exemption stay, with reasons recorded.
+
+8. **`npm audit` reports one high and one moderate**, both `postcss` via
+   `next`, both about processing untrusted CSS at build time — unreachable by
+   any user of this app. The only fix is Next 15 → 16, a major version. Worth
+   doing deliberately, on its own, never bundled with other work. §43.2.
 
 ### Archived, not abandoned
 

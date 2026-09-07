@@ -45,7 +45,7 @@ function isReplayOfSameRow(error: { code?: string; message?: string; details?: s
 
 /** Every column the view has. Named rather than `*`, so a widened view is visible here. */
 const VIEW_SELECT =
-  'id, business_id, supplier_id, supplier_name, invoice_number, internal_ref, invoice_date, due_date, amount_cents, created_at';
+  'id, business_id, supplier_id, supplier_name, invoice_number, internal_ref, invoice_date, due_date, amount_cents, created_at, is_mine';
 
 /**
  * What this venue has logged.
@@ -208,6 +208,13 @@ export function registerVenueMutations(queryClient: QueryClient) {
         // Stamped by a database trigger, so it genuinely is not known yet.
         // An invented one would be a lie that changes under whoever read it.
         internal_ref: '',
+        /*
+         * True, and it is not a guess: this row is being inserted by this
+         * account in this moment, so `created_by = auth.uid()` holds by
+         * construction. Getting it wrong would hide the Edit button on the
+         * one invoice most likely to need correcting — the one just typed.
+         */
+        is_mine: true,
         invoice_date: input.payload.invoice_date,
         due_date: input.payload.due_date,
         amount_cents: input.payload.amount_cents,

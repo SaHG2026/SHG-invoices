@@ -42,6 +42,9 @@ const rows: StaffInvoice[] = [
   due_date: date as string,
   amount_cents: cents as number,
   created_at: `${date as string}T09:${String(index * 7).padStart(2, '0')}:00.000Z`,
+  /* Every second one entered by one of the four rather than by the shop, so
+     the preview shows both states of the Edit button — CATCH_UP_018. */
+  is_mine: index % 2 === 0,
 }));
 
 vi.mock('@/lib/queries/venue', () => ({

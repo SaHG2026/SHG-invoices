@@ -3937,3 +3937,147 @@ and the label and count around it read as captions on a poster.
 - **Tests: 731**, under all three timezones. `tsc` and `next build` clean.
 - **No database change** in this round.
 
+
+---
+
+## 43. Round I — the shop edit boundary, and an audit from scratch
+
+Two jobs: close the last open defect, then audit the whole application as
+though nothing in this file could be trusted.
+
+### 43.1 A shop is only offered Edit on its own entries
+
+The last item on the open list, held since the venue accounts shipped so it
+could be batched with other SQL.
+
+`staff_update` allows a correction only when four things hold. The app gated on
+one of them:
+
+| condition | who checked it, before |
+|---|---|
+| `business_id = staff_venue()` | structural — the view returns nothing else |
+| `created_by = auth.uid()` | **nobody** |
+| `status = 'unpaid'` | deliberately nobody, see below |
+| `created_at > now() - 5 min` | `stillCorrectable` |
+
+So a shop was shown an Edit button on invoices one of the four had entered for
+that venue, and tapping it was refused. Notes §6: do not offer what cannot be
+done. **Nothing was ever at risk** — the policy refused every one of them —
+which is why this was an honesty fix rather than a security one, and why it
+was safe to batch.
+
+`CATCH_UP_018` adds `is_mine` to `staff_invoices`. **A boolean, not
+`created_by`**: the obvious fix exports the user id of whichever of the four
+entered each invoice so a screen can answer one yes/no question. The
+comparison happens in the view, where the answer is already known.
+
+Payment stays invisible on purpose. A shop cannot be told an invoice is paid
+(CATCH_UP_010 §3), so it cannot be told that is why editing stopped. Inside
+five minutes of entry, one of the four having already paid it is close enough
+to impossible, and if it happens the save is refused with the same sentence as
+every other refusal.
+
+The column is appended, because `create or replace view` may only add columns
+to the END of the list.
+
+### 43.2 The audit
+
+Run against the live database and the working tree, without relying on
+anything already written in this file. What follows is everything it produced,
+including the checks that passed — a list of only the failures would not tell
+anybody what was actually looked at.
+
+**Held up:**
+
+- **No service-role key anywhere**, and `.env.local` has never been committed
+  in the repo's history. Rule 1 intact.
+- **RLS.** The public key can read nothing and write nothing: 21 table and
+  view probes, 7 RPCs, every one refused with 42501.
+- **Money, quantities and dates.** 23 adversarial cases in
+  `test/unit/_audit.test.ts`, written against the functions rather than from
+  their existing tests, run under UTC, Sydney, Los Angeles and Kiritimati
+  (UTC+14). Both Sydney DST changeovers cross correctly and `daysBetween`
+  never returns a fraction. Overflow returns null rather than a wrong number.
+- **The offline queue.** All 18 mutation keys have a registered function, so
+  no write can be queued that cannot be replayed.
+- **Test hygiene.** No `.only`, no skipped tests except the preview snapshots
+  (correctly gated on `PREVIEW_OUT`), no assertion-free test files.
+- **No `dangerouslySetInnerHTML`, `eval`, `as any`, or `@ts-ignore`** anywhere
+  in application code.
+- **Every database object exists** — 13 tables, 2 views, 11 functions.
+- **`approved_at` is the single source** for whether an entry is approved.
+  There is no boolean beside it that could disagree.
+- **One array, one total** holds: `onlyOwed` is the single gate every summary
+  calls.
+
+**Found, and fixed:**
+
+1. **`verify_rls.mjs` was checking 8 of 11 tables.** `products`,
+   `sales_invoice_lines` and `sales_invoice_counters` were added by
+   CATCH_UP_015 and never added to the list — so from that day until this
+   audit, nothing in the repo proved the anon key could not read Deli's price
+   list or the contents of every invoice it had issued. **It could not**,
+   verified by hand and now by the script. That is the policies having been
+   written correctly, not the check having done its job.
+
+   The file's own comment says *"a table this list forgets is a table nothing
+   checks, and the failure is silent — which is the whole reason this file
+   exists."* It then forgot three. Same shape as §6's staff fence: **a check
+   that is never extended stops being a check and becomes a claim.**
+
+2. **`verify_catchups.mjs` covered 001–005 of eighteen migrations**, and had
+   no way to check a COLUMN — which is what most migrations after 005 add. It
+   answered "ok" for a table that already existed whether the migration had
+   run or not. It now has a `column()` probe and covers 006, 010, 013, 014,
+   015 and 018. It correctly reports CATCH_UP_018 as not yet run.
+
+3. **`new Date()` appeared in `lib/greeting.ts`** as a default parameter —
+   rule 2 says `lib/date.ts` and nowhere else. The behaviour was already
+   right (it handed the instant to `sydneyHour`, which converts), but the rule
+   is only enforceable if it is true. `sydneyHour` supplies the same default
+   one layer down, so the parameter is simply optional now.
+
+4. **Three unused production dependencies** — `@hookform/resolvers`,
+   `lucide-react` and `react-hook-form`, zero imports between them. Removed.
+   `lucide-react` in particular is an icon set that shipped nothing: this app
+   draws its own glyphs.
+
+**Found, and deliberately not fixed:**
+
+5. **`npm audit`: one high, one moderate.** Both are `postcss` reached through
+   `next`, and all four advisories are about processing untrusted CSS —
+   sourceMappingURL path traversal and `</style>` escaping. PostCSS runs here
+   at build time, on this project's own Tailwind input, on a build machine.
+   **No user of this app can reach it.**
+
+   The only fix npm offers is Next 15 → 16, a major version. Taking a breaking
+   framework upgrade in the same change as a data wipe, on an app about to be
+   declared ready, is a worse risk than the one it closes. It should be done
+   deliberately, on its own, with the suite and a real phone afterwards.
+
+6. **`/specimen`** stays. It is a builder's page, its link is gated on
+   `role === 'builder'`, and Next code-splits it — the test fixtures it
+   imports load only if somebody visits it.
+
+7. **The middleware's `offline` exemption** stays. It is documented and
+   correct: guarding it would cache whatever the guard returned, so the page
+   shown with no signal would depend on when the service worker installed.
+
+**Could not verify from here:**
+
+8. **`verify_staff.mjs` needs `STAFF_EMAIL` and `STAFF_PASSWORD`**, which are
+   the shops' own credentials and are not on this machine. The schema half of
+   CATCH_UP_018 is checked by the SQL file's own verification block; the
+   behavioural half — that a shop sees `is_mine` true on its rows and false on
+   the four's — needs a shop session. The query to run is at the bottom of
+   `db/CATCH_UP_018.sql`.
+
+### 43.3 Where it stands
+
+- **Tests: 757**, under three timezones (the audit file adds a fourth).
+- `tsc` and `next build` clean. Ten production dependencies, down from
+  thirteen.
+- **`CATCH_UP_018.sql` must be run BEFORE the deploy.** The app selects
+  `is_mine`, and PostgREST answers 42703 for a column that is not there, which
+  would break the shop screen.
+

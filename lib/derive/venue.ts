@@ -89,22 +89,40 @@ function compareNewestFirst(a: StaffInvoice, b: StaffInvoice): number {
  *
  * ---------------------------------------------------------------------------
  * This decides what is OFFERED. `CATCH_UP_010`'s `staff_update` policy decides
- * what is allowed, and it checks four things this cannot see — the venue, who
- * entered it, and whether it has been paid. So this being wrong shows a button
- * that fails; it does not let anybody edit anything.
+ * what is ALLOWED, and the two are meant to agree. Where they disagree, the
+ * database wins and somebody is shown a button that fails.
  *
- * The one that matters is payment. A shop cannot be told an invoice is paid,
- * so this function cannot know either, so it cannot hide the button for that
- * reason. Inside five minutes of a shop entering something, the odds of one of
- * the four having already paid it are close enough to nil that the button is
- * offered anyway — and if it happens, the save is refused and the app says the
- * same sentence it says for every other refusal.
+ * The policy checks four things. Which of them this function can see, and why:
+ *
+ *   business_id = staff_venue()   structural — the view returns nothing else
+ *   created_by  = auth.uid()      `is_mine`, added by CATCH_UP_018
+ *   status      = 'unpaid'        DELIBERATELY invisible, see below
+ *   created_at  > now() - 5 min   the clock, below
+ *
+ * `is_mine` is the one this used to miss. Gating on the clock alone offered a
+ * shop an Edit button on invoices one of the FOUR had entered for that venue,
+ * and tapping it was refused — notes §6, do not offer what cannot be done.
+ * Nothing was ever at risk; the policy refused every one of them.
+ *
+ * Payment stays invisible on purpose. A shop cannot be told an invoice is paid
+ * (CATCH_UP_010 §3), so this cannot know either, so it cannot hide the button
+ * for that reason. Inside five minutes of a shop entering something, one of
+ * the four having already paid it is close enough to impossible — and if it
+ * happens, the save is refused and the app says what it says for every other
+ * refusal.
  * ---------------------------------------------------------------------------
  *
  * `now` is passed in rather than read here, so this stays a pure function of
  * its arguments and a test can stand at any moment it likes.
  */
 export function stillCorrectable(invoice: StaffInvoice, now: number): boolean {
+  /*
+   * Whose it is, first — it is the cheaper check and the one that does not
+   * depend on a clock. An invoice this account did not enter is never
+   * correctable by it, at any age.
+   */
+  if (!invoice.is_mine) return false;
+
   const age = msSince(invoice.created_at, now);
   /*
    * A negative age means the row claims to have been created in the future —

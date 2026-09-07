@@ -59,6 +59,23 @@ const TABLES = [
   // `invoices` in full, so if it were ever readable by the anon key it would
   // hand over every venue's invoices without an error anywhere.
   'staff_invoices',
+  /*
+   * CATCH_UP_015, and they were missed for three rounds.
+   *
+   * The comment above says a table this list forgets is a table nothing
+   * checks, and then Deli's line items were added and this list was not — so
+   * from the day CATCH_UP_015 ran until an audit found it, nothing in the repo
+   * proved the anon key could not read Deli's price list or the contents of
+   * every invoice it had issued.
+   *
+   * It could not, as it turns out. That is luck rather than design: the
+   * policies were written correctly and no test said so. The lesson is the one
+   * §6 of the handoff already records about the staff fence — a check that is
+   * never extended stops being a check and becomes a claim.
+   */
+  'products',
+  'sales_invoice_lines',
+  'sales_invoice_counters',
 ];
 
 const failures = [];
@@ -100,7 +117,20 @@ for (const table of TABLES) {
 
 console.log('');
 
-for (const table of ['suppliers', 'invoices', 'invoice_notes', 'activity_log', 'push_subscriptions', 'profiles']) {
+for (const table of [
+  'suppliers',
+  'invoices',
+  'invoice_notes',
+  'activity_log',
+  'push_subscriptions',
+  'profiles',
+  // The same three. A read-only leak is bad; a write is worse, and `products`
+  // is the table every Deli invoice copies its prices from.
+  'products',
+  'sales_invoices',
+  'sales_invoice_lines',
+  'customers',
+]) {
   const { error } = await anon.from(table).insert({}).select();
   if (error?.code === MISSING) {
     check(`write ${table} is refused`, false, 'TABLE DOES NOT EXIST — nothing was verified');

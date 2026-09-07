@@ -339,6 +339,20 @@ export interface StaffInvoice {
   due_date: DateStr;
   amount_cents: number;
   created_at: Timestamp;
+  /**
+   * Whether THIS account entered it — CATCH_UP_018.
+   *
+   * A boolean, not `created_by`. The question a shop screen has is "may I
+   * offer Edit on this row", and `created_by` would answer it by handing over
+   * the user id of whichever of the four entered each invoice. The comparison
+   * happens in the view, where the answer is already known.
+   *
+   * Required, not optional. An optional flag would be `undefined` wherever
+   * somebody forgot to select it, and `undefined` is falsy — so the button
+   * would silently stop being offered on rows a shop CAN edit, which is the
+   * same defect this fixes pointing the other way.
+   */
+  is_mine: boolean;
 }
 
 /** An invoice with its supplier and business resolved, as the lists render it. */

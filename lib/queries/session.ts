@@ -225,3 +225,60 @@ export function useUpdateReminderTime() {
     },
   });
 }
+
+/**
+ * Promote somebody to owner, or put them back to manager.
+ *
+ * ---------------------------------------------------------------------------
+ * Not an update. An RPC, and the difference is the whole design.
+ *
+ * Migration 007 revoked blanket UPDATE on `profiles` and granted back exactly
+ * `notify_on_new_invoice` and `reminder_time`. `role` is unreachable from a
+ * browser by construction, and it stays that way: widening the grant would let
+ * anybody signed in write any value into anybody's row, because a grant is
+ * coarse, permanent, and cannot ask who is calling.
+ *
+ * `set_user_role` can. It refuses a non-owner, a builder row, a staff row, a
+ * role that is not manager or owner, and the demotion of the last owner —
+ * CATCH_UP_019 §6, which has the reasoning for each. All five come back as a
+ * sentence, which is what `message` carries, so the screen shows what the
+ * database actually said rather than a house error of its own invention.
+ *
+ * Deliberately NOT offline-capable. Every other write in this app queues; this
+ * one does not, because a promotion applied twenty minutes later against a
+ * table somebody else has also changed is a permission decision made in the
+ * dark. It fails, and it says so.
+ * ---------------------------------------------------------------------------
+ */
+export function useSetUserRole() {
+  const queryClient = useQueryClient();
+
+  return useMutation<Profile, Error, { id: string; role: 'manager' | 'owner' }>({
+    mutationFn: async ({ id, role }): Promise<Profile> => {
+      const { data, error } = await supabase().rpc('set_user_role', {
+        p_profile_id: id,
+        p_role: role,
+      });
+
+      if (error) throw new Error(error.message);
+      return data as Profile;
+    },
+    onSuccess: (profile) => {
+      const replace = (current: Profile[] | undefined) =>
+        (current ?? []).map((existing) => (existing.id === profile.id ? profile : existing));
+
+      queryClient.setQueryData<Profile[]>(qk.profiles.all, replace);
+      /*
+       * Your own row too, and this is the case that matters: an owner who
+       * makes themselves a manager must stop being shown the owner's controls
+       * on the very next frame, not after a refetch that may not come while
+       * `staleTime` is five minutes.
+       */
+      queryClient.setQueryData<Profile | null>(qk.profiles.me, (current) =>
+        current && current.id === profile.id ? profile : current,
+      );
+      queryClient.invalidateQueries({ queryKey: qk.profiles.all });
+      queryClient.invalidateQueries({ queryKey: qk.profiles.me });
+    },
+  });
+}

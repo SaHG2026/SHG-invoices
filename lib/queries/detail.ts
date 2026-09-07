@@ -152,10 +152,18 @@ export function useAddNote() {
 }
 
 /**
- * Recent activity across everything, for the header bell.
+ * Recent activity across every INVOICE, for the header bell.
  *
  * Capped rather than paginated: the bell answers "has anything happened",
  * and nobody scrolls a notification list looking for the fiftieth item.
+ *
+ * The `entity_type` filter is not tidiness. Every row in this panel links to
+ * `/invoices/<entity_id>`, and CATCH_UP_019 started writing 'profile' rows to
+ * the same table when somebody's role changes — so without it, promoting
+ * Milan would appear in the feed as an invoice that does not exist, and
+ * tapping it would land on "No such invoice". The panel is a list of things
+ * you can open; it says so here rather than trusting that nothing else will
+ * ever be logged.
  */
 export function useRecentActivity(limit = 50) {
   return useQuery({
@@ -164,6 +172,7 @@ export function useRecentActivity(limit = 50) {
       const { data, error } = await supabase()
         .from('activity_log')
         .select('id, entity_type, entity_id, action, actor_id, detail, created_at')
+        .eq('entity_type', 'invoice')
         .order('created_at', { ascending: false })
         .limit(limit);
 

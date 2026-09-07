@@ -164,6 +164,33 @@ console.log('  ?      sales_invoices.due_date is nullable  — needs a session; 
 console.log('\nCATCH_UP_018 — a shop is only offered Edit on its own entries\n');
 await column('staff_invoices.is_mine', 'staff_invoices', 'is_mine');
 
+console.log('\nCATCH_UP_019 — three real tiers: owner, manager, staff\n');
+/*
+ * The rename is the check, and this one line asks its question backwards from
+ * every other line in this file: `is_member()` answering PGRST202 is not a
+ * failure, it is the proof that CATCH_UP_019 §2 ran.
+ */
+{
+  const { error } = await anon.rpc('is_member', {});
+  report(
+    'is_member() is gone',
+    error?.code === NO_FUNCTION,
+    error?.code === NO_FUNCTION ? 'renamed' : 'still there, §2 did not run',
+  );
+}
+await fn('is_manager_or_above', 'is_manager_or_above', {});
+await fn('is_owner', 'is_owner', {});
+await fn('set_user_role', 'set_user_role', { p_profile_id: NO_SUCH_ID, p_role: 'manager' });
+/*
+ * The owner guard inside the four payment RPCs cannot be seen from here. The
+ * anon key is refused by the table grants underneath them long before
+ * `is_owner()` is reached, and from outside a missing permission and a working
+ * refusal are both 42501 — HANDOFF §6, the fence with no proven gate. The DO
+ * block at the bottom of CATCH_UP_019 counts the guard from `prosrc` instead.
+ */
+console.log('  ?      the is_owner() guard in the 4 payment RPCs  — see §7 of CATCH_UP_019');
+console.log('  ?      nobody left on the old role name            — see §7 of CATCH_UP_019');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

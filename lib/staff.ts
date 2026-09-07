@@ -8,8 +8,9 @@ import type { Profile } from './types';
  * Why this is a module and not `profile.role === 'staff'` written eleven times
  *
  * Because the app is not the enforcement layer and must never look like it is.
- * Every real boundary lives in CATCH_UP_010 — `is_member()`, `staff_venue()`,
- * the `staff_invoices` view, and the insert policy's `with check`. If every
+ * Every real boundary lives in the database — `is_manager_or_above()`,
+ * `is_owner()`, `staff_venue()`, the `staff_invoices` view, and the insert
+ * policy's `with check`. If every
  * function in this file were deleted, a venue account would still be unable to
  * see another venue or a payment status; it would just be shown a menu full of
  * screens that come back empty (notes §2).
@@ -49,7 +50,33 @@ export function isStaff(profile: Profile | null | undefined): boolean {
  */
 export function isFullMember(profile: Profile | null | undefined): boolean {
   if (!profile) return false;
-  return profile.role === 'member' || profile.role === 'owner' || profile.role === 'builder';
+  return (
+    profile.role === 'manager' || profile.role === 'owner' || profile.role === 'builder'
+  );
+}
+
+/**
+ * May move a bill between paid and unpaid, and may change anybody's role.
+ *
+ * The second permission this app has, after `staff` — and like that one, it is
+ * a permission because the DATABASE says so. `is_owner()` sits inside
+ * `mark_invoices_paid`, `unmark_invoice_paid`, `mark_sales_received`,
+ * `unmark_sales_received` and `set_user_role`, and refuses with 42501. If this
+ * function were deleted, a manager would be shown four buttons that raise an
+ * error — which is notes §6 failing, not the boundary failing.
+ *
+ * `builder` is included, and that is §44.2: owner powers, invisible in lists.
+ * The invisibility is `runsTheBusinesses` below, and the two are deliberately
+ * separate — a permission that hides itself from the permission check is a
+ * permission nobody can reason about.
+ *
+ * Null is false, like `isStaff`: while the profile loads the honest answer is
+ * "we do not know yet", and the owner's controls appearing for a frame and
+ * then vanishing is the one direction that must not flicker.
+ */
+export function isOwner(profile: Profile | null | undefined): boolean {
+  if (!profile) return false;
+  return profile.role === 'owner' || profile.role === 'builder';
 }
 
 /**
@@ -66,7 +93,15 @@ export function isFullMember(profile: Profile | null | undefined): boolean {
  * the argument for allowlists generally, and the reason this one is a named
  * function rather than an inline predicate: it is easy to find, and it fails
  * closed for whatever the fifth role turns out to be.
+ *
+ * It failed closed once already, on purpose. CATCH_UP_019 renamed `member` to
+ * `manager`, and an allowlist has the opposite failure to a blocklist: a tier
+ * added without visiting each one is a tier quietly excluded. There are six
+ * allowlists between the app and the database, four of them in SQL, and §1 of
+ * that file names all six. This is one, `isFullMember` is another, and both
+ * were changed by hand rather than by search-and-replace so that they were
+ * decided rather than swept up.
  */
 export function runsTheBusinesses(profile: Pick<Profile, 'role'>): boolean {
-  return profile.role === 'member' || profile.role === 'owner';
+  return profile.role === 'manager' || profile.role === 'owner';
 }

@@ -55,7 +55,7 @@ describe('a venue is not a person', () => {
     expect(runsTheBusinesses(VENUE_PROFILE)).toBe(false);
     expect(runsTheBusinesses({ role: 'builder' })).toBe(false);
     expect(runsTheBusinesses({ role: 'owner' })).toBe(true);
-    expect(runsTheBusinesses({ role: 'member' })).toBe(true);
+    expect(runsTheBusinesses({ role: 'manager' })).toBe(true);
   });
 
   /**

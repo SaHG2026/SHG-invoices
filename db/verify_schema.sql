@@ -34,14 +34,22 @@ select kind, name, detail from (
   union all
 
   -- Our functions. security definer vs invoker matters: definer bypasses RLS,
-  -- so only the audit trigger, the ref generator and is_member should say so.
+  -- so only the audit trigger, the ref generator, the two role predicates and
+  -- set_user_role should say so. The four payment RPCs must stay INVOKER: they
+  -- are transaction boundaries, not privilege boundaries, and is_owner() is
+  -- the one definer piece inside them.
   select 3, 'function', p.proname::text,
          case when p.prosecdef then 'security definer' else 'security invoker' end
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('sydney_today','set_internal_ref','current_actor_id',
-                       'touch_updated_at','log_invoice_activity','is_member',
+                       'touch_updated_at','log_invoice_activity',
+                       -- CATCH_UP_019: is_member() was renamed, is_owner() and
+                       -- set_user_role are new. A verifier that is not extended
+                       -- with the thing it should be checking stops being a
+                       -- check and becomes a claim (HANDOFF §6).
+                       'is_manager_or_above','is_owner','set_user_role',
                        'mark_invoices_paid','unmark_invoice_paid','void_invoice',
                        'find_duplicate_invoices')
 

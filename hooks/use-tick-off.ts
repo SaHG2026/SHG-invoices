@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useMarkPaid, useUnmarkPaid } from '@/lib/queries/payments';
 import { forgetPaid, rememberPaid } from '@/lib/recently-paid';
 import { useCurrentProfile } from '@/lib/queries/session';
+import { isOwner } from '@/lib/staff';
 import { formatCents } from '@/lib/money';
 import type { InvoiceRow } from '@/lib/types';
 
@@ -25,6 +26,18 @@ import type { InvoiceRow } from '@/lib/types';
  *
  * A whole payment run still goes through the sheet: more money, and a bank
  * reference worth capturing while you have it in front of you.
+ *
+ * ---------------------------------------------------------------------------
+ * `mayTick`, and why the answer comes from here rather than from each list.
+ *
+ * CATCH_UP_019 gives paid and unpaid to the owner alone. Three lists render a
+ * tick — the week, the pending list and a supplier's page — and asking each
+ * one to check the role itself is three chances to forget, on the day a fourth
+ * list is written. They already share this hook for what the tick DOES, so
+ * they share it for whether it is offered at all.
+ *
+ * It is not the boundary. `is_owner()` inside `mark_invoices_paid` is; this
+ * only stops the app offering a button that would come back 42501 (notes §6).
  * ---------------------------------------------------------------------------
  */
 export function useTickOff() {
@@ -91,5 +104,5 @@ export function useTickOff() {
     [markPaid, undo, toast, profile],
   );
 
-  return { tickOff, undo };
+  return { tickOff, undo, mayTick: isOwner(profile) };
 }

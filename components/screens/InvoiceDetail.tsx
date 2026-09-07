@@ -9,6 +9,7 @@ import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
 import { useToast } from '@/components/ui/Toast';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useProfiles, useCurrentProfile } from '@/lib/queries/session';
+import { isOwner } from '@/lib/staff';
 import { useAddNote, useInvoice, useInvoiceActivity, useInvoiceNotes } from '@/lib/queries/detail';
 import { useUnmarkPaid, useVoidInvoice } from '@/lib/queries/payments';
 import { submitWrite } from '@/lib/offline/submit';
@@ -114,6 +115,16 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState('');
 
+  /*
+   * Paid and unpaid belong to the owner. CATCH_UP_019 §5.
+   *
+   * Void does NOT, and the difference is worth stating where both buttons are
+   * rendered: voiding corrects a mistake and leaves the bill in history struck
+   * through with a reason, which is a manager's job. Marking paid asserts that
+   * money left the account.
+   */
+  const mayPay = isOwner(profile);
+
   const stream = useMemo(() => mergeStream(activity, notes), [activity, notes]);
   const payer = people.find((person) => person.id === invoice?.paid_by);
 
@@ -217,14 +228,16 @@ export function InvoiceDetail({ id }: { id: string }) {
       <div className="mb-6 flex flex-wrap gap-2">
         {invoice.status === 'unpaid' ? (
           <>
-            <button
-              type="button"
-              onClick={() => setPayOpen(true)}
-              className="touch flex-1 rounded-full px-4 text-base font-medium"
-              style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
-            >
-              Mark paid
-            </button>
+            {mayPay ? (
+              <button
+                type="button"
+                onClick={() => setPayOpen(true)}
+                className="touch flex-1 rounded-full px-4 text-base font-medium"
+                style={{ backgroundColor: 'var(--paid)', color: 'var(--card)' }}
+              >
+                Mark paid
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setVoidOpen(true)}
@@ -235,7 +248,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           </>
         ) : null}
 
-        {invoice.status === 'paid' ? (
+        {invoice.status === 'paid' && mayPay ? (
           <button
             type="button"
             onClick={() => setConfirmUnpaid(true)}

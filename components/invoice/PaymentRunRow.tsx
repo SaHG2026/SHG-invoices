@@ -28,10 +28,16 @@ interface PaymentRunRowProps {
   people: readonly Profile[];
   expandedId: string | null;
   onToggle: (id: string) => void;
-  /** Ticks every invoice in the run — one transfer, one call (notes §1.6). */
-  onMarkPaid: (invoices: PaymentRun['invoices']) => void;
-  /** Puts back one invoice ticked off during this session. */
-  onUndo: (id: string) => void;
+  /**
+   * Ticks every invoice in the run — one transfer, one call (notes §1.6).
+   *
+   * Optional, and absent is what a manager gets: CATCH_UP_019 §5 gives paid
+   * and unpaid to the owner alone. Both the run button and the tick on every
+   * row inside it go with it, because they are the same act at two sizes.
+   */
+  onMarkPaid?: (invoices: PaymentRun['invoices']) => void;
+  /** Puts back one invoice ticked off during this session. Owner-only too. */
+  onUndo?: (id: string) => void;
 }
 
 export function PaymentRunRow({
@@ -52,8 +58,8 @@ export function PaymentRunRow({
         people={people}
         expanded={expandedId === single.id}
         onToggle={() => onToggle(single.id)}
-        onMarkPaid={() => onMarkPaid([single])}
-        onUndo={() => onUndo(single.id)}
+        onMarkPaid={onMarkPaid ? () => onMarkPaid([single]) : undefined}
+        onUndo={onUndo ? () => onUndo(single.id) : undefined}
       />
     );
   }
@@ -121,7 +127,7 @@ export function PaymentRunRow({
             so it lives one level further in.
           */}
           <div className="px-3 pt-3">
-            {owed.length > 0 ? (
+            {owed.length > 0 && onMarkPaid ? (
               <button
                 type="button"
                 onClick={() => onMarkPaid(owed)}
@@ -131,9 +137,18 @@ export function PaymentRunRow({
                 Mark {owed.length === 1 ? 'the last one' : `all ${owed.length}`} paid ·{' '}
                 {formatCents(run.total_cents)}
               </button>
+            ) : owed.length > 0 ? (
+              /* A manager sees what is owed and who it is to, and nothing
+                 offering to settle it. Said out loud rather than left as a
+                 gap, so the absence reads as a rule and not as a screen that
+                 failed to finish loading. */
+              <p className="pb-1 text-center text-sm text-muted">
+                {owed.length === 1 ? 'This one is' : `These ${owed.length} are`} still to pay.
+              </p>
             ) : (
               <p className="pb-1 text-center text-sm text-muted">
-                All {run.invoices.length} paid. Tap a tick to put one back.
+                All {run.invoices.length} paid.
+                {onUndo ? ' Tap a tick to put one back.' : ''}
               </p>
             )}
           </div>
@@ -147,8 +162,8 @@ export function PaymentRunRow({
                 people={people}
                 expanded={expandedId === invoice.id}
                 onToggle={() => onToggle(invoice.id)}
-                onMarkPaid={() => onMarkPaid([invoice])}
-                onUndo={() => onUndo(invoice.id)}
+                onMarkPaid={onMarkPaid ? () => onMarkPaid([invoice]) : undefined}
+                onUndo={onUndo ? () => onUndo(invoice.id) : undefined}
                 showSpine={false}
                 showSupplier={false}
               />

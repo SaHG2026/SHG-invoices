@@ -48,7 +48,7 @@ export function WeekView({ scope }: { scope: Scope }) {
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
-  const { tickOff, undo } = useTickOff();
+  const { tickOff, undo, mayTick } = useTickOff();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paying, setPaying] = useState<InvoiceRow[]>([]);
@@ -193,14 +193,18 @@ export function WeekView({ scope }: { scope: Scope }) {
                           people={people}
                           expandedId={expandedId}
                           onToggle={(id) => setExpandedId((current) => (current === id ? null : id))}
-                          onUndo={(id) => void undo(id)}
-                          onMarkPaid={(chosen) => {
-                            // One invoice ticks immediately with an undo; a
-                            // whole run goes through the sheet, where the
-                            // bank reference is worth capturing.
-                            if (chosen.length === 1) void tickOff(chosen[0]!);
-                            else setPaying(chosen);
-                          }}
+                          onUndo={mayTick ? (id) => void undo(id) : undefined}
+                          onMarkPaid={
+                            mayTick
+                              ? (chosen) => {
+                                  // One invoice ticks immediately with an undo;
+                                  // a whole run goes through the sheet, where
+                                  // the bank reference is worth capturing.
+                                  if (chosen.length === 1) void tickOff(chosen[0]!);
+                                  else setPaying(chosen);
+                                }
+                              : undefined
+                          }
                         />
                       ))}
                     </ul>

@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { useBusinesses } from '@/lib/queries/reference';
-import { useCustomers } from '@/lib/queries/customers';
+import { optimisticCustomer, useCreateCustomer, useCustomers } from '@/lib/queries/customers';
 import { useProducts, useCreateProduct, useUpdateProduct } from '@/lib/queries/products';
 import { useCreateSalesInvoice, type NewSalesLine } from '@/lib/queries/sales';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
@@ -142,6 +142,7 @@ export function ComposeSalesInvoice({
   const { data: businesses = [] } = useBusinesses();
   const { data: customers = [] } = useCustomers();
   const createInvoice = useCreateSalesInvoice();
+  const createCustomer = useCreateCustomer();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
 
@@ -179,6 +180,20 @@ export function ComposeSalesInvoice({
   /** Which product row has its pencil open. One at a time, like the price list. */
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [addingProduct, setAddingProduct] = useState(false);
+  /*
+   * The door out of a dead end.
+   *
+   * Reported: there is no way to add a customer while composing an invoice.
+   * The old flat sheet has an inline field; this screen never got one, so the
+   * only way through was to abandon a half-built invoice, go to Customers, and
+   * start again -- which is how a flow gets abandoned rather than completed.
+   *
+   * Two pieces of state, not one, and they mean different things: whether the
+   * field is open, and what is in it. The name is NOT derived from the picker,
+   * because a customer that does not exist yet has no id to be selected by.
+   */
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
 
   /*
    * ==========================================================================
@@ -378,6 +393,45 @@ export function ComposeSalesInvoice({
     );
   }
 
+  /*
+   * A customer, added without leaving the invoice.
+   *
+   * The same three lines as the flat sheet, and deliberately the same shape:
+   * the id is generated here so a queued write replays as the same row rather
+   * than a second customer, and the picker is pointed at it immediately --
+   * offline included, because `optimisticCustomer` has already put it in the
+   * list the select renders from. One array, one picker (rule 4).
+   */
+  async function addCustomer() {
+    if (!profile) return;
+    const name = newCustomerName.trim();
+    if (name === '') return;
+
+    const created = optimisticCustomer(crypto.randomUUID(), name);
+    const outcome = await submitWrite(createCustomer, {
+      id: created.id,
+      name,
+      actorId: profile.id,
+    });
+
+    if (outcome.kind === 'failed') {
+      toast.show(writeFailureMessage(outcome.error, 'Couldn’t add that customer.'), 'problem');
+      return;
+    }
+
+    setCustomerId(created.id);
+    setNewCustomerName('');
+    setAddingCustomer(false);
+    /* The invoice is now FOR somebody, so clear the complaint that it was not.
+       Leaving it up would have the screen arguing with what it just did. */
+    setError(null);
+    toast.show(
+      outcome.kind === 'queued'
+        ? `Added ${name} — will send when you’re back online.`
+        : `Added ${name}.`,
+    );
+  }
+
   async function save() {
     setError(null);
     if (!profile || !business) return;
@@ -477,6 +531,67 @@ export function ComposeSalesInvoice({
           ))}
         </select>
       </label>
+
+      {/*
+        Adding one from here, rather than losing the invoice to do it.
+
+        Always offered, not only when the list is empty. The flat sheet shows
+        its inline field only on an empty list, which is right for a first run
+        and wrong for the case actually reported: a new customer standing at
+        the counter while the invoice for them is half built.
+      */}
+      {addingCustomer ? (
+        <div className="mb-4">
+          <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+            New customer
+          </span>
+          <div className="flex gap-2">
+            <input
+              value={newCustomerName}
+              onChange={(event) => setNewCustomerName(event.target.value)}
+              aria-label="New customer name"
+              placeholder="Their name"
+              autoCapitalize="words"
+              autoFocus
+              onKeyDown={(event) => {
+                /* Enter inside a bare input on a screen with no form of its own
+                   does nothing at all, and a phone keyboard offers it anyway. */
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void addCustomer();
+                }
+              }}
+              className={field}
+            />
+            <button
+              type="button"
+              onClick={() => void addCustomer()}
+              disabled={newCustomerName.trim() === '' || createCustomer.isPending}
+              className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
+            >
+              {createCustomer.isPending ? 'Adding…' : '+ Add'}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAddingCustomer(false);
+              setNewCustomerName('');
+            }}
+            className="touch mt-1 text-sm text-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddingCustomer(true)}
+          className="touch mb-4 w-full rounded-sm border border-hairline bg-card text-sm text-action"
+        >
+          + Add a new customer
+        </button>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-3">
         <label className="block">

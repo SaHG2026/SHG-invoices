@@ -12,28 +12,36 @@ import type { DateStr, TimeStr, Timestamp } from './date';
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
 
 /**
- * `member`, `owner` and `builder` are not permissions. Those three have
- * identical access to every invoice, and `role` only decides what a screen
- * shows them.
+ * `staff` is a permission. `owner` is now a second one, for exactly one thing.
  *
- * `staff` IS a permission, and it is the only one. CATCH_UP_010 took that
+ * `manager`, `owner` and `builder` see the same invoices; what separates them
+ * is that **only an owner may move a bill between paid and unpaid** (and only
+ * an owner may change anybody's role). That is enforced inside four RPCs by
+ * `is_owner()`, CATCH_UP_019 §5 — the app hides the buttons, the database
+ * refuses the call, and the second one is the real boundary.
+ *
+ * `manager` is what `member` was called until CATCH_UP_019. Renamed rather
+ * than joined by a fifth value: two names for one tier is the shape problem
+ * this project keeps meeting.
+ *
+ * `staff` was the FIRST permission, and CATCH_UP_010 took that
  * decision deliberately, against migration 005's standing warning that the
  * day role started deciding what somebody could read or write, it had to move
- * into a policy. It did move: `is_member()`, `staff_venue()` and the
+ * into a policy. It did move: `is_manager_or_above()`, `staff_venue()` and the
  * `staff_invoices` view are where it lives now. Nothing in this file or any
  * component is the enforcement layer (notes §2).
  *
  * `builder` is Rabindra, who maintains the app and does not run the
  * businesses (ARCHITECTURE §28.2). It keeps him out of the lists of people and
  * out of every notification, and it changes nothing about his access — which
- * is exactly why it is here and not `active = false`: `is_member()` tests
+ * is exactly why it is here and not `active = false`: `is_manager_or_above()` tests
  * `active`, so deactivating him would lock him out of the app he maintains.
  *
  * `staff` is a venue — GroceryMate Parramatta or Hurstville — not a person.
  * One shared login per shop, which is why `lib/staff.ts` exists and why the
  * attribution chip renders these differently.
  */
-export type ProfileRole = 'member' | 'owner' | 'builder' | 'staff';
+export type ProfileRole = 'manager' | 'owner' | 'builder' | 'staff';
 
 export interface Profile {
   id: string;

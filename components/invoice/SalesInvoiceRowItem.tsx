@@ -5,7 +5,8 @@ import { useState } from 'react';
 import type { Route } from 'next';
 import { useToast } from '@/components/ui/Toast';
 import { PersonChip } from '@/components/ui/PersonChip';
-import { useProfiles } from '@/lib/queries/session';
+import { useProfiles, useCurrentProfile } from '@/lib/queries/session';
+import { isOwner } from '@/lib/staff';
 import { useMarkReceived, useSalesInvoice, useUnmarkReceived } from '@/lib/queries/sales';
 import { formatCents } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
@@ -70,6 +71,14 @@ export function SalesInvoiceRowItem({
   const receiver = people.find((person) => person.id === row.received_by);
   const markReceived = useMarkReceived();
   const unmarkReceived = useUnmarkReceived();
+  const { data: profile } = useCurrentProfile();
+  /*
+   * The receivables half of CATCH_UP_019 §5. Recording money IN is the same
+   * assertion as recording money OUT — it says a bank account moved — so it
+   * sits with the owner for the same reason, and `mark_sales_received` refuses
+   * anybody else with 42501 whatever this row decides to render.
+   */
+  const mayReceive = isOwner(profile);
 
   // '' disables the query, so a closed row costs nothing.
   const { data, isLoading } = useSalesInvoice(expanded ? row.id : '');
@@ -194,7 +203,7 @@ export function SalesInvoiceRowItem({
           </dl>
 
           <div className="flex gap-2">
-            {settled ? (
+            {!mayReceive ? null : settled ? (
               <button
                 type="button"
                 onClick={async () => {

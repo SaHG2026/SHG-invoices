@@ -4367,3 +4367,237 @@ appearance work nor the behaviour's own tests will notice. §39.8 was a screen
 that threw before painting; this is a panel that painted where nobody could
 see it. Both were invisible to a green suite.
 
+
+---
+
+## 46. J1 — the two bugs, and three real tiers
+
+The first phase of the roadmap in §44. Two reported defects, then the
+permission model the other four phases lean on.
+
+`db/CATCH_UP_019.sql`, **before the deploy**. 784 tests under three timezones,
+up from 767.
+
+---
+
+### 46.1 A placeholder that looks like a control
+
+> *"Can't actually edit details for customers. There is a - icon, but it does
+> nothing."*
+
+The "-" is an em dash — `Fact`'s placeholder for an empty value — and the
+report is exactly right about it. Tapping it did nothing, because it was never
+a control; it only looked like one, sitting in the column where a control
+belongs.
+
+The real Edit was a pill at the top of the page. Round F (§40) folded Details
+into a collapsible panel and left that pill **outside** it, so the two stopped
+looking related: the panel arrives shut, and the one control that opens its
+editor is above it, in a row with Remove.
+
+Three changes, and the third is the one worth keeping:
+
+1. **Edit moved inside the panel**, under the values it edits. With the panel
+   shut there is now no way to start editing at all, which a test asserts —
+   the two cannot drift apart again.
+2. **Every row is the control.** An empty row says **Add** in the action
+   colour instead of an em dash. It is honest about being a control rather
+   than looking like one by accident, and a filled row opens the same editor,
+   which is where a phone number that has changed gets fixed.
+3. **`Fact` takes `value`, not `children`.** Four call sites each wrote
+   `{customer.contact_phone || '—'}`, which put the decision about what empty
+   means in four places, and the em dash was the result. One component decides
+   now.
+
+It stopped being a `<dl>` in the process, and that is a consequence rather
+than a preference: `<dt>` and `<dd>` inside a `<button>` is not valid content,
+and these rows stopped being a description list the moment every one of them
+became something you press. They carry `touch` as well — measured at 36px
+before, 44px after, which is the minimum every other control in this app
+meets.
+
+**The same fix went to `SupplierDetail` unasked.** It prints the same em dash
+from the same shape. The Edit pill stays in its header there, because that
+panel does not fold and the two already read as one thing.
+
+---
+
+### 46.2 A customer, added without leaving the invoice
+
+The other reported bug, and mine. `ComposeSalesInvoice` had no way to add a
+customer, so a new one standing at the counter meant abandoning a half-built
+invoice, going to Customers, and starting the lines again.
+
+The old flat sheet has an inline field, and this is the same three lines —
+with one difference. **The sheet offers its field only when the list is
+empty**, which is right for a first run and wrong for the case reported: a
+customer list that exists and needs one more. Here it is always offered.
+
+The id is generated on the client, as everywhere else (notes §1.5): a queued
+write is resumed by key from a cold start, and an id decided by the database
+would make the second attempt a second customer. `optimisticCustomer` puts the
+row in the cache the picker reads, so the picker points at them immediately,
+offline included.
+
+---
+
+### 46.3 The tiers
+
+`member` became `manager`, and `owner` became a permission for the first time.
+
+| tier | who | may |
+|---|---|---|
+| **owner** | Mani | everything, and alone marks paid/unpaid and changes roles |
+| **manager** | Milan, Sujan | review, edit, void, suppliers, customers, issue invoices. **Sees paid status; cannot change it** |
+| **staff** | GMH, GMP | unchanged |
+| **builder** | Rabindra | owner powers, invisible in lists (§44.2) |
+
+**Renamed rather than joined by a fifth value.** Two names for one tier is the
+shape problem this project keeps meeting; every list, filter and policy would
+have had to remember both forever, and the day one of them remembered only one
+is the day somebody silently lost access.
+
+**`is_member()` was renamed to `is_manager_or_above()`, not replaced.** Twenty-
+odd policies say `is_member()`, and a policy stores the function's OID rather
+than its name, so every one of them followed the rename with nothing to edit.
+Recreating them by hand would have been twenty chances to get one wrong on a
+live database. The old name is deliberately not kept as an alias: a policy
+written next year saying `is_member()` should fail loudly at creation rather
+than compile against a shim nobody maintains.
+
+#### The trap, and the six allowlists
+
+HANDOFF §2 records three role filters once written as `role <> 'builder'` — a
+blocklist admits every role invented after it. They are allowlists now, and an
+allowlist has the **opposite** failure: a tier added without visiting each one
+is a tier quietly excluded. Nobody would write that bug either; it would
+simply happen.
+
+So all six were visited by hand rather than by search-and-replace, and
+CATCH_UP_019 §1 names them:
+
+| | where | what it decides |
+|---|---|---|
+| 1 | `is_manager_or_above()` | every RLS policy in the database |
+| 2 | `push_targets` | who is told about a new invoice |
+| 3 | `push_targets_payment` | who is told about a payment |
+| 4 | `send_daily_reminders()` | whose alarm goes off |
+| 5 | `isFullMember` | which app a person is shown |
+| 6 | `runsTheBusinesses` | who appears in a list of people |
+
+`test/unit/tiers.test.tsx` names all five roles against all three app-side
+predicates, in both directions, so a sixth tier breaks a test rather than
+somebody's access.
+
+#### Paid and unpaid lock to the owner
+
+`mark_invoices_paid`, `unmark_invoice_paid`, `mark_sales_received` and
+`unmark_sales_received` each gained `if not is_owner() then raise`.
+
+**Raised, not filtered.** The obvious implementation is one more `and
+is_owner()` in the where clause, and it is wrong, because these functions
+already carry a meaning for "changed nothing": `where status = 'unpaid'` is
+what makes them idempotent under an offline replay, and the app reads an empty
+result as *somebody else already ticked this off* and says so in those words.
+A permission check written as a filter would make a refusal indistinguishable
+from a race, and the app would tell a manager that Mani had just paid a bill
+nobody has paid.
+
+They stay SECURITY INVOKER — migration 004's reasoning holds, they are
+transaction boundaries and not privilege boundaries. `is_owner()` is the one
+SECURITY DEFINER piece, and it is the only piece that needs to be.
+
+**Void is deliberately NOT owner-only.** Voiding takes a bill out of every
+total with a reason and leaves it in history struck through: it corrects a
+mistake, which is a manager's job. Marking paid asserts that money left the
+account, which is the owner's. The two look similar and are not the same act.
+
+App-side, the offering is decided in **one place per surface** rather than at
+each call site. `useTickOff()` returns `mayTick`, so the week, the pending
+list and a supplier's page share the answer as well as the action — three
+lists that would otherwise be three chances to forget on the day a fourth is
+written. `onMarkPaid` and `onUndo` became optional on `InvoiceRow` and
+`PaymentRunRow`, so absent is what a manager gets: **absent, not disabled**, a
+greyed tick on every row of the list somebody opens most often being a screen
+that apologises forty times.
+
+*Flagged to the client and accepted:* this makes one person the bottleneck for
+every payment tick. If Mani is away, a manager watches bills go overdue.
+
+#### Promote and demote
+
+`set_user_role`, a SECURITY DEFINER RPC, and the column grant is untouched.
+Migration 007 revoked blanket UPDATE on `profiles` and granted back exactly
+`notify_on_new_invoice` and `reminder_time`; `role` stays unreachable from a
+browser by construction. Widening that grant would let anybody signed in write
+any value into anybody's row, because a grant is coarse, permanent, and cannot
+ask who is calling. A function can.
+
+Five refusals, each with a reason:
+
+1. **Not a non-owner.** The permission itself.
+2. **Not a role other than manager or owner.** A screen that can mint a
+   builder is a screen that can hide an account from every list in the app.
+3. **Not a builder row.** Otherwise the owner can lock the builder out of the
+   app the builder maintains, from a screen, in one tap. §44.2.
+4. **Not a staff row.** A venue account's role is tied to `business_id` and
+   `staff_venue()`; moving one through this screen produces a manager with a
+   venue attached or a shop with none.
+5. **Not the last owner.** The builder is not counted here even though
+   `is_owner()` includes him: an app whose only remaining owner is invisible
+   to everybody in it has no owner as far as the four of them are concerned.
+
+Four of the five are conditions on rows that are not on the list at all, so
+there is no button to leave out. The fifth is a condition on a row that IS
+there, and "Make manager" against the only owner is a button whose entire job
+is to fail — so that one is stated in advance, as *The only owner*.
+
+The refusals come back as sentences a person can read, and the screen shows
+what the database said rather than a house message of its own. Five specific
+reasons beat one vague one.
+
+**Not offline-capable, deliberately.** Every other write in this app queues. A
+promotion applied twenty minutes later, against a table somebody else has also
+changed, is a permission decision made in the dark. It fails, and it says so.
+
+#### A role change leaves a trace, and where it went
+
+`set_user_role` writes to `activity_log` — `entity_type` is free text, so
+'profile' needed no new table and no new grant, and the row is written from
+inside a SECURITY DEFINER function, which is the only writer that table has
+ever had.
+
+That immediately broke something, which is worth recording because it is the
+same shape as §45. **The header bell reads the whole table and links every row
+to `/invoices/<entity_id>`.** A promotion would have appeared in the feed as
+an invoice that does not exist, and tapping it would land on "No such
+invoice". `useRecentActivity` now asks for `entity_type = 'invoice'`: the
+panel is a list of things you can open, and it says so rather than trusting
+that nothing else will ever be logged.
+
+The 'profile' rows are recorded and readable by query. **Nothing surfaces them
+yet** — that is a screen, and it is not in this phase.
+
+---
+
+### 46.4 What the verifiers now cover
+
+HANDOFF §6: a check that is never extended stops being a check and becomes a
+claim. Three files gained this phase's facts in the same commit:
+
+- `db/verify_catchups.mjs` asks whether `is_member()` is **gone** — the one
+  line in that file whose question is backwards, because PGRST202 there is the
+  proof rather than the failure — then probes `is_manager_or_above`,
+  `is_owner` and `set_user_role`.
+- `db/verify_schema.sql` names the two new predicates and `set_user_role` in
+  its function list, and its comment now says which functions may be SECURITY
+  DEFINER and why the four payment RPCs must not be.
+- The `is_owner()` guard inside those four **cannot be seen from outside**.
+  The anon key is refused by the table grants long before `is_owner()` is
+  reached, and from outside a missing permission and a working refusal are
+  both 42501 — the fence with no proven gate again. CATCH_UP_019 §7 counts the
+  guard from `prosrc` instead, and raises if it is not on all four.
+
+`test/unit/settings.test.tsx` also writes a preview page now. A name plus a
+pill on a 375px phone is exactly what reads correctly in an assertion and
+wraps badly on glass; measured at 320px, no horizontal overflow.

@@ -39,7 +39,7 @@ export function PendingList({ scope, due: initialDue = 'all' }: { scope: Scope; 
   const { data: businesses = [] } = useBusinesses();
   const { data: people = [] } = useProfiles();
   const today = useSydneyToday();
-  const { tickOff, undo } = useTickOff();
+  const { tickOff, undo, mayTick } = useTickOff();
 
   const [sort, setSort] = useState<SortKey>('due');
 
@@ -217,8 +217,11 @@ export function PendingList({ scope, due: initialDue = 'all' }: { scope: Scope; 
               onToggle={() =>
                 setExpandedId((current) => (current === invoice.id ? null : invoice.id))
               }
-              onMarkPaid={() => void tickOff(invoice)}
-              onUndo={() => void undo(invoice.id)}
+              /* Paid and unpaid belong to the owner (CATCH_UP_019 §5). Absent,
+                 not disabled: a greyed tick on every row of the list somebody
+                 opens most is a screen apologising forty times. */
+              onMarkPaid={mayTick ? () => void tickOff(invoice) : undefined}
+              onUndo={mayTick ? () => void undo(invoice.id) : undefined}
             />
           ))}
         </ul>

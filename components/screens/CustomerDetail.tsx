@@ -86,6 +86,19 @@ export function CustomerDetail({ id }: { id: string }) {
       .filter((entry) => entry && entry.trim() !== '')
       .join(' · ') || 'No contact details yet';
 
+  /*
+   * One way in, used by five controls: four rows and the button under them.
+   *
+   * It opens the panel as well as the editor. That line is not defensive —
+   * the panel is closed on arrival, so an editor opened without it would be
+   * mounted inside a collapsed section and appear to do nothing, which is the
+   * exact bug this whole change exists to remove.
+   */
+  function startEditing() {
+    setEditing(true);
+    setDetailsOpen(true);
+  }
+
   /** Remove is deactivate. Rule 5 — the sales invoices reference this row. */
   async function setActive(active: boolean) {
     try {
@@ -111,23 +124,19 @@ export function CustomerDetail({ id }: { id: string }) {
           </p>
         ) : null}
 
-        {/* The mirror of the supplier page, and it had the same gap: Edit was
-            buried in a panel and Remove was a checkbox called "Active". */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              // Opening the editor opens the panel holding it. Otherwise
-              // "Edit details" appears to do nothing at all.
-              setEditing((open) => !open);
-              setDetailsOpen(true);
-            }}
-            aria-expanded={editing}
-            className="touch rounded-full border border-hairline bg-card px-4 text-sm text-ink"
-          >
-            {editing ? 'Cancel editing' : 'Edit details'}
-          </button>
+        {/*
+          Remove, and nothing else.
 
+          "Edit details" used to stand here, and that is the bug: Round F
+          folded the details into a panel and left the button that edits them
+          OUTSIDE it, so the two stopped looking related. Reported as *"can't
+          actually edit details for customers. There is a - icon, but it does
+          nothing"* -- the "-" being the em dash this page printed for an empty
+          value. **A placeholder that looks like a control is a control that
+          does nothing.** Edit now lives inside the panel it edits, and every
+          empty row is itself the way in.
+        */}
+        <div className="mt-3 flex flex-wrap gap-2">
           {customer.active ? (
             <button
               type="button"
@@ -203,14 +212,27 @@ export function CustomerDetail({ id }: { id: string }) {
                     );
                   }
                 }}
+                onCancel={() => setEditing(false)}
               />
             ) : (
-              <dl>
-                <Fact label="Contact name">{customer.contact_name || '—'}</Fact>
-                <Fact label="Phone">{customer.contact_phone || '—'}</Fact>
-                <Fact label="Email">{customer.contact_email || '—'}</Fact>
-                {customer.notes ? <Fact label="Notes">{customer.notes}</Fact> : null}
-              </dl>
+              <>
+                <div>
+                  <Fact label="Contact name" value={customer.contact_name} onEdit={startEditing} />
+                  <Fact label="Phone" value={customer.contact_phone} onEdit={startEditing} />
+                  <Fact label="Email" value={customer.contact_email} onEdit={startEditing} />
+                  <Fact label="Notes" value={customer.notes} onEdit={startEditing} />
+                </div>
+
+                {/* Inside the panel, under what it changes. The one control
+                    that says the word somebody is looking for. */}
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="touch mt-2 w-full rounded-full border border-hairline bg-card px-4 text-sm text-ink"
+                >
+                  Edit details
+                </button>
+              </>
             )}
           </div>
         ) : null}
@@ -343,12 +365,52 @@ export function CustomerDetail({ id }: { id: string }) {
   );
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * One line of contact detail, and the way to change it.
+ *
+ * The whole row is the control, filled or empty, because the reported failure
+ * was tapping the em dash and getting nothing. An empty row now says "Add" in
+ * the action colour -- it is honest about being a control instead of looking
+ * like one by accident -- and a filled one opens the same editor, which is
+ * where a phone number that has changed gets fixed.
+ *
+ * `value` rather than `children`, so this component decides what empty means.
+ * Passing `{customer.contact_phone || '—'}` in put that decision at four
+ * call sites, and the em dash was the result.
+ *
+ * NOT a `<dl>` any more, and that is a consequence rather than a preference:
+ * `<dt>` and `<dd>` inside a `<button>` is not valid content, and these rows
+ * stopped being a description list the moment every one of them became
+ * something you press.
+ */
+function Fact({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string;
+  value: string | null;
+  onEdit: () => void;
+}) {
+  const filled = (value ?? '').trim() !== '';
+
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-2 last:border-b-0">
-      <dt className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-sm text-ink">{children}</dd>
-    </div>
+    <button
+      type="button"
+      onClick={onEdit}
+      /* `touch`, because this stopped being a line of text the moment it
+         became a control. Notes 4: a 36px row is a rage-inducing miss rate at
+         arm's length, and these four are the rows somebody taps when a phone
+         number has changed. */
+      className="touch flex w-full items-center justify-between gap-3 border-b border-hairline py-2 text-left last:border-b-0 active:bg-pressed"
+    >
+      <span className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</span>
+      <span
+        className={`min-w-0 break-words text-right text-sm ${filled ? 'text-ink' : 'text-action'}`}
+      >
+        {filled ? value : 'Add'}
+      </span>
+    </button>
   );
 }
 
@@ -356,10 +418,12 @@ function CustomerForm({
   customer,
   busy,
   onSave,
+  onCancel,
 }: {
   customer: Customer;
   busy: boolean;
   onSave: (changes: Partial<Customer>) => void;
+  onCancel: () => void;
 }) {
   const [name, setName] = useState(customer.name);
   const [contact, setContact] = useState(customer.contact_name ?? '');
@@ -453,6 +517,16 @@ function CustomerForm({
         className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
       >
         {busy ? 'Saving…' : 'Save customer'}
+      </button>
+
+      {/* The way back out. "Cancel editing" used to be the header pill saying
+          the opposite thing; with that gone, the way out has to be here. */}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="touch mt-1 w-full text-sm text-muted"
+      >
+        Cancel
       </button>
     </form>
   );

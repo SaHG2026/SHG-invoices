@@ -31,6 +31,7 @@ end to end. Grep for the section you need:
 | Every bug found on a real phone, with its test | §19 |
 | Venue staff accounts — the boundary | §34 |
 | Rounds A–H, the most recent work | §35–§42 |
+| J1 — the two bugs, and the tiers | §46 |
 | The audit from scratch, and what it found | §43 |
 
 ---
@@ -48,23 +49,32 @@ instantaneous". Every feature decision defers to it.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local`, gitignored, already populated
 
-**Who is who.** Mani (owner, CEO), Milan (member, COO), Sujan (member, GM),
+**Who is who.** Mani (owner, CEO), Milan (manager, COO), Sujan (manager, GM),
 Rabindra (builder — maintains the app, out of every list and both notification
 audiences, access untouched). Plus two shared shop logins, GMP and GMH, role
 `staff`.
 
 ### The one thing that everything else assumes
 
-**`role` is a permission, for exactly one value.** `staff` decides access;
-`member`, `owner` and `builder` decide only what a screen shows. `is_member()`
-was narrowed rather than nine policies edited, so **a policy written in a later
-phase excludes venues by default** — write `is_member()` like all the others
-and it is already right. §34.
+**`role` is a permission, for two values now.** `staff` decides access, and
+since J1 so does `owner` — for exactly one thing: **only an owner may move a
+bill between paid and unpaid**, or change anybody's role. `manager` and
+`builder` decide only what a screen shows.
+
+`is_manager_or_above()` (called `is_member()` until CATCH_UP_019) was narrowed
+rather than nine policies edited, so **a policy written in a later phase
+excludes venues by default** — write `is_manager_or_above()` like all the
+others and it is already right. §34, §46.3.
 
 The trap it replaced: three role filters written as `role <> 'builder'`, and a
-blocklist admits every role invented after it. All three are allowlists now
-(`lib/staff.ts`). **If you add a fourth role check anywhere, write it as an
-allowlist** or it will quietly include whatever comes next.
+blocklist admits every role invented after it. They are allowlists now. **If
+you add a role check anywhere, write it as an allowlist** or it will quietly
+include whatever comes next.
+
+**And an allowlist fails the opposite way.** Renaming `member` to `manager` in
+J1 meant visiting **six** allowlists on purpose, because a tier added without
+visiting each one is a tier quietly excluded. §46.3 names all six — four in
+SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ### Four things that are easy to undo by accident
 
@@ -88,7 +98,7 @@ allowlist** or it will quietly include whatever comes next.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 757 tests
+npx vitest run       # 784 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -110,6 +120,10 @@ has the commands.
 `preview-sales`. The last three exist because those screens cannot otherwise be
 seen — one needs a real supplier, one needs a shop's unapproved entry, one
 needs a customer, products and an issued invoice.
+
+Two unit test files write pages the same way, from mocks they already had:
+`test/unit/customers.test.tsx` (a customer, shut and open, plus Receivables)
+and `test/unit/settings.test.tsx`. Same two variables, same skip.
 
 ### Deploying — and the trap that cost two rounds
 
@@ -138,7 +152,8 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 018**
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 018**.
+  **019 is written and NOT yet run** — §7 below
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -214,8 +229,8 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_018` applied.**
-757 tests under three timezones.
+**Live and in daily use. All database files through `CATCH_UP_018` applied;
+`CATCH_UP_019` is written and waiting.** 784 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -229,6 +244,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §40 | **Round F** — due dates optional, Receivables, invoices that open into their bill |
 | §41 | **Round G** — the dark band, attribution on issued invoices, and the tap delay |
 | §42 | **Round H** — the Himalaya, softer greens, the review card archived |
+| §46 | **J1** — the two bugs, and three real tiers |
 
 ### The two lessons worth more than the features
 
@@ -288,25 +304,25 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 ## 6b. What is being built next — J1 to J5
 
-**Agreed, not started.** ARCHITECTURE §44 has the design and the reasoning for
-each. Build in order: J1 is a permission model and four of the five phases ask
-a permission question, and J2 defines the document J3 renders.
+**J1 is built (§46) and its SQL is not yet run. J2–J5 are agreed, not
+started.** ARCHITECTURE §44 has the design and the reasoning for each, §46 has
+what J1 actually did. Build in order: J2 defines the document J3 renders.
 
 | | | |
 |---|---|---|
-| **J1** | Two bugs, and the tiers | Add-customer while composing; Edit made findable. Then `member` becomes `manager`, paid/unpaid locks to the owner, `set_user_role` RPC for promote/demote, builder becomes the invisible owner. §44.1–44.2 |
+| **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
 | **J2** | The document | Deli's contact block, bank details, signature line. Owner-only to edit, printed on every invoice. §44.3 |
 | **J3** | Download, Share, Print | A hand-written PDF, shared through the phone's own share sheet. **Gmail-with-attachment is not buildable as asked** — `mailto:` cannot carry a file; the share sheet does the same job. §44.4 |
 | **J4** | Export and the wipe | Full-history CSV, and an owner-only in-app wipe behind four conscious acts. §44.5 |
 | **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
-**The three things that must not be lost in J1:**
+**The three things J1 established, which the rest of the roadmap leans on:**
 
-1. **`member` becomes `manager`, and every allowlist must gain it.** §2 of this
-   file: three role filters were once blocklists and a blocklist admits
-   whatever comes next. Adding a tier means visiting each allowlist on purpose.
-2. **`set_user_role` refuses three things** — a builder row, the last owner,
-   and anything involving `staff`. §44.1 has why each one matters.
+1. **Six allowlists, all named in §46.3.** J2–J5 each ask a permission
+   question; ask it with `is_owner()` or `is_manager_or_above()` and it is
+   already right.
+2. **`set_user_role` refuses five things**, and each refusal comes back as a
+   sentence the screen shows verbatim. CATCH_UP_019 §6 has why each matters.
 3. **The builder is hidden from lists, never from attribution.** An account
    that can move money and leaves no trace makes the audit trail lie. §44.2.
 
@@ -323,7 +339,18 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**Nothing is blocking.**
+**One thing is blocking, and it is a round trip through a person.**
+
+0. **`db/CATCH_UP_019.sql` has not been run.** Send it, and say plainly that it
+   goes in **before** the deploy. It renames the role `member` to `manager`,
+   so between the SQL and the deploy Milan and Sujan will see a venue
+   account's drawer — minutes, not hours. The other order is worse: the new
+   bundle expects `manager` and would find `member`.
+
+   Afterwards, the two things the file's own §7 block cannot prove from
+   outside: sign in as Milan and confirm there is no tick on the week and no
+   **Mark paid** on an invoice, and confirm **Who can do what** is on Mani's
+   Settings and not on Milan's.
 
 1. **Done** — CATCH_UP_018 added `is_mine` to `staff_invoices` and
    `stillCorrectable` checks it (§43.1). **Still unverified behaviourally:**
@@ -429,6 +456,20 @@ package. §28.3.
   *where* — terminal, Supabase, text editor, or the app. He has asked for this
   twice; both times it was because an answer mixed all four together.
 - **Do not pad.** He manages context deliberately, which is why this file exists.
+
+### The lesson from J1
+
+**A placeholder that looks like a control is a control that does nothing.**
+The customer page printed an em dash for an empty value, in the column where a
+control belongs, and it was reported — correctly — as an edit button that did
+not work. The fix was not to move the real button; it was to make the row
+itself the control and say **Add**. §46.1.
+
+Its twin, and the third time this project has met the shape: **a change made
+for appearance can silently disable behaviour elsewhere.** Round F folded
+Details into a panel for the look of the page and left the button that edits
+it outside, and the two stopped looking related. §45 was the same thing with
+`overflow-hidden`. §39.8 was the same thing with a mocked hook.
 
 ### The pattern worth carrying
 

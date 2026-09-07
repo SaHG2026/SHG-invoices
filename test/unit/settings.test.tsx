@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, VENUE_PROFILE, makeInvoices } from '../fixtures/invoices';
 import type { Profile } from '@/lib/types';
@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   push: { support: 'off' as string },
   /* How many writes are still waiting, and whether there is signal. */
   queue: { queued: 0, online: true },
+  setRole: vi.fn(),
   resumePaused: vi.fn(),
   enablePush: vi.fn(),
   disablePush: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('@/lib/queries/session', () => ({
   useSignOut: () => ({ mutate: mocks.signOut, isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: mocks.updateNotify, isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: mocks.updateReminder, isPending: false }),
+  useSetUserRole: () => ({ mutateAsync: mocks.setRole, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
@@ -127,12 +129,17 @@ describe('who you are', () => {
     /*
      * It said "owner" for two of the four and nothing for the other two —
      * a permission leaking into a place that wanted a job title. `role`
-     * could never have carried this: Milan and Sujan are both `member`.
+     * could never have carried this: Milan and Sujan are both managers.
+     *
+     * Scoped to the identity card, because the word is legitimate elsewhere
+     * on this screen now: "Who can do what" is ABOUT the roles, and says so.
+     * The rule was never "never print the word", it is that the line under
+     * somebody's name is their job.
      */
     open();
-    expect(screen.getByText('Mani')).toBeInTheDocument();
-    expect(screen.getByText(/CEO/)).toBeInTheDocument();
-    expect(screen.queryByText(/owner/)).not.toBeInTheDocument();
+    const whoYouAre = within(screen.getByText('Mani').closest('section')!);
+    expect(whoYouAre.getByText(/CEO/)).toBeInTheDocument();
+    expect(whoYouAre.queryByText(/owner/i)).not.toBeInTheDocument();
   });
 
   it('says only the company when somebody has no title yet', () => {
@@ -489,5 +496,39 @@ describe('everybody', () => {
   it('can change their own password', () => {
     open();
     expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+   Not a test. A way to look at the screen. ARCHITECTURE 21.6.
+
+   Settings grew a list of people with a control against each name, and a
+   name plus a pill on a 375px phone is exactly the kind of thing that reads
+   correctly in an assertion and wraps badly on glass. jsdom does no layout,
+   so nothing above this line can see that (HANDOFF 6).
+ * ------------------------------------------------------------------------ */
+
+const OUT = process.env.PREVIEW_OUT ?? '';
+const CSS = process.env.PREVIEW_CSS ?? '';
+
+describe('preview', () => {
+  it.skipIf(!OUT)('snapshot', async () => {
+    const { readFileSync, writeFileSync } = await import('node:fs');
+    mocks.who = profile;
+    const view = open();
+    const html = view.container.innerHTML;
+    view.unmount();
+
+    const css = CSS ? readFileSync(CSS, 'utf8') : '';
+    writeFileSync(
+      OUT,
+      `<!doctype html><html lang="en-AU"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings preview</title>
+<style>${css}</style>
+<style>body{background:var(--page);margin:0}</style>
+</head><body>${html}</body></html>`,
+      'utf8',
+    );
   });
 });

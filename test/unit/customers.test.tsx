@@ -243,6 +243,19 @@ function openDetail(id: string) {
   );
 }
 
+/**
+ * Open the editor the way a finger has to.
+ *
+ * Two taps, not one, and the first is the point: the details panel is closed
+ * on arrival, and "Edit details" now lives INSIDE it. It used to be a pill in
+ * the header, above a panel it did not appear to belong to, which is what was
+ * reported as "can't actually edit details for customers".
+ */
+function startEditing() {
+  fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
@@ -396,7 +409,7 @@ describe('the customer page', () => {
 
   it('saves an edit', async () => {
     openDetail('c-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    startEditing();
     fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '0400 999 888' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
 
@@ -409,12 +422,40 @@ describe('the customer page', () => {
 
   it('turns a blank field into null rather than an empty string', async () => {
     openDetail('c-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    startEditing();
     fireEvent.change(screen.getByLabelText('Contact name'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save customer' }));
 
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
     expect(mocks.update.mock.calls[0]![0].contact_name).toBeNull();
+  });
+
+  /*
+   * The reported bug, as a test.
+   *
+   * *"Can't actually edit details for customers. There is a - icon, but it
+   * does nothing."* The "-" was the em dash this page printed for an empty
+   * value, and it sat exactly where a control belongs. Two facts stand over
+   * it now: the em dash is gone, and the row it stood in opens the editor.
+   */
+  it('has no dead placeholder standing where a control belongs', () => {
+    openDetail('c-2');
+    fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
+
+  it('opens the editor from an empty row', () => {
+    openDetail('c-2');
+    fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Phone/ }));
+    expect(screen.getByLabelText('Phone')).toBeInTheDocument();
+  });
+
+  it('keeps Edit inside the panel it edits', () => {
+    // The structural fact, asserted rather than assumed: with the panel shut
+    // there is no way to start editing, so the two cannot drift apart again.
+    openDetail('c-1');
+    expect(screen.queryByRole('button', { name: 'Edit details' })).not.toBeInTheDocument();
   });
 
   it('deactivates rather than deleting', async () => {

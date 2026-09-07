@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
+import type { Profile } from '@/lib/types';
 import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
@@ -13,13 +14,15 @@ import { PersonChip } from '@/components/ui/PersonChip';
 import { useToast } from '@/components/ui/Toast';
 import {
   useCurrentProfile,
+  useSetUserRole,
   useSignOut,
+  useTeam,
   useUpdateNotifyPreference,
   useUpdateReminderTime,
 } from '@/lib/queries/session';
 import { formatTime, isTimeStr } from '@/lib/date';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
-import { isStaff, STAFF_HOME } from '@/lib/staff';
+import { isOwner, isStaff, STAFF_HOME } from '@/lib/staff';
 import { PIN_LENGTH } from '@/lib/constants';
 
 /**
@@ -269,6 +272,22 @@ export function SettingsScreen() {
       )}
 
       {/*
+        Who can do what. CATCH_UP_019 §6, and owner-only.
+
+        A manager is not shown this at all rather than shown it greyed out.
+        Every button on it would come back 42501 — `set_user_role` refuses a
+        non-owner before it looks at anything else — and notes §6 is that the
+        interface should not offer what it cannot do.
+
+        The builder is not in `useTeam()` and so is not on this list, which is
+        §44.2 exactly: hidden from lists, honest about actions. He also cannot
+        be changed FROM here even if a row for him were somehow rendered — the
+        function refuses a builder row, because an owner able to demote the
+        builder can lock the builder out of the app he maintains.
+      */}
+      {isOwner(profile) ? <RoleSection me={profile} /> : null}
+
+      {/*
         Only shown to whoever maintains the app, who is the only person who can
         change a picture — the three of them are users, not editors. A row
         that opens a screen where every button is missing is worse than no row
@@ -384,5 +403,142 @@ export function SettingsScreen() {
         Build {process.env.NEXT_PUBLIC_BUILD_STAMP ?? 'dev'}
       </p>
     </AppChrome>
+  );
+}
+
+
+/**
+ * Promote and demote, the only screen that can.
+ *
+ * ---------------------------------------------------------------------------
+ * Two tiers on the list, not four.
+ *
+ * `useTeam()` is the allowlist of people who run the businesses — manager and
+ * owner — so the builder and both shop logins are absent, which is what the
+ * database refuses to change anyway. The list and the function agree by
+ * construction rather than by both remembering the same three exceptions.
+ *
+ * The last owner is the one refusal this screen states BEFORE tapping. The
+ * others are conditions on rows that are not here; this one is a condition on
+ * a row that is, and "Make manager" on the only owner is a button whose entire
+ * job is to fail.
+ * ---------------------------------------------------------------------------
+ */
+function RoleSection({ me }: { me: Profile }) {
+  const toast = useToast();
+  const { data: team = [] } = useTeam();
+  const setRole = useSetUserRole();
+  const [changing, setChanging] = useState<{ person: Profile; to: 'manager' | 'owner' } | null>(
+    null,
+  );
+
+  const owners = team.filter((person) => person.role === 'owner');
+
+  async function apply() {
+    if (!changing) return;
+    const { person, to } = changing;
+    try {
+      await setRole.mutateAsync({ id: person.id, role: to });
+      setChanging(null);
+      toast.show(
+        to === 'owner'
+          ? `${person.display_name} is now an owner.`
+          : `${person.display_name} is now a manager.`,
+      );
+    } catch (error) {
+      /*
+       * The database's own sentence, not one of ours.
+       *
+       * All five refusals in `set_user_role` are written to be read by a
+       * person -- "That is the only owner. Make somebody else the owner
+       * first." A house message here would replace five specific reasons with
+       * one vague one, and the specific reason is the whole value.
+       */
+      setChanging(null);
+      toast.show(error instanceof Error ? error.message : 'Couldn’t change that.', 'problem');
+    }
+  }
+
+  return (
+    <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+      <p className="mb-1 text-xs uppercase tracking-widest text-muted">Who can do what</p>
+      <p className="mb-3 text-sm text-muted">
+        An owner marks bills paid, records money received, and changes this list. A manager does
+        everything else — reviewing, editing, voiding, suppliers, customers and invoices.
+      </p>
+
+      <ul>
+        {team.map((person) => {
+          const owner = person.role === 'owner';
+          /* The refusal stated in advance. Demoting the only owner leaves
+             nobody who can promote anybody, and no way back except a
+             hand-written statement. */
+          const lastOwner = owner && owners.length <= 1;
+
+          return (
+            <li
+              key={person.id}
+              className="flex items-center gap-3 border-b border-hairline py-2 last:border-b-0"
+            >
+              <PersonChip profile={person} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-ink">
+                  {person.display_name}
+                  {person.id === me.id ? ' · you' : ''}
+                </span>
+                <span className="block text-xs text-muted">{owner ? 'Owner' : 'Manager'}</span>
+              </span>
+
+              {lastOwner ? (
+                <span className="shrink-0 text-xs text-muted">The only owner</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={setRole.isPending}
+                  onClick={() =>
+                    setChanging({ person, to: owner ? 'manager' : 'owner' })
+                  }
+                  className="touch shrink-0 rounded-full border border-hairline bg-card px-3 text-sm text-action disabled:opacity-40"
+                >
+                  {owner ? 'Make manager' : 'Make owner'}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      <ConfirmDialog
+        open={changing !== null}
+        title={
+          changing?.to === 'owner'
+            ? `Make ${changing.person.display_name} an owner?`
+            : `Make ${changing?.person.display_name ?? ''} a manager?`
+        }
+        points={
+          changing?.to === 'owner'
+            ? [
+                <>They will be able to mark bills paid and record money received.</>,
+                <>They will be able to change this list, including your own place on it.</>,
+              ]
+            : [
+                <>
+                  They keep everything else — reviewing, editing, voiding, suppliers,
+                  customers and invoices.
+                </>,
+                <>
+                  They stop being able to mark anything paid.
+                  {changing?.person.id === me.id
+                    ? ' That includes you, from the moment you tap this.'
+                    : ''}
+                </>,
+              ]
+        }
+        question={changing?.to === 'owner' ? 'Make them an owner?' : 'Make them a manager?'}
+        confirmLabel={changing?.to === 'owner' ? 'Make owner' : 'Make manager'}
+        onConfirm={() => void apply()}
+        onCancel={() => setChanging(null)}
+      />
+    </section>
   );
 }

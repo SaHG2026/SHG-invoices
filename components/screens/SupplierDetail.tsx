@@ -69,7 +69,7 @@ function Sparkline({ spend }: { spend: MonthSpend[] }) {
 export function SupplierDetail({ id }: { id: string }) {
   const toast = useToast();
   const today = useSydneyToday();
-  const { tickOff, undo } = useTickOff();
+  const { tickOff, undo, mayTick } = useTickOff();
   const { data: people = [] } = useProfiles();
   const { data: active = [] } = useSuppliers();
   const { data: all = [] } = useAllSuppliers();
@@ -408,16 +408,27 @@ export function SupplierDetail({ id }: { id: string }) {
             }}
           />
         ) : (
-          <dl>
-            <Fact label="Payment terms">
-              {supplier.default_terms_days !== null
-                ? `${supplier.default_terms_days} days`
-                : `Not set — using ${DEFAULT_TERMS_DAYS} days`}
-            </Fact>
-            <Fact label="Contact">{supplier.contact_name || '—'}</Fact>
-            <Fact label="Phone">{supplier.contact_phone || '—'}</Fact>
-            {supplier.notes ? <Fact label="Notes">{supplier.notes}</Fact> : null}
-          </dl>
+          /* Every row opens the editor, and an empty one says "Add" rather
+             than printing an em dash. The customer page shipped the em dash
+             and it was reported as a broken control -- this page prints the
+             same character from the same shape, so it gets the same fix
+             before somebody taps it here too. The Edit pill stays in the
+             header: this panel does not fold, so the two already read as one
+             thing (see the note above it). */
+          <div>
+            <Fact
+              label="Payment terms"
+              value={
+                supplier.default_terms_days !== null
+                  ? `${supplier.default_terms_days} days`
+                  : `Not set — using ${DEFAULT_TERMS_DAYS} days`
+              }
+              onEdit={() => setEditing(true)}
+            />
+            <Fact label="Contact" value={supplier.contact_name} onEdit={() => setEditing(true)} />
+            <Fact label="Phone" value={supplier.contact_phone} onEdit={() => setEditing(true)} />
+            <Fact label="Notes" value={supplier.notes} onEdit={() => setEditing(true)} />
+          </div>
         )}
       </section>
 
@@ -435,8 +446,8 @@ export function SupplierDetail({ id }: { id: string }) {
                 onToggle={() =>
                   setExpandedId((current) => (current === invoice.id ? null : invoice.id))
                 }
-                onMarkPaid={() => void tickOff(invoice)}
-                onUndo={() => void undo(invoice.id)}
+                onMarkPaid={mayTick ? () => void tickOff(invoice) : undefined}
+                onUndo={mayTick ? () => void undo(invoice.id) : undefined}
               />
             ))}
           </ul>
@@ -496,12 +507,35 @@ export function SupplierDetail({ id }: { id: string }) {
   );
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+/** The twin of the one in CustomerDetail, and the same reasoning. */
+function Fact({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string;
+  value: string | null;
+  onEdit: () => void;
+}) {
+  const filled = (value ?? '').trim() !== '';
+
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-2 last:border-b-0">
-      <dt className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</dt>
-      <dd className="min-w-0 text-right text-sm text-ink">{children}</dd>
-    </div>
+    <button
+      type="button"
+      onClick={onEdit}
+      /* `touch`, because this stopped being a line of text the moment it
+         became a control. Notes 4: a 36px row is a rage-inducing miss rate at
+         arm's length, and these four are the rows somebody taps when a phone
+         number has changed. */
+      className="touch flex w-full items-center justify-between gap-3 border-b border-hairline py-2 text-left last:border-b-0 active:bg-pressed"
+    >
+      <span className="shrink-0 text-xs uppercase tracking-widest text-muted">{label}</span>
+      <span
+        className={`min-w-0 break-words text-right text-sm ${filled ? 'text-ink' : 'text-action'}`}
+      >
+        {filled ? value : 'Add'}
+      </span>
+    </button>
   );
 }
 

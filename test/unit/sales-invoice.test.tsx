@@ -46,6 +46,17 @@ const PRODUCTS: Product[] = [
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  createCustomer: vi.fn(),
+  /*
+   * The customer list as a knob, because adding one has to change it.
+   *
+   * A fixed array would let the screen create a customer and then show a
+   * picker that has never heard of them -- which is not what the real screen
+   * does: `optimisticCustomer` puts the row in the cache the picker reads
+   * before the write has left the phone. Pointing this at a mutable array is
+   * how a test can stand over that.
+   */
+  customers: { current: [] as Customer[] },
   push: vi.fn(),
   detail: { current: null as unknown },
   /* Named, because "the price list was NOT touched" is an assertion. */
@@ -79,9 +90,22 @@ vi.mock('@/lib/queries/reference', () => ({
 }));
 
 vi.mock('@/lib/queries/customers', () => ({
-  useCustomers: () => ({ data: CUSTOMERS }),
-  useAllCustomers: () => ({ data: CUSTOMERS, isLoading: false, isError: false }),
-  useCreateCustomer: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCustomers: () => ({ data: mocks.customers.current }),
+  useAllCustomers: () => ({ data: mocks.customers.current, isLoading: false, isError: false }),
+  useCreateCustomer: () => ({
+    mutate: mocks.createCustomer,
+    mutateAsync: mocks.createCustomer,
+    isPending: false,
+  }),
+  optimisticCustomer: (id: string, name: string) => ({
+    id,
+    name,
+    contact_name: null,
+    contact_phone: null,
+    contact_email: null,
+    notes: null,
+    active: true,
+  }),
   useUpdateCustomer: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -184,6 +208,23 @@ beforeEach(() => {
   mocks.create.mockResolvedValue({ id: 'si-1', invoice_number: 'DDL-0001' });
   mocks.detail.current = null;
   mocks.today.current = FIXTURE_TODAY;
+  mocks.customers.current = [...CUSTOMERS];
+  /* What the real mutation does: the row is in the list before the write
+     lands, so the picker can point at it. */
+  mocks.createCustomer.mockImplementation(async ({ id, name }: { id: string; name: string }) => {
+    mocks.customers.current = [
+      ...mocks.customers.current,
+      {
+        id,
+        name,
+        contact_name: null,
+        contact_phone: null,
+        contact_email: null,
+        notes: null,
+        active: true,
+      },
+    ];
+  });
 });
 
 describe('the first render, before the date arrives', () => {
@@ -226,6 +267,83 @@ describe('the first render, before the date arrives', () => {
   it('fills it in once it arrives', () => {
     compose();
     expect((screen.getByLabelText('Invoice date') as HTMLInputElement).value).toBe(FIXTURE_TODAY);
+  });
+});
+
+describe('adding a customer without leaving the invoice', () => {
+  /*
+   * ==========================================================================
+   * Reported, and mine: *"no way to add a customer while composing"*.
+   *
+   * The old flat sheet has an inline field. This screen never got one, so a
+   * new customer standing at the counter meant abandoning a half-built
+   * invoice, going to Customers, and starting the lines again. Which is not a
+   * missing feature so much as a dead end put in the middle of the one flow
+   * this screen exists for.
+   * ==========================================================================
+   */
+  it('offers it even when there are customers already', () => {
+    // Not only on an empty list, which is the flat sheet's rule and the wrong
+    // one here: the case reported had a customer list and needed one more.
+    compose();
+    expect(screen.getByRole('button', { name: '+ Add a new customer' })).toBeInTheDocument();
+  });
+
+  it('creates one and points the picker at it', async () => {
+    compose();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a new customer' }));
+    fireEvent.change(screen.getByLabelText('New customer name'), {
+      target: { value: 'Bourke St Bakery' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    await waitFor(() => expect(mocks.createCustomer).toHaveBeenCalled());
+    const created = mocks.createCustomer.mock.calls[0]![0];
+    expect(created.name).toBe('Bourke St Bakery');
+
+    // The whole point: you carry on from here, already pointed at them.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Customer') as HTMLSelectElement).value).toBe(created.id),
+    );
+  });
+
+  it('saves the invoice against the customer it just made', async () => {
+    compose();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a new customer' }));
+    fireEvent.change(screen.getByLabelText('New customer name'), {
+      target: { value: 'Bourke St Bakery' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+    await waitFor(() => expect(mocks.createCustomer).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'One more Momo (pork)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save & print' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0].customer_id).toBe(
+      mocks.createCustomer.mock.calls[0]![0].id,
+    );
+  });
+
+  it('generates the id on the client, so a replayed write is the same customer', async () => {
+    // Notes §1.5. Offline, this write is resumed from a cold start by key; an
+    // id decided by the database would make the second attempt a second row.
+    compose();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a new customer' }));
+    fireEvent.change(screen.getByLabelText('New customer name'), {
+      target: { value: 'Bourke St Bakery' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    await waitFor(() => expect(mocks.createCustomer).toHaveBeenCalled());
+    expect(mocks.createCustomer.mock.calls[0]![0].id).toEqual(expect.any(String));
+  });
+
+  it('will not send a blank name', () => {
+    compose();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a new customer' }));
+    fireEvent.change(screen.getByLabelText('New customer name'), { target: { value: '   ' } });
+    expect(screen.getByRole('button', { name: '+ Add' })).toBeDisabled();
   });
 });
 

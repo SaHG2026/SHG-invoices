@@ -325,6 +325,19 @@ without upsert: generate the id on the client, use a plain insert, and treat a
    any user of this app. The only fix is Next 15 → 16, a major version. Worth
    doing deliberately, on its own, never bundled with other work. §43.2.
 
+### The clean slate
+
+`db/RESET_TO_CLEAN_SLATE.sql` is the file that emptied the app before it went
+into real use. It deletes every invoice, sales invoice, note, activity row and
+both counters, plus suppliers, customers and products; it keeps the six
+logins, the four businesses, push subscriptions and uploaded artwork. One
+transaction, so there is no half-wiped state.
+
+**The trap it documents, if it is ever run again:** a phone can be holding
+work that has not been sent. That queue does not know the wipe happened, and
+will send after it. Every phone has to be online with an empty queue — the
+number beside the wifi symbol — before the file runs.
+
 ### Archived, not abandoned
 
 **The review card on the home screen** (§42.4). Removed at his request because

@@ -239,6 +239,13 @@ both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
 
+**A change made for appearance can silently disable behaviour elsewhere.**
+`overflow-hidden`, added to the header to contain the mountain ridge, clipped
+the activity panel that hangs below it — the bell was dead for a whole round
+while the panel rendered perfectly every time. **jsdom does no layout, so no
+rendering test can see this class of bug.** Assert the structural fact, and
+measure the real thing with `getBoundingClientRect`. §45.
+
 **"It doesn't feel smooth" is usually not the animations.** Two of the four
 causes in §41.5 were not animation at all — a missing `touch-action:
 manipulation` putting every tap ~300ms behind the finger, and Chrome's grey
@@ -291,7 +298,7 @@ a permission question, and J2 defines the document J3 renders.
 | **J2** | The document | Deli's contact block, bank details, signature line. Owner-only to edit, printed on every invoice. §44.3 |
 | **J3** | Download, Share, Print | A hand-written PDF, shared through the phone's own share sheet. **Gmail-with-attachment is not buildable as asked** — `mailto:` cannot carry a file; the share sheet does the same job. §44.4 |
 | **J4** | Export and the wipe | Full-history CSV, and an owner-only in-app wipe behind four conscious acts. §44.5 |
-| **J5** | Discounts and refunds | Append-only adjustment rows, every total derived. Reopens a decision §28.3 closed. Last, because it moves every figure. §44.6 |
+| **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
 **The three things that must not be lost in J1:**
 
@@ -302,6 +309,10 @@ a permission question, and J2 defines the document J3 renders.
    and anything involving `staff`. §44.1 has why each one matters.
 3. **The builder is hidden from lists, never from attribution.** An account
    that can move money and leaves no trace makes the audit trail lie. §44.2.
+
+**Settled since the roadmap was written:** the signature line is a ruled line
+on the paper, nothing stored. The PDF is written by hand rather than imported.
+Discounts are Deli-only and manager-level.
 
 **Not being built, and why:** creating and deleting logins. Supabase does that
 only through the Auth Admin API, which needs the service-role key — rule 1, the

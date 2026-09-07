@@ -120,7 +120,18 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         utility classes — `text-ink` on this ground is 1.3:1.
       */}
       <header
-        className="no-print sticky top-0 z-30 relative overflow-hidden"
+        /*
+         * NO `overflow-hidden` here, and it is not an oversight.
+         *
+         * Round H put it on to contain the ridge SVG, and it clipped the
+         * activity panel — which is `absolute top-14`, i.e. deliberately
+         * BELOW this 56px bar. The bell went dead: the panel rendered
+         * correctly every time and was cut off at the header's own edge.
+         *
+         * The SVG never needed it. An outer <svg> clips to its own viewBox by
+         * default, so the ridge cannot escape this element on its own.
+         */
+        className="no-print sticky top-0 z-30 relative"
         style={{
           backgroundColor: 'var(--hero)',
           backgroundImage: 'linear-gradient(160deg, var(--hero) 0%, var(--hero-deep) 100%)',

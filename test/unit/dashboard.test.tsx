@@ -447,3 +447,37 @@ describe('the review card is off the home screen — Round H', () => {
     expect(screen.getByRole('link', { name: /Review/ })).toBeInTheDocument();
   });
 });
+
+
+describe('the header must not clip what hangs beneath it', () => {
+  /*
+   * ==========================================================================
+   * The bell went dead for a whole round, and nothing caught it.
+   *
+   * The activity panel is `absolute top-14` — deliberately BELOW the 56px
+   * bar. Round H added `overflow-hidden` to the header to contain the
+   * mountain ridge, which clipped the panel to the header's own height. The
+   * panel rendered perfectly, every time, and was invisible. Reported as
+   * "tapping bell icon doesnt show anything".
+   *
+   * jsdom does no layout, so no rendering assertion can see this — a test
+   * that opens the panel and queries for its text passes either way. What CAN
+   * be asserted is the structural fact that caused it: this header hosts an
+   * absolutely positioned child that extends past its own box, so it may
+   * never clip its overflow.
+   *
+   * The SVG never needed it. An outer <svg> clips to its own viewBox.
+   * ==========================================================================
+   */
+  it('does not hide its overflow', () => {
+    open();
+    const header = document.querySelector('header')!;
+    expect(header.className).not.toContain('overflow-hidden');
+  });
+
+  it('still opens the activity panel when the bell is tapped', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: /^Activity/ }));
+    expect(screen.getByText('Recent activity')).toBeInTheDocument();
+  });
+});

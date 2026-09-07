@@ -4202,8 +4202,10 @@ Three additions, all owner-only to edit, all printed:
 
 - **Deli's own contact block** — what a customer needs to reach them.
 - **Bank details** — *"For direct pay, use our account details..."*
-- **A signature line** — read as a ruled line on paper (*Received by /
-  Signature / Date*), not a digital signature. Confirm before building.
+- **A signature line** — **confirmed**: a ruled line on the paper
+  (*Received by / Signature / Date*). Not a digital signature, nothing
+  stored, nothing to verify. It exists so the person taking the delivery can
+  put a pen on it.
 
 These are settings about a business rather than about an invoice, so they live
 in one owner-writable place keyed by business, not on `sales_invoices`. An
@@ -4233,7 +4235,8 @@ So the document gets three controls:
 | **Print** | unchanged — `window.print()`, AirPrint or Save as PDF |
 
 **Making the PDF.** `window.print()` never gives the app the file, so a PDF has
-to be generated to be shared. Decided: **write it, do not import it.**
+to be generated to be shared. **Decided with the client: write it, do not
+import it.**
 
 A one-page invoice is text, rules and a table — a constrained enough document
 that a PDF writer for exactly it is a few hundred lines, and PDF is a text
@@ -4305,7 +4308,62 @@ Last, because it changes every figure in the app and should be built once the
 permission model underneath it has stopped moving. Whether a manager may apply
 a discount is a J1 question with a J5 consequence.
 
-**Open before building:** whether adjustments apply to the payables side, the
-Deli receivables side, or both. They are different tables and different
-screens; doing both at once doubles a phase that is already the largest.
+**Settled with the client: Deli's customers only.** *"Discounts, only for
+Deli's Customers (because refund or can offer discount)."* So this is the
+receivables side — `sales_invoices` — and the payables side is untouched. That
+halves the phase and it is also the honest boundary: a discount you OFFER is a
+commercial decision that is yours to make, where a discount a supplier gives
+you arrives on their docket and is already in the amount you were billed.
+
+**Access: manager level.** Milan and Sujan may apply one. This is deliberately
+NOT owner-only, unlike marking paid — and the distinction is worth keeping
+straight. Marking paid records that money has moved. A discount changes what
+is owed, on Deli's own invoice, before anybody has paid anything. The first is
+a statement about the bank; the second is a commercial decision the people
+running the shop are there to make.
+
+One consequence to build for: this is the first thing a manager may do that
+changes a figure the owner watches. Adjustments carry who and why, and both
+appear on the invoice — an unexplained $40 is exactly the disagreement
+`amount_cents` was refused to avoid.
+
+
+---
+
+## 45. The bell that rendered perfectly and could not be seen
+
+Reported between rounds: *"tapping bell icon doesnt show anything."*
+
+The activity panel is `absolute ... top-14` — deliberately hanging BELOW the
+56px header bar. Round H put `overflow-hidden` on that header to contain the
+mountain ridge (§42.1), and it clipped the panel to the header's own height.
+
+**The panel was rendering correctly, in full, every single time.** It was cut
+off at a boundary two pixels above where it began. Nothing threw, nothing
+logged, and the feature had been dead since the Himalaya shipped.
+
+`overflow-hidden` was never needed. **An outer `<svg>` clips to its own viewBox
+by default**, so the ridge could not escape that element on its own — the
+property was added out of caution and cost a feature. Measured after removing
+it: header 56px, SVG bottom 56px, nothing escaping, no horizontal scroll.
+
+### What could have caught it, and what could not
+
+Not a rendering test. **jsdom does no layout**, so a test that opens the panel
+and queries for its text passes whether or not the panel is visible on a
+phone — which is precisely why the existing tests were green throughout.
+
+Two things now stand over it:
+
+1. A test asserting the **structural** fact rather than the visual one: this
+   header hosts an absolutely positioned child that extends past its own box,
+   so it may never clip its overflow. That is checkable in jsdom.
+2. `getBoundingClientRect` in a real browser, which is what §5 of the handoff
+   has said to do since Round B and what actually confirmed the fix.
+
+**The general lesson, third time this project has met it:** a change made for
+appearance can silently disable behaviour somewhere else, and neither the
+appearance work nor the behaviour's own tests will notice. §39.8 was a screen
+that threw before painting; this is a panel that painted where nobody could
+see it. Both were invisible to a green suite.
 

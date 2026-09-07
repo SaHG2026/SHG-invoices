@@ -304,6 +304,23 @@ export function formatDayShort(d: DateStr): string {
 }
 
 /**
+ * '11 Sep 2026' — a date inside a sentence, rather than in a labelled field.
+ *
+ * The sibling of `formatDayWithYear`, minus the weekday, and it exists because
+ * prose and a field want different shapes: "Due — Sat 11 Sep 2026" reads well
+ * on a document, and "your Sat 11 Sep 2026 delivery" does not. The weekday is
+ * useful when somebody is planning a week and noise when they are reading a
+ * sentence.
+ *
+ * Here rather than composed at the call site, because rule 2 is that dates are
+ * formatted in this file and nowhere else — a second place that knows how to
+ * assemble one is how the two start disagreeing.
+ */
+export function formatDayInSentence(d: DateStr): string {
+  return `${formatDayShort(d)} ${d.slice(0, 4)}`;
+}
+
+/**
  * '11 Sep, 8:30am' — a `timestamptz` rendered in Sydney.
  *
  * Used for the activity stream, where the time of day is meaningful. Never

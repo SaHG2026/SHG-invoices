@@ -54,11 +54,21 @@ export type ShareOutcome = 'shared' | 'dismissed' | 'unavailable' | 'failed';
  * every time somebody backs out would train them to distrust the one that
  * means it.
  */
-export async function shareFile(file: File, title: string): Promise<ShareOutcome> {
+export async function shareFile(
+  file: File,
+  title: string,
+  text?: string,
+): Promise<ShareOutcome> {
   if (!canShareFile(file)) return 'unavailable';
 
   try {
-    await navigator.share({ files: [file], title });
+    /*
+     * `text` is what Gmail puts in the body and `title` what it puts in the
+     * subject. Every app treats them a little differently -- some messaging
+     * apps drop `title` entirely -- so the message in `text` is written to
+     * stand on its own rather than to complete a subject line.
+     */
+    await navigator.share({ files: [file], title, ...(text ? { text } : {}) });
     return 'shared';
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') return 'dismissed';

@@ -3,9 +3,11 @@ import { encodeWinAnsi, textWidth, wrapText } from '@/lib/pdf/text';
 import { buildPdf, Page, PAGE_WIDTH } from '@/lib/pdf/writer';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
 import { readJpeg } from '@/lib/pdf/jpeg';
+import { invoiceShareMessage, invoiceShareTitle } from '@/lib/pdf/message';
 import { BASELINE_JPEG, GREYSCALE_JPEG, PROGRESSIVE_JPEG } from '../fixtures/jpeg';
 import { BUSINESSES } from '../fixtures/invoices';
 import { formatCents } from '@/lib/money';
+import { formatDayInSentence } from '@/lib/date';
 import type { SalesInvoice, SalesInvoiceLine } from '@/lib/types';
 
 /**
@@ -513,31 +515,72 @@ describe('the logo', () => {
     expect(render().text).not.toContain('/XObject');
   });
 
-  it('draws it square, without stretching a brand out of shape', () => {
+  it('draws it as tall as the name and address beside it', () => {
     /*
-     * A logo squashed to the wrong aspect ratio is worse than no logo: it is
-     * somebody's brand, printed wrong, on a document they hand to a customer.
-     * The `cm` operator carries width and height, so this reads them back.
+     * *"Can we resize the logo to be bigger? Same height as the title name and
+     * its address."*
+     *
+     * So the size is not a constant -- it is measured from the block it stands
+     * next to, and a four-line address gets a taller mark than a two-line one.
+     * That is what "same height as" means when the thing being matched varies,
+     * and it is why this test renders two different addresses rather than
+     * checking one number.
+     *
+     * The `cm` operator carries width and height, so both come back from it.
+     */
+    const heightOf = (contact: string | null) => {
+      const text = render({
+        logo: BASELINE_JPEG,
+        business: { ...DELI, contact_block: contact },
+      }).text;
+      const cm = /q\n([\d.]+) 0 0 ([\d.]+) [\d.]+ [\d.]+ cm/.exec(text)!;
+      return { width: Number(cm[1]), height: Number(cm[2]) };
+    };
+
+    /* Deli's own: three lines of address. 13pt of cap height plus 3 x 11. */
+    const three = heightOf(DELI.contact_block);
+    expect(three.height).toBeCloseTo(13 + 3 * 11, 1);
+
+    const one = heightOf('12 Marsden St');
+    expect(one.height).toBeLessThan(three.height);
+
+    /* Aspect ratio survives all of it. A logo squashed to fit a box is
+       somebody's brand printed wrong on a document they hand over. */
+    for (const drawn of [three, one]) {
+      expect(drawn.width / drawn.height).toBeCloseTo(120 / 90, 3);
+    }
+  });
+
+  it('keeps a mark from becoming a postage stamp or a billboard', () => {
+    // A business with no address at all would otherwise get a 13pt mark, and
+    // one with a ten-line address a mark taller than the table under it.
+    const sizeFor = (contact: string | null) => {
+      const text = render({
+        logo: BASELINE_JPEG,
+        business: { ...DELI, contact_block: contact },
+      }).text;
+      return Number(/q\n[\d.]+ 0 0 ([\d.]+) [\d.]+ [\d.]+ cm/.exec(text)![1]);
+    };
+
+    expect(sizeFor(null)).toBeGreaterThanOrEqual(28);
+    expect(sizeFor(Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n'))).toBeLessThanOrEqual(96);
+  });
+
+  it('lines the top of the mark up with the top of the letters', () => {
+    /*
+     * The bug the first render had, kept as a test: `image()` takes the TOP
+     * edge and subtracts the height itself, and the call site added the height
+     * as well -- so the mark sat a whole logo below the name. Every assertion
+     * passed; a viewer showed it instantly.
+     *
+     * PDF y is measured up from the bottom of the page.
      */
     const { text } = render({ logo: BASELINE_JPEG });
-    const cm = /q\n([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/.exec(text)!;
-    const width = Number(cm[1]);
-    const height = Number(cm[2]);
+    const cm = /q\n[\d.]+ 0 0 ([\d.]+) [\d.]+ ([\d.]+) cm/.exec(text)!;
+    const top = Number(cm[2]) + Number(cm[1]);
 
-    expect(width / height).toBeCloseTo(120 / 90, 3);
-    expect(Math.max(width, height)).toBeCloseTo(34, 1);
-
-    /*
-     * And its TOP edge, which the first render got wrong: `image()` takes the
-     * top and subtracts the height itself, so adding the height at the call
-     * site put the mark a whole logo below the name. Visible instantly in a
-     * viewer, invisible to every assertion until this one.
-     *
-     * PDF y is measured up from the bottom, so the top of a 34pt mark whose
-     * top edge is 46pt down the page is 841.89 - 46 = 795.89.
-     */
-    const bottom = Number(cm[4]);
-    expect(bottom + height).toBeCloseTo(841.89 - 46, 1);
+    // The name's baseline is 59pt down the page and its caps rise 13pt above.
+    expect(top).toBeCloseTo(841.89 - (59 - 13), 1);
   });
 
   it('moves the name across to make room, and back when there is none', () => {
@@ -571,6 +614,83 @@ describe('what the file is called', () => {
     // An invoice created offline has no number until it sends (CATCH_UP_015
     // §3), which is a real state rather than a defensive branch.
     expect(invoiceFileName({ ...INVOICE, invoice_number: null })).toBe('invoice-si-1.pdf');
+  });
+});
+
+describe('the message that travels with the file', () => {
+  /*
+   * ==========================================================================
+   * Asked for: *"need to add auto generate message to attach: Dear customer,
+   * please find the invoice for your ______ delivery."*
+   *
+   * `navigator.share({ files, title, text })` carries it -- Gmail puts `text`
+   * in the body and `title` in the subject -- so this is a field on a call the
+   * app was already making rather than a feature of its own, and it is a pure
+   * function of the invoice with no state anywhere near it.
+   *
+   * It is a STARTING POINT, not a send. Gmail opens with it in the body and a
+   * cursor in it. Nothing in this app sends anything.
+   * ==========================================================================
+   */
+  const message = (over: Partial<SalesInvoice> = {}, business = DELI) =>
+    invoiceShareMessage({ invoice: { ...INVOICE, ...over }, business });
+
+  it('fills the blank with the invoice date', () => {
+    /*
+     * The blank was left blank on purpose and the client chose the date. It is
+     * the one field that is always there, cannot be wrong, and is what a
+     * customer matches against their own paperwork -- where a month would read
+     * better for a regular customer and be wrong the moment there are two
+     * deliveries in one.
+     */
+    expect(message()).toContain('Please find the invoice for your 5 Sep 2026 delivery.');
+  });
+
+  it('opens the way he wrote it', () => {
+    expect(message().startsWith('Dear customer,')).toBe(true);
+  });
+
+  it('says who it is from and what it is for, so it can be filed unopened', () => {
+    // An email saying only "please find the invoice" is one nobody can file
+    // without opening the attachment.
+    const text = message();
+    expect(text).toContain('Deli Delights');
+    expect(text).toContain('Invoice DDL-0001');
+    expect(text).toContain(formatCents(INVOICE.amount_cents));
+  });
+
+  it('leaves no hole where an invoice number would be', () => {
+    /*
+     * An invoice created offline has no number until it sends (CATCH_UP_015
+     * §3), and "Invoice  — $88.49" with a gap in it reads as broken. The parts
+     * are assembled rather than templated, so the line is simply shorter.
+     */
+    const text = message({ invoice_number: null });
+    expect(text).not.toContain('Invoice  ');
+    expect(text).not.toMatch(/Invoice\s+—/);
+    expect(text).toContain(formatCents(INVOICE.amount_cents));
+  });
+
+  it('survives a business the app cannot name', () => {
+    const text = message({}, null as unknown as typeof DELI);
+    expect(text).toContain('Dear customer,');
+    expect(text).not.toContain('undefined');
+    expect(text).not.toContain('null');
+  });
+
+  it('formats the date through lib/date.ts, without the weekday', () => {
+    /*
+     * Rule 2: dates are formatted in `lib/date.ts` and nowhere else. But in
+     * prose the weekday is noise -- "your Sat 5 Sep 2026 delivery" -- so this
+     * uses `formatDayInSentence`, the sibling of the document's formatter,
+     * which lives in the same file for the same reason.
+     */
+    expect(message()).toContain(formatDayInSentence(INVOICE.invoice_date));
+  });
+
+  it('titles it with the number, for apps that show a subject', () => {
+    expect(invoiceShareTitle(INVOICE)).toBe('Invoice DDL-0001');
+    expect(invoiceShareTitle({ ...INVOICE, invoice_number: null })).toBe('Invoice');
   });
 });
 

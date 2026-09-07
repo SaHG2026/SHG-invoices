@@ -14,6 +14,7 @@ import { formatDayWithYear } from '@/lib/date';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
 import { canShareFile, downloadFile, shareFile } from '@/lib/pdf/share';
 import { fetchLogoBytes } from '@/lib/pdf/logo';
+import { invoiceShareMessage, invoiceShareTitle } from '@/lib/pdf/message';
 
 /**
  * The document. What gets printed and handed over.
@@ -139,7 +140,10 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
     try {
       const outcome = await shareFile(
         await build(),
-        `Invoice ${invoice.invoice_number ?? ''}`.trim(),
+        invoiceShareTitle(invoice),
+        /* The note that travels with the file. Gmail opens with this in the
+           body and a cursor in it -- a starting point, not a send. §48.6. */
+        invoiceShareMessage({ invoice, business: business ?? null }),
       );
       /* Backing out of a share sheet is an ordinary thing to do and gets no
          message at all. Saying "couldn't share" every time somebody changed
@@ -206,11 +210,34 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
         </button>
       </div>
 
-      <p className="no-print mb-4 text-xs text-muted">
+      <p className="no-print mb-3 text-xs text-muted">
         {canShare
           ? 'Share hands the file to another app — pick Gmail and it opens with the invoice attached.'
           : 'Print opens your phone’s or laptop’s own dialog — AirPrint, or Save as PDF to send it.'}
       </p>
+
+      {/*
+        What will be in the message, shown before it goes.
+
+        Only where Share exists, because it is the only thing that carries it.
+        And shown at all because a message written by the app and sent under
+        Deli's name is one they should have read once -- it opens in Gmail with
+        a cursor in it, so it is a starting point rather than a send, but
+        finding that out in the share sheet is finding out too late.
+      */}
+      {canShare ? (
+        <details className="no-print mb-4 rounded-sm border border-edge bg-card px-3 py-2">
+          <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">
+            The message
+          </summary>
+          <p className="mt-2 whitespace-pre-line text-sm text-ink">
+            {invoiceShareMessage({ invoice, business: business ?? null })}
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            You can change it in Gmail before you send.
+          </p>
+        </details>
+      ) : null}
 
       {/* Everything below is the document. `print-sheet` is what survives. */}
       <article className="print-sheet rounded-sm border border-edge bg-card p-5">

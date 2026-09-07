@@ -789,6 +789,32 @@ describe('the printed document', () => {
     expect(shared.files).toHaveLength(1);
     expect(shared.files[0].name).toBe('DDL-0001.pdf');
     expect(shared.files[0].type).toBe('application/pdf');
+
+    /* The message goes with it. Gmail puts `text` in the body. §48.6. */
+    expect(shared.text).toContain('Dear customer,');
+    expect(shared.text).toContain('delivery.');
+  });
+
+  it('shows the message before it goes, rather than after', () => {
+    /*
+     * A message written by the app and sent under Deli's name is one they
+     * should have read once. It opens in Gmail with a cursor in it, so it is a
+     * starting point rather than a send -- but finding that out in the share
+     * sheet is finding out too late.
+     *
+     * Only where Share exists, because nothing else carries it.
+     */
+    Object.defineProperty(window.navigator, 'share', { value: vi.fn(), configurable: true });
+    Object.defineProperty(window.navigator, 'canShare', { value: () => true, configurable: true });
+
+    document_();
+    expect(screen.getByText(/Dear customer,/)).toBeInTheDocument();
+    expect(screen.getByText(/change it in Gmail/)).toBeInTheDocument();
+  });
+
+  it('does not show a message on a browser that cannot send one', () => {
+    document_();
+    expect(screen.queryByText(/Dear customer,/)).not.toBeInTheDocument();
   });
 
   it('says nothing at all when somebody backs out of the share sheet', async () => {

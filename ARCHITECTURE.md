@@ -4773,7 +4773,7 @@ measured at `rgb(0, 0, 0)`, 0.8px, 114px wide, on white.
 The invoice becomes a file. §44.4.
 
 **No database change** — the first phase of the roadmap that needs none, so
-this one is a deploy on its own with nothing to run first. 847 tests, up from
+this one is a deploy on its own with nothing to run first. 858 tests, up from
 797.
 
 ---
@@ -5036,6 +5036,23 @@ The one thing that had to be checked by hand, because it would fail silently:
 would be refused by `readJpeg` and the logo would quietly vanish. Verified in
 the browser against the real file.
 
+#### As tall as the name and the address
+
+*"Can we resize the logo to be bigger? Same height as the title name and its
+address."*
+
+So it is not a size at all — it is **measured from the block it stands next
+to**. The name's cap height plus however many lines of address sit under it,
+which for Deli is 13 + 3 x 11 = 46 points, up from the 34 it shipped at. A
+business with a four-line address gets a taller mark; that is what "same
+height as" means when the thing being matched varies, and it is why the test
+renders two different addresses rather than asserting one number.
+
+Scaled by **height**, with the width following from the aspect ratio, because
+height is what was asked to match. Bounded at both ends — a business with no
+address at all would otherwise get a 13pt postage stamp, and one with a
+ten-line address a mark taller than the table under it.
+
 #### And on the screen
 
 *"Obviously the logo will be in front of the name and address."* On the screen
@@ -5051,3 +5068,57 @@ picture will one day go.
 *top* edge and subtracts the height itself; the call site added the height as
 well, so the mark rendered a whole logo below the name. Every assertion
 passed. A viewer showed it immediately. There is now a test on the top edge.
+
+---
+
+### 48.6 The message that goes with the file
+
+> *"Need to add auto generate message to attach: Dear customer, please find the
+> invoice for your ______ delivery."*
+
+`navigator.share({ files, title, text })` already carried two of the three.
+Gmail puts `text` in the body and `title` in the subject, so this is **a field
+on a call the app was already making** rather than a feature of its own —
+which is why `lib/pdf/message.ts` is two pure functions of an invoice with no
+state anywhere near them.
+
+**It is a starting point, not a send.** Gmail opens with it in the body and a
+cursor in it. Nothing in this app sends anything, and there is no mail account
+within reach of it.
+
+#### The blank
+
+It was left blank on purpose and the client chose **the invoice date**. It is
+the one field that is always present, cannot be wrong, and is what a customer
+matches against their own paperwork. A month reads better for a regular
+customer and is wrong the moment there are two deliveries in one — and the app
+does not know what was *delivered*, only what was charged, so the goods were
+never available to put there.
+
+#### A date in prose is not a date in a field
+
+`formatDayWithYear` gives "Sat 5 Sep 2026", which reads well under a **DUE**
+heading and badly inside a sentence: *"your Sat 5 Sep 2026 delivery"*. The
+weekday is useful when somebody is planning a week and noise when they are
+reading a sentence.
+
+So `formatDayInSentence` was added **to `lib/date.ts`**, beside its sibling,
+rather than composed at the call site. Rule 2 is that dates are formatted in
+that file and nowhere else, and a second place that knows how to assemble one
+is how the two start disagreeing.
+
+#### It is shown before it is sent
+
+The message appears on the screen, in a fold, above the document — but only
+where Share exists, because nothing else carries it.
+
+A message written by the app and sent under Deli's name is one they should
+have read at least once. It can be edited in Gmail, and the fold says so; but
+discovering what it says *in the share sheet* is discovering it too late.
+
+The last two lines carry the business name, the invoice number and the total,
+so the message stands alone if it is filed or forwarded — an email saying only
+"please find the invoice" is one nobody can file without opening the
+attachment. An unnumbered invoice (created offline, CATCH_UP_015 §3) drops
+that half of the line rather than printing `Invoice  — $88.49` with a hole in
+it: the parts are assembled, not templated.

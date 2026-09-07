@@ -45,6 +45,8 @@ const PAGE_FLOOR = 700;
 const PAGE_BOTTOM = PAGE_HEIGHT - MARGIN;
 
 const GREY = 0.42;
+/** The address, under the name. Matched by the screen's `text-xs`. */
+const CONTACT_SIZE = 8.5;
 
 export interface InvoicePdfInput {
   invoice: SalesInvoice;
@@ -67,8 +69,24 @@ export interface InvoicePdfInput {
   logo?: Uint8Array | null;
 }
 
-/** How big the mark is on the page, in points. Square-ish, like the screen. */
-const LOGO_SIZE = 34;
+/**
+ * How tall the mark is: the height of the name and the address beside it.
+ *
+ * Asked for: *"can we resize the logo to be bigger? same height as the title
+ * name and its address."* So it is not a fixed size at all -- it is measured
+ * from the block it stands next to, and a business with a four-line address
+ * gets a taller mark than one with a two-line address, which is what "same
+ * height as" means when the thing being matched varies.
+ *
+ * `NAME_CAP` is how far the 18pt name rises above its own baseline; `y` in
+ * this file is baselines, and the top of the mark has to line up with the top
+ * of the letters rather than with the line they sit on.
+ */
+const NAME_CAP = 13;
+const CONTACT_LINE = 11;
+/** Nothing with no address gets a postage stamp; nothing gets a billboard. */
+const LOGO_MIN = 28;
+const LOGO_MAX = 96;
 
 /** What a saved file should be called. `DDL-0001.pdf`, or the id if unnumbered. */
 export function invoiceFileName(invoice: SalesInvoice): string {
@@ -111,6 +129,11 @@ export function renderInvoicePdf({
    * through a canvas. Deli's is a JPEG, so the bytes go straight in as a
    * DCTDecode stream and none of that is needed.
    */
+  /* Counted before anything is drawn, because the mark's size depends on it. */
+  const contactLines = (business?.contact_block ?? '')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+
   const jpeg = logo ? readJpeg(logo) : null;
   let image: PdfImage | undefined;
   let textLeft = MARGIN;
@@ -118,18 +141,21 @@ export function renderInvoicePdf({
   if (jpeg && logo) {
     image = { bytes: logo, width: jpeg.width, height: jpeg.height, components: jpeg.components };
 
-    /* Fitted inside a square rather than stretched to fill it. A logo squashed
-       to the wrong aspect ratio is worse than no logo -- it is somebody's
-       brand, printed wrong, on a document they hand over. */
-    const scale = LOGO_SIZE / Math.max(jpeg.width, jpeg.height);
-    const drawWidth = jpeg.width * scale;
-    const drawHeight = jpeg.height * scale;
+    /* The name's cap height plus however many lines of address sit under it. */
+    const blockHeight = NAME_CAP + contactLines.length * CONTACT_LINE;
+    const drawHeight = Math.min(Math.max(blockHeight, LOGO_MIN), LOGO_MAX);
+
+    /* Scaled by HEIGHT and not fitted into a square, because the height is what
+       was asked to match. The width follows from the aspect ratio -- a logo
+       squashed to fit a box is somebody's brand printed wrong on a document
+       they hand over. */
+    const drawWidth = (jpeg.width / jpeg.height) * drawHeight;
 
     /* `y` is the TOP edge, points down from the top of the page -- `image()`
        subtracts the height itself. Adding it here put the mark a whole logo
        below where it belonged, which is what the first render showed. */
-    page.image('Logo', MARGIN, y - 13, drawWidth, drawHeight);
-    textLeft = MARGIN + LOGO_SIZE + 12;
+    page.image('Logo', MARGIN, y - NAME_CAP, drawWidth, drawHeight);
+    textLeft = MARGIN + drawWidth + 14;
   }
 
   page.text(business?.name ?? 'Invoice', textLeft, y, { font: 'Helvetica-Bold', size: 18 });
@@ -146,15 +172,22 @@ export function renderInvoicePdf({
    * by two mechanisms, which is the drift the header note is about. It is
    * kept honest by both reading the same string and neither reformatting it.
    */
-  for (const line of (business?.contact_block ?? '').split('\n')) {
-    if (line.trim() === '') continue;
-    page.text(line, textLeft, y, { size: 8.5, grey: GREY });
-    y += 11;
+  for (const line of contactLines) {
+    page.text(line, textLeft, y, { size: CONTACT_SIZE, grey: GREY });
+    y += CONTACT_LINE;
   }
 
-  /* Never overlap the mark, even where the contact block is short or absent.
-     The logo is 34pt and the name's baseline is 13pt into it. */
-  y = Math.max(y, image ? MARGIN + 14 + LOGO_SIZE : y);
+  /*
+   * Never run the next block into the mark.
+   *
+   * The two are the same height by construction now, so this only bites where
+   * the address is short enough that `LOGO_MIN` made the logo taller than the
+   * text beside it.
+   */
+  if (image) {
+    const markBottom = MARGIN + 14 - NAME_CAP + LOGO_MIN;
+    y = Math.max(y, markBottom);
+  }
 
   y += 22;
 

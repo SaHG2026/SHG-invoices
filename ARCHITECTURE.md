@@ -4081,3 +4081,231 @@ anybody what was actually looked at.
   `is_mine`, and PostgREST answers 42703 for a column that is not there, which
   would break the shop screen.
 
+
+---
+
+## 44. The roadmap — J1 to J5
+
+Agreed after Mani used the app for a week. **Nothing below is built yet.** This
+section is the design and the reasoning; each phase gets its own section as it
+lands.
+
+The ordering is not preference. J1 is a permission model and four of the five
+phases ask a permission question, so building anything else first means
+building it twice. J2 defines what is on the document and J3 renders that
+document as a PDF — the other way round is the same work twice again.
+
+---
+
+### 44.1 J1 — the two bugs, and the tiers
+
+**The bugs, both reported, both mine.**
+
+*No way to add a customer while composing an invoice.* The old flat sheet has
+an inline "Or add one now"; `ComposeSalesInvoice` never got one. Straight
+oversight.
+
+*"Can't actually edit details for customers. There is a - icon, but it does
+nothing."* That "-" is an em dash — the placeholder in `Fact` for an empty
+value. The real control is the **Edit details** pill at the top of the page.
+Round F collapsed Details into a panel and left the button that edits it
+OUTSIDE the panel, so the two stopped looking related. **A placeholder that
+looks like a control is a control that does nothing.** Fix: Edit moves inside
+the panel, and an empty row is itself tappable.
+
+**The tiers.** Today `is_member()` is `role in ('member','owner','builder')` —
+owner and member are identical for every permission in the database. The
+client wants three real tiers:
+
+| tier | who | may |
+|---|---|---|
+| **owner** | Mani | everything, and alone may mark paid/unpaid, change roles, edit bank details, wipe |
+| **manager** | Milan, Sujan | review, edit and void invoices; add and remove suppliers and customers; issue Deli invoices. **May SEE paid status; may not change it** |
+| **staff** | GMH, GMP | unchanged — enter invoices for their own venue |
+| **builder** | Rabindra | owner powers, invisible. §44.2 |
+
+`member` becomes `manager`. Renaming rather than adding a fifth value, because
+two names for one tier is the shape problem this project keeps meeting.
+
+**HANDOFF §2 is the trap here.** Three role filters were once written as
+`role <> 'builder'`, and a blocklist admits every role invented after it. They
+are allowlists now, and `manager` must be added to each one deliberately.
+`is_member()` is rewritten as `is_manager_or_above()` — the same allowlist, one
+value wider — and `is_owner()` is new.
+
+**Paid/unpaid locks to the owner.** `mark_invoices_paid`,
+`unmark_invoice_paid`, `mark_sales_received` and `unmark_sales_received` gain
+an `is_owner()` check inside the function, and the buttons disappear for a
+manager. The database refuses it either way: notes §6 says do not offer what
+cannot be done, and the RPC is what makes the refusal real.
+
+*Flagged to the client, and accepted by him:* this makes one person the
+bottleneck for every payment tick. If Mani is away, a manager can watch bills
+go overdue and not act.
+
+**Promote and demote.** Nobody can currently change a role from the app, and
+not by oversight: `revoke update on profiles from authenticated` followed by
+`grant update (notify_on_new_invoice, reminder_time)` means those two columns
+are the only ones a signed-in person may write. `role` and `active` are
+unreachable from the client by construction.
+
+So promotion goes through a SECURITY DEFINER RPC — `set_user_role` — the same
+pattern the payment buttons already use, rather than widening the column grant.
+A grant is coarse and permanent; a function can check who is asking.
+
+Three refusals belong inside it:
+
+1. **Not a builder row.** Otherwise the owner can lock the builder out of the
+   app the builder maintains. §44.2.
+2. **Not the last owner.** Demoting yourself when you are the only owner
+   leaves nobody who can promote anybody.
+3. **Not a staff row, and not into `staff`.** A venue account's role is tied
+   to `business_id` and `staff_venue()`; moving one through this screen would
+   produce a member with a venue or a shop with none.
+
+**Creating and deleting logins is NOT in this phase, and the reason is rule 1.**
+Supabase creates accounts only through the Auth Admin API, which needs the
+service-role key. That key is the one thing this whole architecture is built to
+not have (§1) — its presence is what makes `auth.uid()` null and silently
+destroys attribution. Deactivating covers the real need: an inactive profile
+fails `is_manager_or_above()` and sees nothing. The client agreed: six accounts
+in the app's lifetime is an occasional event, not a workflow.
+
+---
+
+### 44.2 J1 — the shadow account
+
+> *"our account is rabindra ... it will be a shadow account not within mani's
+> bounds. its my app, I want to have control ... it wont be visible to any"*
+
+`builder` already exists and is already outside every list and both
+notification audiences (§8.1, `lib/staff.ts`). J1 makes it owner-equivalent:
+`is_owner()` returns true for `role in ('owner','builder')`.
+
+What "invisible" means precisely, because the difference matters:
+
+- **Hidden** from the team list, the promote/demote screen, every person
+  picker, and both notification audiences.
+- **NOT hidden** from attribution. If that account marks an invoice paid, the
+  row still says who did it.
+
+That second line is deliberate and was put to the client. An account that can
+change money and leaves no trace makes the audit trail lie, and the audit trail
+is the thing the four of them are trusting. Hidden from lists, honest about
+actions. In practice the account exists to maintain the app, not to work in it.
+
+---
+
+### 44.3 J2 — the document
+
+Three additions, all owner-only to edit, all printed:
+
+- **Deli's own contact block** — what a customer needs to reach them.
+- **Bank details** — *"For direct pay, use our account details..."*
+- **A signature line** — read as a ruled line on paper (*Received by /
+  Signature / Date*), not a digital signature. Confirm before building.
+
+These are settings about a business rather than about an invoice, so they live
+in one owner-writable place keyed by business, not on `sales_invoices`. An
+invoice already issued keeps rendering from the row it has, so changing the
+bank details tomorrow does not rewrite what was handed over yesterday — the
+same copied-not-linked rule as a product price (CATCH_UP_015 §2).
+
+---
+
+### 44.4 J3 — Download, Share, Print
+
+**What cannot be built, stated first.** The client asked for a Mail button that
+opens Gmail with the invoice attached. **A web page cannot attach a file to a
+mail client.** `mailto:` carries a subject and a body and nothing else — this
+is the format, not a browser limitation, and no library changes it.
+
+What does exactly what he described is the **Web Share API**:
+`navigator.share({ files: [pdf] })` hands the file to Android, he picks Gmail,
+and Gmail opens with the attachment already on it. Same three taps.
+
+So the document gets three controls:
+
+| | |
+|---|---|
+| **Download** | always present. His stated main goal, and the fallback everywhere Share is missing — desktop browsers, older iOS |
+| **Share** | only when `navigator.canShare({files})` says yes. Never a dead button |
+| **Print** | unchanged — `window.print()`, AirPrint or Save as PDF |
+
+**Making the PDF.** `window.print()` never gives the app the file, so a PDF has
+to be generated to be shared. Decided: **write it, do not import it.**
+
+A one-page invoice is text, rules and a table — a constrained enough document
+that a PDF writer for exactly it is a few hundred lines, and PDF is a text
+format. Against ~350KB of library on every phone on shop wifi, plus a
+supply-chain dependency in a project that has just removed three. Rule 7 rules
+out libraries that restructure the app; a PDF encoder is a leaf that takes data
+and returns bytes, so this is a judgement rather than the rule — and the
+judgement is that this document is stable enough to own.
+
+**The logo is the one complication.** Uploaded artwork is PNG in a storage
+bucket, and embedding PNG means implementing zlib. Re-encoding to JPEG through
+a canvas at share time avoids that entirely. If it proves awkward, v1 ships the
+wordmark without the logo rather than shipping late.
+
+---
+
+### 44.5 J4 — export, and the wipe
+
+**CSV export** of the full history. The list screens paginate at 50
+(`HISTORY_PAGE_SIZE`), so this needs its own unpaginated read rather than
+reusing a screen's array — the one place in this app where a second query is
+correct, because the question is genuinely different.
+
+**The wipe, from inside the app, owner only.** Round I's
+`RESET_TO_CLEAN_SLATE.sql` was a file run deliberately in another tool, and
+that friction was doing real work. The client was told so, and answered with a
+better design than the objection:
+
+1. Confirm.
+2. Type **"Wipe everything"**.
+3. Offered the full CSV first — take it or decline it.
+4. Then wipe.
+
+Accepted. Four conscious acts cannot be butter fingers. It is a SECURITY
+DEFINER RPC gated on `is_owner()`, deleting exactly what the SQL file deletes.
+
+**Rule 5 says nothing is ever deleted, and this is its one exception.** Named
+here so it stays an exception rather than becoming a precedent.
+
+Two warnings the flow must carry:
+
+- It cannot reach **other phones' unsent work**. Anything queued on another
+  device arrives after the wipe. Everyone must be online with an empty queue.
+- It clears the local queue and cache on the device that runs it, so the person
+  who wipes is not the person who re-creates a row.
+
+---
+
+### 44.6 J5 — discounts and refunds
+
+> *"Custom payment (applied discount, refunded amount etc)"*
+
+**This was deliberately closed once** (§28.3): part payments are carried by a
+note and a moved due date, and `amount_received_cents` was refused as "the
+first plank of an accounts package". The client has reopened it, and he is
+right that a discount is a real thing that happens.
+
+The stable shape is **adjustments as their own append-only rows** — what, how
+much, why, who, when — with every total derived. Not an edit to
+`amount_cents`:
+
+- Rule 5. An overwritten amount destroys what the invoice originally said, and
+  the original is what the supplier's copy says.
+- Rule 4. Totals stay derived from an array rather than from a column somebody
+  has to remember to keep in step.
+- It answers "why is this bill $40 less than the docket" — a column cannot.
+
+Last, because it changes every figure in the app and should be built once the
+permission model underneath it has stopped moving. Whether a manager may apply
+a discount is a J1 question with a J5 consequence.
+
+**Open before building:** whether adjustments apply to the payables side, the
+Deli receivables side, or both. They are different tables and different
+screens; doing both at once doubles a phase that is already the largest.
+

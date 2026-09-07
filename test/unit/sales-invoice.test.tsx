@@ -943,12 +943,28 @@ describe('the printed document', () => {
     expect(sheet.getAllByText('Signature').length).toBeGreaterThan(0);
   });
 
-  it('leaves somewhere to put a pen', () => {
+  it('leaves one line to put a pen on, beside the payment block', () => {
+    /*
+     * *"Only one signature line is plenty, parallel to the payment option."*
+     * The screen and the PDF have to agree about this or they have started to
+     * drift, which is the thing §48.1 is holding at bay -- so both are
+     * asserted, here and in pdf.test.ts.
+     */
     document_();
     const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
-    for (const label of ['Received by', 'Signature', 'Date']) {
-      expect(sheet.getAllByText(label).length).toBeGreaterThan(0);
-    }
+    expect(sheet.getByText('Signature')).toBeInTheDocument();
+    expect(sheet.queryByText('Received by')).not.toBeInTheDocument();
+
+    // One row, not two stacked sections.
+    const signature = sheet.getByText('Signature').closest('section');
+    expect(within(signature as HTMLElement).getByText('Payment')).toBeInTheDocument();
+  });
+
+  it('does not repeat the customer’s own details back at them', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    expect(sheet.getByText('Harris Farm Markets')).toBeInTheDocument();
+    expect(sheet.queryByText('jo@example.com')).not.toBeInTheDocument();
   });
 
   it('marks the ruled blocks so the print stylesheet can keep their lines', () => {
@@ -961,7 +977,8 @@ describe('the printed document', () => {
      */
     document_();
     const sheet = window.document.querySelector('.print-sheet') as HTMLElement;
-    expect(sheet.querySelectorAll('.print-rule').length).toBe(2);
+    // One block now, not two: payment and the signature line share a row.
+    expect(sheet.querySelectorAll('.print-rule').length).toBe(1);
   });
 
   it('reads the details live, so a reprint is never out of date', () => {

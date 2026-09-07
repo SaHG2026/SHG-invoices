@@ -250,16 +250,17 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
         <div className="mb-6 grid grid-cols-2 gap-4">
           <div>
             <p className="text-xs uppercase tracking-widest text-muted">To</p>
+            {/*
+              The name, and nothing else about them. Asked for: *"probably
+              receiver details not needed."*
+
+              A customer's phone number is on this document for OUR benefit,
+              and the customer is the one holding it -- they know how to reach
+              themselves. Three lines of the page spent telling somebody what
+              they already know. It is still on the customer page, where it is
+              looked up.
+            */}
             <p className="text-sm text-ink">{customer?.name ?? '—'}</p>
-            {customer?.contact_name ? (
-              <p className="text-sm text-muted">{customer.contact_name}</p>
-            ) : null}
-            {customer?.contact_phone ? (
-              <p className="text-sm text-muted">{customer.contact_phone}</p>
-            ) : null}
-            {customer?.contact_email ? (
-              <p className="text-sm text-muted">{customer.contact_email}</p>
-            ) : null}
           </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-widest text-muted">Date</p>
@@ -354,55 +355,46 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
           <p className="mt-4 border-t border-hairline pt-3 text-sm text-muted">{invoice.note}</p>
         ) : null}
 
-        {/*
-          How to pay. *"For direct pay, use our account details..."*
+        {/* ------------------------------------------------------------ *
+          How to pay, and somewhere to sign. One row, low on the page.
 
-          Read live from the business row rather than frozen onto the invoice
-          at issue, and that is the one decision in J2 worth knowing about: a
-          price is a term that was agreed, but a bank account is a routing
-          instruction. This app reprints an invoice at any time, and a frozen
-          block would hand somebody an unpaid invoice naming an account that
-          has since closed. §47.1, and CATCH_UP_020 has the argument in full.
-        */}
-        {business?.bank_details ? (
-          <section className="print-rule mt-6 border-t border-hairline pt-3">
-            <p className="text-xs uppercase tracking-widest text-muted">Payment</p>
-            <p className="mt-1 whitespace-pre-line text-sm text-ink">{business.bank_details}</p>
-          </section>
-        ) : null}
+          Asked for: *"only one signature line is plenty, parallel to the
+          payment option on the left side of the page. maybe place that row
+          just a little bit below. kinda saving the space."*
 
-        {/*
-          Somewhere to put a pen. Confirmed with the client as exactly this and
-          nothing more: three ruled lines on the paper for the person taking
-          the delivery. Not a digital signature, nothing stored, nothing to
-          verify -- so there is no column behind this and no state.
+          Three ruled lines were a delivery docket's habit rather than an
+          invoice's -- Received by, Signature and Date is what a driver hands
+          over goods against -- and it spent a third of the page asking for
+          one thing.
 
-          It is on the screen as well as the paper, because this page prints
-          ITSELF (notes §1.3): a block that existed only inside `@media print`
-          is a block nobody can look at before handing it over.
-        */}
-        <section className="print-rule mt-8 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
-          <Rule label="Received by" />
-          <Rule label="Signature" />
-          <Rule label="Date" />
+          The payment block reads LIVE from the business row rather than
+          frozen onto the invoice, which is §47.1: a price is a term that was
+          agreed, but a bank account is a routing instruction, and a reprinted
+          unpaid invoice must not name an account that has closed.
+
+          `items-end` is what makes it one row: the signature line sits level
+          with the FOOT of the bank details, not its head, so the two read
+          together rather than as two things that happen to start at once.
+         * ------------------------------------------------------------ */}
+        <section className="print-rule mt-10 grid grid-cols-2 items-end gap-4 border-t border-hairline pt-4">
+          <div>
+            {business?.bank_details ? (
+              <>
+                <p className="text-xs uppercase tracking-widest text-muted">Payment</p>
+                <p className="mt-1 whitespace-pre-line text-sm text-ink">
+                  {business.bank_details}
+                </p>
+              </>
+            ) : null}
+          </div>
+
+          <div>
+            <div className="h-8 border-b border-ink" />
+            <p className="mt-1 text-xs uppercase tracking-widest text-muted">Signature</p>
+          </div>
         </section>
+
       </article>
     </AppChrome>
-  );
-}
-
-/**
- * One ruled line with a word under it.
- *
- * The line is a bottom border on an empty box with a fixed height, rather than
- * an underscore run: underscores are a font's idea of a line and come out a
- * different length in every face, which on three side by side is visible.
- */
-function Rule({ label }: { label: string }) {
-  return (
-    <div>
-      <div className="h-8 border-b border-ink" />
-      <p className="mt-1 text-xs uppercase tracking-widest text-muted">{label}</p>
-    </div>
   );
 }

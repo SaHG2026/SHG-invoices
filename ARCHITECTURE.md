@@ -4773,7 +4773,7 @@ measured at `rgb(0, 0, 0)`, 0.8px, 114px wide, on white.
 The invoice becomes a file. §44.4.
 
 **No database change** — the first phase of the roadmap that needs none, so
-this one is a deploy on its own with nothing to run first. 831 tests, up from
+this one is a deploy on its own with nothing to run first. 838 tests, up from
 797.
 
 ---
@@ -4922,7 +4922,46 @@ things were found that no assertion had:
 
 ---
 
-### 48.4 The logo, deferred on purpose
+### 48.4 Four changes after he looked at it
+
+He opened the generated PDFs and came back with four things. All four are the
+same instinct — the page was spending space on things nobody reads — and all
+four were right.
+
+**The receiver's contact details are gone.** *"Probably receiver details not
+needed."* The customer's phone number and email were on the document for OUR
+benefit, and the customer is the one holding it: they know how to reach
+themselves. Three lines telling somebody what they already know. The name
+stays, because an invoice that does not say who it is for is not an invoice
+and the name is what they match against their own records. The details are
+still on the customer page, which is where they are looked up.
+
+**One signature line, not three.** *"Only one signature line is plenty."*
+Received by / Signature / Date is a **delivery docket's** habit — what a
+driver hands goods over against — and it spent a third of the page asking for
+one thing.
+
+**It sits beside the payment block, not under it.** *"Parallel to the payment
+option on the left side of the page."* The rule is level with the **foot** of
+the bank details rather than their head, which is what makes the two read as
+one row instead of two things that happen to start together. That distinction
+is also why the test compares the signature RULE to the last line of the
+payment block, rather than comparing the two labels — the labels are ~60pt
+apart by construction, and a test on those would have failed the design while
+it was working.
+
+**And the row moved down.** *"Maybe place that row just a little bit below.
+Kinda saving the space."*
+
+All four went into **both renderings in the same commit**, which is the whole
+discipline of §48.1: the PDF and the screen are two renderings of one
+document, and a change made to one of them is how they start to drift. Both
+have tests, and the screen's test asserts the two blocks share a `<section>`
+rather than merely both existing.
+
+---
+
+### 48.5 The logo, deferred on purpose
 
 §44.4 anticipated this: uploaded artwork is PNG in a storage bucket, embedding
 PNG means implementing zlib, and re-encoding to JPEG through a canvas avoids
@@ -4932,5 +4971,22 @@ than shipping late."*
 **It ships without.** The PDF puts the business name in bold where the mark
 sits on screen. Deli has no artwork uploaded, so today there is nothing to
 embed and the wordmark is what the screen shows too — `BusinessMark` already
-falls back to letters. When artwork exists, the canvas route is the way in and
-nothing here blocks it.
+falls back to letters.
+
+He expects it there: *"obviously the logo will be in front of the name and
+address."* **On the screen it already is** — the mark sits to the left of the
+name with the contact block under it, aligned to the top, so the day Deli's
+artwork is uploaded on the Brand screen it appears with no code change. That
+was already true and stays true.
+
+**In the PDF it is not**, and that is the honest state of it. The work is
+real: fetch the PNG, draw it to a canvas, export JPEG, embed it as an image
+XObject with `DCTDecode` — which takes raw JPEG bytes and is the reason the
+canvas step exists at all, since embedding PNG would mean implementing zlib.
+
+What is missing is something to build it against. **There is no artwork in the
+bucket**, so every part of that pipeline would be written blind and the canvas
+re-encode cannot be exercised in jsdom, which has no canvas. Building it
+against a real file is one short session; building it against nothing is how
+you ship a feature that works on a fixture and not on a phone (§39.8, again).
+So it waits on a logo, deliberately, and not on anything technical.

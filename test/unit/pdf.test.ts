@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeWinAnsi, textWidth, wrapText } from '@/lib/pdf/text';
-import { buildPdf, Page } from '@/lib/pdf/writer';
+import { buildPdf, Page, PAGE_WIDTH } from '@/lib/pdf/writer';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
 import { BUSINESSES } from '../fixtures/invoices';
 import { formatCents } from '@/lib/money';
@@ -231,6 +231,15 @@ describe('wrapping a description that does not fit its column', () => {
 });
 
 describe('the invoice on the page', () => {
+  it('names the customer without repeating their own phone number back at them', () => {
+    // *"Probably receiver details not needed."* They are holding the document;
+    // they know how to reach themselves. Still on the customer page.
+    const { text } = render();
+    expect(text).toContain('Harris Farm Markets');
+    expect(text).not.toContain('jo@example.com');
+    expect(text).not.toContain('02 9000 0000');
+  });
+
   it('carries the number, the customer, both dates and every line', () => {
     const { text } = render();
     for (const expected of [
@@ -284,9 +293,86 @@ describe('the invoice on the page', () => {
     expect(text).toContain(formatCents(INVOICE.amount_cents));
   });
 
-  it('leaves somewhere to put a pen', () => {
+  it('leaves one line to put a pen on, and only one', () => {
+    /*
+     * *"Only one signature line is plenty."* Three was a delivery docket's
+     * habit -- Received by / Signature / Date is what a driver hands goods
+     * over against -- and it spent a third of the page asking for one thing.
+     */
     const { text } = render();
-    for (const label of ['RECEIVED BY', 'SIGNATURE', 'DATE']) expect(text).toContain(label);
+    expect(text).toContain('SIGNATURE');
+    expect(text).not.toContain('RECEIVED BY');
+    expect([...text.matchAll(/\(SIGNATURE\)/g)]).toHaveLength(1);
+  });
+
+  it('sets the signature beside the payment block, not under it', () => {
+    /*
+     * *"Parallel to the payment option on the left side of the page."*
+     *
+     * Two facts, and the second is the one worth pinning. The signature must
+     * start in the right half of the page -- that is "beside". And the RULE
+     * has to sit level with the FOOT of the bank details rather than with
+     * their heading, which is what makes the two read as one row instead of
+     * two things that happen to start together.
+     *
+     * Comparing the two LABELS would fail this design while it was working:
+     * the signature's label is below its line, so it is ~60pt under the
+     * PAYMENT heading by construction.
+     *
+     * PDF's origin is the bottom left, so a larger y is higher up the page.
+     */
+    const { text } = render();
+
+    const signature = /1 0 0 1 ([\d.]+) ([\d.]+) Tm\n\(SIGNATURE\)/.exec(text)!;
+    const signatureX = Number(signature[1]);
+    expect(signatureX).toBeGreaterThan(PAGE_WIDTH / 2);
+
+    // The lowest thing drawn in the left column: the last line of bank details.
+    const leftColumn = [...text.matchAll(/1 0 0 1 45\.00 ([\d.]+) Tm/g)].map((m) =>
+      Number(m[1]),
+    );
+    const payFoot = Math.min(...leftColumn);
+
+    // The rule drawn in the right half of the page is the signature line.
+    const signatureRule = [...text.matchAll(/([\d.]+) ([\d.]+) m\n([\d.]+) ([\d.]+) l/g)]
+      .map((m) => ({ x: Number(m[1]), y: Number(m[2]) }))
+      .filter((rule) => rule.x > PAGE_WIDTH / 2);
+
+    expect(signatureRule).toHaveLength(1);
+    expect(Math.abs(signatureRule[0]!.y - payFoot)).toBeLessThan(22);
+  });
+
+  it('leaves no heading behind for a business that has set neither', () => {
+    // The state three of the four businesses are in, and the state the app
+    // shipped in for Deli's bank details. CATCH_UP_017's rule.
+    const { text } = render({ business: BUSINESSES[0]! });
+    expect(text).not.toContain('PAYMENT');
+    expect(text).not.toContain('12 Marsden St');
+    expect(text).toContain('DDL-0001');
+  });
+
+  it('prints no DUE heading when there is no due date', () => {
+    const { text } = render({ invoice: { ...INVOICE, due_date: null } });
+    expect(text).not.toContain('(DUE)');
+    expect(text).toContain('(DATE)');
+  });
+
+  it('says so rather than printing an empty table with no lines', () => {
+    const { text } = render({ lines: [] });
+    expect(text).toContain('Recorded without a breakdown');
+    expect(text).toContain(formatCents(INVOICE.amount_cents));
+  });
+
+  it('leaves one line to put a pen on, and only one', () => {
+    /*
+     * *"Only one signature line is plenty."* Three was a delivery docket's
+     * habit -- Received by / Signature / Date is what a driver hands goods
+     * over against -- and it spent a third of the page asking for one thing.
+     */
+    const { text } = render();
+    expect(text).toContain('SIGNATURE');
+    expect(text).not.toContain('RECEIVED BY');
+    expect([...text.matchAll(/\(SIGNATURE\)/g)]).toHaveLength(1);
   });
 
   it('starts a second page rather than losing rows off the bottom', () => {
@@ -336,7 +422,7 @@ describe('the invoice on the page', () => {
     for (const [index, stream] of streams.entries()) {
       const last = index === streams.length - 1;
       expect(stream.includes('(TOTAL)')).toBe(last);
-      expect(stream.includes('RECEIVED BY')).toBe(last);
+      expect(stream.includes('(SIGNATURE)')).toBe(last);
       // Headings repeat on every page, which is the other half of the fix.
       expect(stream.includes('(DESCRIPTION)')).toBe(true);
     }

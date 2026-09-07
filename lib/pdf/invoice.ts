@@ -105,11 +105,19 @@ export function renderInvoicePdf({
   page.text(customer?.name ?? '', MARGIN, y, { size: 10 });
   y += 12;
 
-  for (const detail of [customer?.contact_name, customer?.contact_phone, customer?.contact_email]) {
-    if (!detail) continue;
-    page.text(detail, MARGIN, y, { size: 8.5, grey: GREY });
-    y += 11;
-  }
+  /*
+   * The name, and nothing else about them. Asked for directly: *"probably
+   * receiver details not needed."*
+   *
+   * He is right, and the reason is worth keeping: a customer's phone number is
+   * on this document for OUR benefit, and the customer is the one holding it.
+   * They know how to reach themselves. It was three lines of the page spent
+   * telling somebody what they already know -- and it is still on the customer
+   * page, where it is looked up.
+   *
+   * The name stays. An invoice that does not say who it is for is not an
+   * invoice, and it is what a customer matches against their own records.
+   */
 
   let rightY = toTop;
   page.textRight('DATE', RIGHT, rightY, { size: 7.5, grey: GREY });
@@ -211,38 +219,46 @@ export function renderInvoicePdf({
     y += 6;
   }
 
-  // ---- How to pay --------------------------------------------------------
+  /* ---------------------------------------------------------------- *
+     How to pay, and somewhere to sign. One row.
+
+     Asked for: *"only one signature line is plenty, parallel to the payment
+     option on the left side of the page. maybe place that row just a little
+     bit below. kinda saving the space."*
+
+     Three ruled lines were a delivery docket's habit, not an invoice's --
+     Received by, Signature and Date is what you print when a driver hands
+     over goods, and it took a third of the page to ask for one thing. One
+     line, beside the payment block rather than under it, gives the two
+     halves of "what happens next" a row of their own.
+   * ---------------------------------------------------------------- */
+  const footTop = Math.max(y + 24, PAGE_FLOOR + 45);
+  const halfway = MARGIN + (RIGHT - MARGIN) / 2 + 10;
+
+  page.rule(MARGIN, RIGHT, footTop - 16, { width: 0.4, grey: 0.8 });
+
+  /* Left: how to pay. Absent when nothing is set, with no heading left
+     behind -- which is the state the app is live in (§47.2). */
+  let payY = footTop;
   if (business?.bank_details) {
-    page.rule(MARGIN, RIGHT, y, { width: 0.4, grey: 0.8 });
-    y += 16;
-    page.text('PAYMENT', MARGIN, y, { size: 7.5, grey: GREY });
-    y += 13;
+    page.text('PAYMENT', MARGIN, payY, { size: 7.5, grey: GREY });
+    payY += 13;
     for (const line of business.bank_details.split('\n')) {
       if (line.trim() === '') continue;
-      page.text(line, MARGIN, y, { size: 9.5 });
-      y += 12;
+      page.text(line, MARGIN, payY, { size: 9.5 });
+      payY += 12;
     }
-    y += 8;
   }
 
-  // ---- Somewhere to put a pen -------------------------------------------
   /*
-   * Pinned to the bottom of the last page rather than following the content.
-   *
-   * On the screen it sits under whatever came before, because a web page is as
-   * long as it needs to be. Paper is not: a signature block that floated up to
-   * the middle of a short invoice looks like the document was cut off, and one
-   * that followed a long invoice would be the reason a second page exists.
+   * Right: one line to sign on, sitting level with the FOOT of the payment
+   * block rather than its head, so the two read as one row rather than as two
+   * things that happen to start together. With no bank details set there is
+   * nothing on the left, and it falls back to a sensible depth of its own.
    */
-  const signTop = Math.max(y + 20, PAGE_FLOOR + 40);
-  const gap = 16;
-  const columnWidth = (RIGHT - MARGIN - gap * 2) / 3;
-
-  for (const [index, label] of ['RECEIVED BY', 'SIGNATURE', 'DATE'].entries()) {
-    const left = MARGIN + index * (columnWidth + gap);
-    page.rule(left, left + columnWidth, signTop, { width: 0.6 });
-    page.text(label, left, signTop + 11, { size: 7.5, grey: GREY });
-  }
+  const signBaseline = Math.max(payY + 4, footTop + 34);
+  page.rule(halfway, RIGHT, signBaseline, { width: 0.6 });
+  page.text('SIGNATURE', halfway, signBaseline + 11, { size: 7.5, grey: GREY });
 
   return buildPdf(pages, `Invoice ${invoice.invoice_number ?? ''}`.trim());
 }

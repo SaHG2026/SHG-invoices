@@ -100,7 +100,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 831 tests
+npx vitest run       # 838 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -244,7 +244,7 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_020` applied.**
-831 tests under three timezones.
+838 tests under three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 

@@ -208,9 +208,16 @@ Not preferences. Each one is load-bearing and several were paid for.
 
 ## 5. Things that will waste your time
 
-**Bash heredocs break here.** Writing a `.tsx`, `.sql` or `.md` file with
-`cat <<'EOF'` fails on apostrophes, `$$` and em dashes. Use the Write tool for
-anything non-trivial; Python `pathlib` for surgical edits to existing files.
+**Bash heredocs break here, and backslashes are the worst of it.** Writing a
+`.tsx`, `.sql` or `.md` file with `cat <<'EOF'` fails on apostrophes, `$$` and
+em dashes — and a `python - <<'PY'` heredoc silently collapses `\\n` to a real
+newline, which turns `'a\\nb'` in the patch into a string literal broken across
+two lines. It looks like the patch worked and `tsc` reports an unterminated
+string. **That happened five times in one session.**
+
+Use the **Write tool** for anything non-trivial. For surgical edits to existing
+files, write the Python to a file in the scratchpad and run it — never inline
+in a heredoc if it contains a backslash.
 
 **Browser-pane screenshots render stale frames.** They show blank or
 half-painted pages while the DOM is perfectly correct. Do not debug from them —
@@ -243,8 +250,9 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_020` applied.**
-858 tests under three timezones.
+**Live and in daily use. All database files through `CATCH_UP_020` applied.
+J1, J2 and J3 are built, pushed and deployed — `69ba38d`.** 858 tests under
+three timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -289,6 +297,20 @@ animation starts before touching a keyframe.**
 all of them; `verify_catchups.mjs` covered 5 of 18 migrations and could not
 see a column at all. Both had been green for months. **When you add a table or
 a column, add it to the verifier in the same commit.** §43.2.
+
+**Read the size of an instruction, not just its direction.** *"Maybe place
+that row just a little bit below"* produced a block pinned to the bottom of
+the page, and the bank details ended up most of a page under the total. **"A
+little bit below" is a gap; what got built was an anchor.** A gap is 30
+points. An anchor is however much white the invoice happens to leave, which on
+a short invoice is most of the page. When an instruction carries a magnitude,
+the magnitude is part of it. §48.4.
+
+**Ask the store what is in it before designing around what you assume.**
+§44.4 spent a paragraph on how to avoid implementing zlib, because it assumed
+uploaded artwork is PNG. One `curl` at the bucket showed Deli's logo is a
+baseline JPEG — which a PDF embeds untouched, no canvas and no zlib. The
+planned complication did not exist. §48.5.
 
 **A default is a claim.** A due date filled in because the field wanted one
 prints a deadline nobody agreed to, and drives every overdue figure off it.
@@ -355,59 +377,109 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**Nothing is blocking.** Every database file through `CATCH_UP_020` is
-applied and confirmed by `verify_catchups.mjs`. **J3 needed no SQL at all**, so
-it deploys on its own with nothing to run first — the only phase so far where
-that is true.
+**Nothing is blocking.** Every database file through `CATCH_UP_020` is applied
+and confirmed by `verify_catchups.mjs`. J1–J3 are deployed.
 
-0. **Two things about J3 that only a real phone can answer**, because the
-   builder's machine cannot: does the Share button appear on the client's
-   Android, and does picking Gmail actually attach the PDF. Everything up to
-   `navigator.share()` is tested; what the phone does with the file after
-   that is the phone's business. If Share never appears, the browser is
-   answering `canShare({ files })` false and Download is the path.
+The list is in the order it is worth picking things up, not in the order they
+arrived.
 
-1. **Done** — CATCH_UP_018 added `is_mine` to `staff_invoices` and
-   `stillCorrectable` checks it (§43.1). **Still unverified behaviourally:**
-   `verify_staff.mjs` needs `STAFF_EMAIL`/`STAFF_PASSWORD` in `.env.local` and
-   they are not on the builder's machine. Run it, or run the query at the
-   bottom of `db/CATCH_UP_018.sql` signed in as a shop.
+### Waiting on the client, not on code
 
-2. **The app feels a touch slower on a phone.** Reported long ago, never
-   diagnosed, and the client was going to watch which pattern it follows. The
-   database is fast (~45ms warm), so this is round trips. §34.12 has the three
-   things to localise.
+1. **Check the build id in Settings reads `69ba38d`.** Not done, and it is the
+   one check that has caught a silently-stale deploy before. The `Aliased`
+   line was confirmed by `vercel inspect` rather than by the CLI summary, and
+   the served bundle could not be checked from the builder's machine because
+   every route but `/login` redirects when signed out — so the stamp is the
+   only independent confirmation and it needs somebody signed in.
 
-3. **Recovery within 7 days of a deletion.** Asked for. Nothing in the app
-   deletes anything, so losing an account loses no data — but there is **no
-   backup at all**, which was accepted at handover (§33.1) on the reasoning
-   that this is a reminder layer over records kept elsewhere. A 7-day undo is
-   Supabase point-in-time recovery, a paid add-on. Needs the plan checked and a
-   decision.
+2. **Does Share appear on his Android, and does Gmail attach the PDF?**
+   Everything up to `navigator.share()` is tested; what the phone does with
+   the file afterwards is the phone's business. If Share never appears, the
+   browser is answering `canShare({ files })` false and Download is the path.
+   Also worth his eyes: the auto-generated message (§48.6) goes out under
+   Deli's name, and he has not yet read one in Gmail.
 
-4. **Push has now been proven to reach a phone, once.** The daily reminder
-   arrived. But only the builder's device is subscribed: Mani, Milan and Sujan
-   have never turned the switch on, because §28.4 decided the app never asks.
-   Somebody has to tell them it is in Settings. Until then, every notification
-   in this app goes nowhere.
+3. **Push reaches nobody but the builder.** Proven to work, once. Mani, Milan
+   and Sujan have never turned the switch on, because §28.4 decided the app
+   never asks — so somebody has to tell them it is in Settings. **Until then
+   every notification in this app goes nowhere**, including the daily reminder
+   and the payment notice.
 
-5. **Export by date range** — *"from this date to this date export in excel or
-   csv etc."* Still the "after a month of real use" item. Half of it exists as
-   the supplier date range (§35.4), and what a range answers on screen is worth
-   having before deciding what a file should contain. §33.2 has the one
-   question to ask first: what happens to the file when it arrives.
+4. **Deli's bank details are not set**, by choice — *"I don't have it."* The
+   document handles it (§47.2, no heading where there is nothing) and the
+   preview harness renders that exact state. Nothing to do unless he gets them.
 
-6. **Done** — `/receivables` is the global list of what Deli is owed (§40.3).
-   Left here as the shape of the answer: it was held until chasing money
-   across customers became the actual job, and then it was one screen.
+5. **A 7-day undo after a deletion.** Asked for; still undecided. Nothing in
+   the app deletes anything, so losing an account loses no data — but there is
+   **no backup at all**, accepted at handover (§33.1). The real answer is
+   Supabase point-in-time recovery, a paid add-on. Needs the plan checked and
+   a decision, not code.
 
-7. **Mostly done** (§43.2). The three unused packages are gone. `/specimen`
-   and the middleware's `offline` exemption stay, with reasons recorded.
+### The roadmap
 
-8. **`npm audit` reports one high and one moderate**, both `postcss` via
-   `next`, both about processing untrusted CSS at build time — unreachable by
-   any user of this app. The only fix is Next 15 → 16, a major version. Worth
-   doing deliberately, on its own, never bundled with other work. §43.2.
+6. **J4 — export, and the wipe.** §44.5. Full-history CSV, and an owner-only
+   in-app wipe behind four conscious acts. This absorbs the long-standing
+   *"from this date to this date export in excel or csv"* item: half of it
+   already exists as the supplier date range (§35.4), and §33.2 has the one
+   question to ask before writing a byte — **what happens to the file when it
+   arrives**.
+
+7. **J5 — discounts and refunds.** §44.6. Deli's customers only, the
+   receivables side, payables untouched. **Manager level, unlike marking
+   paid.** Append-only adjustment rows carrying who and why, every total
+   derived. Reopens a decision §28.3 closed, deliberately.
+
+   Nothing forces J4 before J5 now that J1 exists. J5 is the one he named
+   unprompted, twice.
+
+### Known, and not urgent
+
+8. **An intermittent test failure under `TZ=America/Los_Angeles`.** Seen twice
+   in roughly nine full runs and **never captured** — seven instrumented runs
+   afterwards were all clean, so there is no test name to work from. The
+   failing runs were the slow ones (`mark-paid` took 47s in one), which points
+   at `waitFor` timeouts under load rather than a date bug. **Not proven
+   either way.** If it reappears:
+
+   ```bash
+   TZ=America/Los_Angeles npx vitest run --reporter=json --outputFile=fail.json
+   ```
+
+   Do not spend a session hunting it blind; one captured name is worth more
+   than an hour of re-running.
+
+9. **`verify_staff.mjs` has never been run for real.** It needs
+   `STAFF_EMAIL`/`STAFF_PASSWORD` in `.env.local`, which are not on the
+   builder's machine. HANDOFF §6's lesson is exactly this file: a fence proven
+   to keep things out has not been proven to have a gate. Run it, or run the
+   query at the bottom of `db/CATCH_UP_018.sql` signed in as a shop.
+
+10. **The app feels a touch slower on a phone.** Reported long ago, never
+    diagnosed. The database is fast (~45ms warm), so this is round trips.
+    §34.12 has the three things to localise.
+
+11. **`npm audit` reports one high and one moderate**, both `postcss` via
+    `next`, both about processing untrusted CSS at build time — unreachable by
+    any user of this app. The only fix is Next 15 → 16, a major version. Worth
+    doing deliberately, on its own, **never bundled with other work**. §43.2.
+
+12. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). The
+    standard-14 fonts are drawn through WinAnsiEncoding; a name outside it
+    becomes `?` and the screen says so. **Print is unaffected** and renders
+    anything the phone can. Fixing it properly means embedding a Unicode font,
+    which is hundreds of KB on every phone — the exact cost writing the PDF
+    by hand was meant to avoid. Only worth reopening if a real customer name
+    hits it.
+
+### Done since the roadmap was written
+
+- **§46 J1** — the two bugs, and three real tiers. `CATCH_UP_019`.
+- **§47 J2** — the contact block, bank details, signature line. `CATCH_UP_020`.
+- **§48 J3** — the hand-written PDF, Download, Share, the logo, the message.
+  No SQL.
+- **§40.3** `/receivables`, the global list of what Deli is owed.
+- **§43.2** the three unused packages are gone. `/specimen` and the
+  middleware's `offline` exemption stay, with reasons recorded.
 
 ### The clean slate
 

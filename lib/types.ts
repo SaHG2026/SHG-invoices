@@ -120,6 +120,27 @@ export interface Business {
   code: string;
   sort_order: number;
   active: boolean;
+  /**
+   * What goes on an invoice this business issues. CATCH_UP_020, §47.
+   *
+   * Free text, printed exactly as typed, newlines and all. Not street/suburb/
+   * postcode and not BSB/account: an address is not the same shape in two
+   * countries and a bank line is not the same shape in two banks, so a form of
+   * named fields decides both on Deli's behalf and gets one of them wrong.
+   *
+   * Null means not set, and the document prints no heading at all for it —
+   * a heading with nothing under it reads as something that failed to load
+   * (the rule CATCH_UP_017 set for the missing due date). Only the database
+   * can produce these, and `set_business_document` turns blank into null, so
+   * '' and null cannot both mean empty.
+   *
+   * Read LIVE by the document rather than copied onto each invoice. §47.1 has
+   * the argument: a price is a term that was agreed, a bank account is a
+   * routing instruction, and reprinting an unpaid invoice must not name an
+   * account that has closed.
+   */
+  contact_block: string | null;
+  bank_details: string | null;
 }
 
 export interface Supplier {

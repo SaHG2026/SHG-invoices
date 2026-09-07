@@ -101,6 +101,7 @@ const mocks = vi.hoisted(() => ({
   who: { current: null as unknown },
   invoice: { current: null as unknown },
   setRole: vi.fn(),
+  setDocument: vi.fn(),
 }));
 
 vi.mock('@/lib/queries/session', () => ({
@@ -123,6 +124,9 @@ vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
   useSuppliers: () => ({ data: SUPPLIERS }),
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  /* Settings edits what goes on an issued invoice, so anything that renders
+     it reaches this. CATCH_UP_020. */
+  useSetBusinessDocument: () => ({ mutateAsync: mocks.setDocument, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/detail', () => ({
@@ -203,6 +207,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.who.current = MANI;
   mocks.invoice.current = unpaidInvoice;
+  mocks.setDocument.mockResolvedValue(BUSINESSES[3]);
   mocks.setRole.mockImplementation(async ({ id, role }: { id: string; role: string }) => ({
     ...PROFILES.find((person) => person.id === id)!,
     role,
@@ -329,5 +334,81 @@ describe('who can do what', () => {
     const list = within(roleList());
     expect(list.queryByRole('button', { name: 'Make manager' })).not.toBeInTheDocument();
     expect(list.getByText('The only owner')).toBeInTheDocument();
+  });
+});
+
+describe('what is printed on an invoice', () => {
+  function documentSection() {
+    return screen.getByText('On your invoices').closest('section')!;
+  }
+
+  it('is not offered to a manager', () => {
+    // `set_business_document` refuses a non-owner with 42501, so a form here
+    // would be a form that cannot save. Notes §6.
+    mocks.who.current = MILAN;
+    settings();
+    expect(screen.queryByText('On your invoices')).not.toBeInTheDocument();
+  });
+
+  it('asks only about the businesses that issue invoices', () => {
+    /*
+     * All four businesses come back from `useBusinesses`, and three of them
+     * only ever RECEIVE bills. Offering to set bank details on GroceryMate
+     * Hurstville would be offering something with nowhere to appear.
+     */
+    settings();
+    const section = within(documentSection());
+    expect(section.getByLabelText('Bank details for Deli Delights')).toBeInTheDocument();
+    expect(
+      section.queryByLabelText('Bank details for GroceryMate Hurstville'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('starts from what is stored', () => {
+    settings();
+    const section = within(documentSection());
+    expect(section.getByLabelText('Bank details for Deli Delights')).toHaveValue(
+      BUSINESSES[3]!.bank_details,
+    );
+  });
+
+  it('will not save until something has changed', () => {
+    // A button that is always pressable is a button you press hopefully.
+    settings();
+    expect(within(documentSection()).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('saves both blocks together', async () => {
+    settings();
+    const section = within(documentSection());
+    fireEvent.change(section.getByLabelText('Contact block for Deli Delights'), {
+      target: { value: '1 New Road\nParramatta' },
+    });
+    fireEvent.click(section.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mocks.setDocument).toHaveBeenCalled());
+    expect(mocks.setDocument.mock.calls[0]![0]).toMatchObject({
+      id: BUSINESSES[3]!.id,
+      contactBlock: '1 New Road\nParramatta',
+      // Unchanged, and sent anyway: the function writes both columns, so
+      // sending only the edited one would blank the other.
+      bankDetails: BUSINESSES[3]!.bank_details,
+    });
+  });
+
+  it('says what the database said when it refuses', async () => {
+    mocks.setDocument.mockRejectedValue(
+      new Error('Only the owner can change what is printed on an invoice.'),
+    );
+    settings();
+    const section = within(documentSection());
+    fireEvent.change(section.getByLabelText('Contact block for Deli Delights'), {
+      target: { value: 'x' },
+    });
+    fireEvent.click(section.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Only the owner can change what is printed/)).toBeInTheDocument(),
+    );
   });
 });

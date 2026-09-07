@@ -191,6 +191,23 @@ await fn('set_user_role', 'set_user_role', { p_profile_id: NO_SUCH_ID, p_role: '
 console.log('  ?      the is_owner() guard in the 4 payment RPCs  — see §7 of CATCH_UP_019');
 console.log('  ?      nobody left on the old role name            — see §7 of CATCH_UP_019');
 
+console.log('\nCATCH_UP_020 — what is printed on a Deli invoice\n');
+await column('businesses.contact_block', 'businesses', 'contact_block');
+await column('businesses.bank_details',  'businesses', 'bank_details');
+await fn('set_business_document', 'set_business_document', {
+  p_business_id: NO_SUCH_ID,
+  p_contact_block: null,
+  p_bank_details: null,
+});
+/*
+ * The thing this file must NOT have done is invisible from out here: an
+ * UPDATE policy appearing on `businesses` would let somebody rename a
+ * business from a browser, and every internal ref is built from `code`.
+ * Absence of a policy cannot be probed with the anon key — it is refused
+ * either way — so §3 of the SQL file raises on it instead.
+ */
+console.log('  ?      businesses still has no update policy  — see §3 of CATCH_UP_020');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

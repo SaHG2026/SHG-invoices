@@ -86,11 +86,34 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
             row at 24-28px; here it is the top of a piece of paper somebody is
             handed.
           */}
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-start gap-3">
             {business ? <BusinessMark business={business} size="lg" /> : null}
-            <p className="text-h2 min-w-0 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
-              {business?.name ?? 'Invoice'}
-            </p>
+            <div className="min-w-0">
+              <p className="text-h2 min-w-0 text-ink" style={{ fontFamily: 'var(--font-display)' }}>
+                {business?.name ?? 'Invoice'}
+              </p>
+              {/*
+                How to reach them. CATCH_UP_020.
+
+                Under the name rather than in a corner of its own, because on
+                paper this is one thing -- who sent you this -- and splitting
+                it across the sheet makes a reader hunt for the second half.
+
+                `pre-line` is the whole of how it renders: the column holds
+                free text with newlines and it prints exactly as it was typed.
+                Nothing here parses it, and nothing here labels it, because a
+                block that says ADDRESS above a phone number is a form
+                pretending to be a document.
+
+                Absent when null, with no heading left behind (CATCH_UP_017's
+                rule for the missing due date).
+              */}
+              {business?.contact_block ? (
+                <p className="mt-1 whitespace-pre-line text-xs text-muted">
+                  {business.contact_block}
+                </p>
+              ) : null}
+            </div>
           </div>
           <div className="shrink-0 text-right">
             <p className="text-xs uppercase tracking-widest text-muted">Invoice</p>
@@ -204,7 +227,56 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
         {invoice.note ? (
           <p className="mt-4 border-t border-hairline pt-3 text-sm text-muted">{invoice.note}</p>
         ) : null}
+
+        {/*
+          How to pay. *"For direct pay, use our account details..."*
+
+          Read live from the business row rather than frozen onto the invoice
+          at issue, and that is the one decision in J2 worth knowing about: a
+          price is a term that was agreed, but a bank account is a routing
+          instruction. This app reprints an invoice at any time, and a frozen
+          block would hand somebody an unpaid invoice naming an account that
+          has since closed. §47.1, and CATCH_UP_020 has the argument in full.
+        */}
+        {business?.bank_details ? (
+          <section className="print-rule mt-6 border-t border-hairline pt-3">
+            <p className="text-xs uppercase tracking-widest text-muted">Payment</p>
+            <p className="mt-1 whitespace-pre-line text-sm text-ink">{business.bank_details}</p>
+          </section>
+        ) : null}
+
+        {/*
+          Somewhere to put a pen. Confirmed with the client as exactly this and
+          nothing more: three ruled lines on the paper for the person taking
+          the delivery. Not a digital signature, nothing stored, nothing to
+          verify -- so there is no column behind this and no state.
+
+          It is on the screen as well as the paper, because this page prints
+          ITSELF (notes §1.3): a block that existed only inside `@media print`
+          is a block nobody can look at before handing it over.
+        */}
+        <section className="print-rule mt-8 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
+          <Rule label="Received by" />
+          <Rule label="Signature" />
+          <Rule label="Date" />
+        </section>
       </article>
     </AppChrome>
+  );
+}
+
+/**
+ * One ruled line with a word under it.
+ *
+ * The line is a bottom border on an empty box with a fixed height, rather than
+ * an underscore run: underscores are a font's idea of a line and come out a
+ * different length in every face, which on three side by side is visible.
+ */
+function Rule({ label }: { label: string }) {
+  return (
+    <div>
+      <div className="h-8 border-b border-ink" />
+      <p className="mt-1 text-xs uppercase tracking-widest text-muted">{label}</p>
+    </div>
   );
 }

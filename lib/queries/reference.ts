@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
@@ -25,7 +25,7 @@ export function useBusinesses() {
     queryFn: async (): Promise<Business[]> => {
       const { data, error } = await supabase()
         .from('businesses')
-        .select('id, name, code, sort_order, active')
+        .select('id, name, code, sort_order, active, contact_block, bank_details')
         .eq('active', true)
         .order('sort_order');
 
@@ -144,4 +144,48 @@ export function optimisticSupplier(id: string, name: string): Supplier {
 
 export function useCreateSupplier() {
   return useMutation<void, Error, CreateSupplierInput>({ mutationKey: mk.suppliers.create });
+}
+
+/**
+ * What is printed on an invoice this business issues. CATCH_UP_020, §47.
+ *
+ * ---------------------------------------------------------------------------
+ * An RPC, because `businesses` has no update policy and must not gain one.
+ *
+ * Migration 007 gave that table exactly `member_read` and said businesses are
+ * seeded, not managed in the app — which is what has kept the four of them
+ * stable, and matters more than it looks: every internal ref is built from
+ * `code`, so a renamed business is a renumbered history.
+ *
+ * `set_business_document` confines itself to two columns and asks who is
+ * calling. A policy could do neither: RLS decides rows, never columns, and a
+ * grant is coarse and permanent. The same reasoning as `set_user_role`
+ * (CATCH_UP_019 §6), and the same shape.
+ *
+ * Not offline-capable, deliberately. This is typed once, on a settings screen,
+ * by one person, and a queued edit landing twenty minutes later over somebody
+ * else's is a worse answer than saying it did not save.
+ * ---------------------------------------------------------------------------
+ */
+export function useSetBusinessDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation<Business, Error, { id: string; contactBlock: string; bankDetails: string }>({
+    mutationFn: async ({ id, contactBlock, bankDetails }): Promise<Business> => {
+      const { data, error } = await supabase().rpc('set_business_document', {
+        p_business_id: id,
+        p_contact_block: contactBlock,
+        p_bank_details: bankDetails,
+      });
+
+      if (error) throw new Error(error.message);
+      return data as Business;
+    },
+    onSuccess: (business) => {
+      queryClient.setQueryData<Business[]>(qk.businesses.all, (current) =>
+        (current ?? []).map((existing) => (existing.id === business.id ? business : existing)),
+      );
+      queryClient.invalidateQueries({ queryKey: qk.businesses.all });
+    },
+  });
 }

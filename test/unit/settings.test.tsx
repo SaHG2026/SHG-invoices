@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   /* How many writes are still waiting, and whether there is signal. */
   queue: { queued: 0, online: true },
   setRole: vi.fn(),
+  setDocument: vi.fn(),
   resumePaused: vi.fn(),
   enablePush: vi.fn(),
   disablePush: vi.fn(),
@@ -60,6 +61,9 @@ vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
   useSuppliers: () => ({ data: SUPPLIERS }),
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  /* Settings edits what goes on an issued invoice, so anything that renders
+     it reaches this. CATCH_UP_020. */
+  useSetBusinessDocument: () => ({ mutateAsync: mocks.setDocument, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({

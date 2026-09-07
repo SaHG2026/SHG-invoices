@@ -703,6 +703,25 @@
     border-color: #000000 !important;
   }
 
+  /* The same problem one step further out. The payment block and the
+     signature line are ruled with a border on a plain element, and a browser
+     drops those as decoration exactly as it drops the ones in the table --
+     which on the signature line removes the entire feature, since the line IS
+     the feature. `print-rule` is put on the elements themselves for the same
+     reason `no-print` is: a selector guessing at the shell printed the app
+     header on every invoice once. */
+  .print-sheet .print-rule,
+  .print-sheet .print-rule * {
+    border-color: #000000 !important;
+  }
+
+  /* Three ruled lines that broke across a page boundary would leave somebody
+     signing on one sheet and dating on the next. */
+  .print-sheet .print-rule {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   /* A line item must not be split across two pages: half a row on one sheet
      and half on the next is a document somebody will query. */
   .print-sheet tr {

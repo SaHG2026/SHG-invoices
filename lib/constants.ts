@@ -82,3 +82,18 @@ export const SUPPLIER_RANGE_MAX = 500;
 /** The four businesses, in display order. Codes match `businesses.code`. */
 export const BUSINESS_CODES = ['GMH', 'GMP', 'MJR', 'DDL'] as const;
 export type BusinessCode = (typeof BUSINESS_CODES)[number];
+
+/**
+ * The businesses that ISSUE invoices, as opposed to receiving them.
+ *
+ * Today that is Deli alone, and the temptation is to write `code === 'DDL'` at
+ * the two places that need to know. Named here instead, because the two places
+ * are a settings form and a printed document, and a literal in each is two
+ * things to remember on the day a second business starts selling -- with the
+ * failure being a document that prints nothing and a form that cannot be
+ * found, neither of which looks like a missing constant.
+ *
+ * It is NOT what decides who may issue one; the sales screens are Deli's by
+ * their own route. This decides who is asked for bank details.
+ */
+export const SALES_INVOICE_CODES = ['DDL'] as const;

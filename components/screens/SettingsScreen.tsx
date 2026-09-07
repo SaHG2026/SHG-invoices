@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import type { Profile } from '@/lib/types';
+import type { Business, Profile } from '@/lib/types';
 import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
@@ -20,10 +20,11 @@ import {
   useUpdateNotifyPreference,
   useUpdateReminderTime,
 } from '@/lib/queries/session';
+import { useBusinesses, useSetBusinessDocument } from '@/lib/queries/reference';
 import { formatTime, isTimeStr } from '@/lib/date';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
 import { isOwner, isStaff, STAFF_HOME } from '@/lib/staff';
-import { PIN_LENGTH } from '@/lib/constants';
+import { PIN_LENGTH, SALES_INVOICE_CODES } from '@/lib/constants';
 
 /**
  * Settings.
@@ -288,6 +289,15 @@ export function SettingsScreen() {
       {isOwner(profile) ? <RoleSection me={profile} /> : null}
 
       {/*
+        What is printed on an invoice. CATCH_UP_020, §47.
+
+        Owner-only, like the list above it and for the same reason:
+        `set_business_document` refuses anybody else with 42501, so offering a
+        manager a form that cannot save is notes §6 failing.
+      */}
+      {isOwner(profile) ? <InvoiceDocumentSection /> : null}
+
+      {/*
         Only shown to whoever maintains the app, who is the only person who can
         change a picture — the three of them are users, not editors. A row
         that opens a screen where every button is missing is worse than no row
@@ -540,5 +550,144 @@ function RoleSection({ me }: { me: Profile }) {
         onCancel={() => setChanging(null)}
       />
     </section>
+  );
+}
+
+
+/**
+ * The contact block and the bank details that go on an issued invoice.
+ *
+ * ---------------------------------------------------------------------------
+ * Only the businesses that issue invoices, which today is Deli alone.
+ *
+ * `useBusinesses()` returns all four, and a settings screen offering to set
+ * bank details on GroceryMate Hurstville would be offering something with
+ * nowhere to appear: nothing in this app prints an invoice FROM a grocery, it
+ * only logs the bills they receive. So this filters to the businesses that
+ * have a sales-invoice document at all.
+ *
+ * Filtered by `SALES_INVOICE_CODES` rather than hard-coded to 'DDL' in a
+ * condition, so the day a second business starts issuing, the constant is the
+ * one thing that changes and this screen is already right.
+ * ---------------------------------------------------------------------------
+ *
+ * Two textareas and no field structure, which is CATCH_UP_020's decision: an
+ * address is not the same shape in two countries and a bank line is not the
+ * same shape in two banks, so a form of named fields would decide both on
+ * Deli's behalf and get one of them wrong. What is typed is what is printed.
+ */
+function InvoiceDocumentSection() {
+  const { data: businesses = [] } = useBusinesses();
+  const issuers = businesses.filter((entry) =>
+    (SALES_INVOICE_CODES as readonly string[]).includes(entry.code),
+  );
+
+  if (issuers.length === 0) return null;
+
+  return (
+    <section className="mb-4 rounded-sm border border-edge bg-card p-4">
+      <p className="mb-1 text-xs uppercase tracking-widest text-muted">On your invoices</p>
+      <p className="mb-3 text-sm text-muted">
+        Printed on every invoice you issue, exactly as you type it. Changing these changes what a
+        reprint says, including on invoices already sent.
+      </p>
+      {issuers.map((business) => (
+        <IssuerForm
+          key={business.id}
+          business={business}
+          /* Named only when there is more than one, because a heading over the
+             single form somebody came here to fill in is a label repeating
+             what the screen already said. */
+          showName={issuers.length > 1}
+        />
+      ))}
+    </section>
+  );
+}
+
+function IssuerForm({ business, showName }: { business: Business; showName: boolean }) {
+  const toast = useToast();
+  const save = useSetBusinessDocument();
+
+  /*
+   * Seeded from the row and NOT re-synced to it.
+   *
+   * A `useEffect` putting the server value back into these boxes would wipe
+   * what somebody was halfway through typing the moment any refetch landed --
+   * the "the list was refreshing while you typed" failure. The row only
+   * changes here, by this form, so there is nothing to re-sync from.
+   */
+  const [contact, setContact] = useState(business.contact_block ?? '');
+  const [bank, setBank] = useState(business.bank_details ?? '');
+
+  const dirty =
+    contact !== (business.contact_block ?? '') || bank !== (business.bank_details ?? '');
+
+  const box =
+    'w-full rounded-sm border border-hairline bg-card px-3 py-2 text-base text-ink outline-none focus:border-action';
+
+  return (
+    <form
+      className="border-t border-hairline pt-3 first:border-t-0 first:pt-0"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        try {
+          await save.mutateAsync({
+            id: business.id,
+            contactBlock: contact,
+            bankDetails: bank,
+          });
+          toast.show(`Saved. It will show on ${business.name} invoices.`);
+        } catch (error) {
+          /* The database's own sentence. `set_business_document` refuses a
+             non-owner in words a person can read, and a house message here
+             would replace a specific reason with a vague one. */
+          toast.show(
+            error instanceof Error ? error.message : 'Couldn’t save that.',
+            'problem',
+          );
+        }
+      }}
+    >
+      {showName ? <p className="mb-2 text-sm text-ink">{business.name}</p> : null}
+
+      <label className="mb-3 block">
+        <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+          Contact block
+        </span>
+        <textarea
+          aria-label={`Contact block for ${business.name}`}
+          value={contact}
+          onChange={(event) => setContact(event.target.value)}
+          rows={3}
+          placeholder={'Address\nPhone\nEmail'}
+          className={box}
+        />
+      </label>
+
+      <label className="mb-3 block">
+        <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+          Bank details
+        </span>
+        <textarea
+          aria-label={`Bank details for ${business.name}`}
+          value={bank}
+          onChange={(event) => setBank(event.target.value)}
+          rows={3}
+          placeholder={'Account name\nBSB\nAccount number'}
+          className={box}
+        />
+      </label>
+
+      {/* Disabled until something has actually changed, so the button is a
+          statement about the form rather than a thing to press hopefully. */}
+      <button
+        type="submit"
+        disabled={!dirty || save.isPending}
+        className="touch w-full rounded-full bg-action px-4 text-base font-medium text-action-text disabled:opacity-40"
+      >
+        {save.isPending ? 'Saving…' : 'Save'}
+      </button>
+    </form>
   );
 }

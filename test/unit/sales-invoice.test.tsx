@@ -749,6 +749,84 @@ describe('the printed document', () => {
     ).toBeGreaterThan(0);
   });
 
+  /* ---------------------------------------------------------------- *
+     What J2 put on the paper. CATCH_UP_020, ARCHITECTURE §47.
+   * ---------------------------------------------------------------- */
+
+  it('prints who sent it, exactly as it was typed', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    // One node holding all three lines, not three nodes: the column is free
+    // text and `white-space: pre-line` is what renders it. Split into
+    // paragraphs here, this test would pass while the document printed the
+    // address as one run-on line.
+    expect(sheet.getByText(/12 Marsden St/)).toHaveTextContent(
+      /12 Marsden St.*9000 1234.*orders@delidelights/s,
+    );
+  });
+
+  it('prints how to pay', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    expect(sheet.getByText('Payment')).toBeInTheDocument();
+    expect(sheet.getByText(/BSB 062-000/)).toBeInTheDocument();
+  });
+
+  it('leaves no empty heading behind when a business has set neither', () => {
+    /*
+     * CATCH_UP_017's rule, applied to two more blocks: a heading with nothing
+     * under it reads as something that failed to load. Every business except
+     * Deli is in exactly this state today, and will be until somebody types
+     * something, so it is the state the feature ships in.
+     */
+    mocks.detail.current = {
+      invoice: { ...INVOICE, business_id: 'b-gmh' },
+      lines: LINES,
+    };
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    expect(sheet.queryByText('Payment')).not.toBeInTheDocument();
+    expect(sheet.queryByText(/12 Marsden St/)).not.toBeInTheDocument();
+    // The document still renders. An absent block is not an absent invoice.
+    expect(sheet.getByText('DDL-0001')).toBeInTheDocument();
+  });
+
+  it('leaves somewhere to put a pen', () => {
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+    for (const label of ['Received by', 'Signature', 'Date']) {
+      expect(sheet.getAllByText(label).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('marks the ruled blocks so the print stylesheet can keep their lines', () => {
+    /*
+     * The structural half of a fact only paper can show. A browser drops
+     * borders it decides are decoration, and on the signature block the line
+     * IS the feature -- dropped, there is nothing there at all. jsdom does no
+     * layout and cannot see that, so what is asserted is the hook the
+     * stylesheet needs, and the browser check is the other half (HANDOFF §5).
+     */
+    document_();
+    const sheet = window.document.querySelector('.print-sheet') as HTMLElement;
+    expect(sheet.querySelectorAll('.print-rule').length).toBe(2);
+  });
+
+  it('reads the details live, so a reprint is never out of date', () => {
+    /*
+     * §47.1, and the one decision in J2 worth knowing about. ARCHITECTURE
+     * §44.3 planned to freeze these onto each invoice the way a line price is
+     * frozen. A price is a term that was agreed; a bank account is a routing
+     * instruction, and a frozen one would hand somebody an unpaid invoice
+     * naming an account that has closed.
+     *
+     * The structural proof is that nothing on the invoice carries them: if a
+     * snapshot is ever added, this test is what will say so.
+     */
+    expect(Object.keys(INVOICE)).not.toContain('issuer');
+    expect(Object.keys(INVOICE)).not.toContain('bank_details');
+  });
+
   it('renders nothing broken — notes §6', () => {
     const { container } = document_();
     const text = container.textContent ?? '';

@@ -25,11 +25,29 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/*
+ * Three of the four carry no invoice document, and Deli carries one.
+ *
+ * That split is the fixture doing a job: only Deli issues invoices, and null
+ * is the state every business is in until somebody types something. A fixture
+ * where all four were filled in would never render the document as it looks
+ * on the day the feature ships. CATCH_UP_020.
+ */
 export const BUSINESSES: Business[] = [
-  { id: 'b-gmh', name: 'GroceryMate Hurstville', code: 'GMH', sort_order: 1, active: true },
-  { id: 'b-gmp', name: 'GroceryMate Parramatta', code: 'GMP', sort_order: 2, active: true },
-  { id: 'b-mjr', name: 'Majheri Restaurant', code: 'MJR', sort_order: 3, active: true },
-  { id: 'b-ddl', name: 'Deli Delights', code: 'DDL', sort_order: 4, active: true },
+  { id: 'b-gmh', name: 'GroceryMate Hurstville', code: 'GMH', sort_order: 1, active: true,
+    contact_block: null, bank_details: null },
+  { id: 'b-gmp', name: 'GroceryMate Parramatta', code: 'GMP', sort_order: 2, active: true,
+    contact_block: null, bank_details: null },
+  { id: 'b-mjr', name: 'Majheri Restaurant', code: 'MJR', sort_order: 3, active: true,
+    contact_block: null, bank_details: null },
+  {
+    id: 'b-ddl', name: 'Deli Delights', code: 'DDL', sort_order: 4, active: true,
+    /* Real newlines, because that is what the column holds and what the
+       document has to render. A single-line fixture would never exercise
+       `white-space: pre-line`, which is the whole of how this prints. */
+    contact_block: '12 Marsden St, Parramatta NSW 2150\n(02) 9000 1234\norders@delidelights.com.au',
+    bank_details: 'Deli Delights Pty Ltd\nBSB 062-000\nAccount 1234 5678',
+  },
 ];
 
 export const PROFILES: Profile[] = [

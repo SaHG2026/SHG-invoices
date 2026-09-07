@@ -4601,3 +4601,152 @@ claim. Three files gained this phase's facts in the same commit:
 `test/unit/settings.test.tsx` also writes a preview page now. A name plus a
 pill on a 375px phone is exactly what reads correctly in an assertion and
 wraps badly on glass; measured at 320px, no horizontal overflow.
+
+
+---
+
+## 47. J2 — the document
+
+What Deli hands over gets three things: their own contact block, bank details,
+and somewhere to put a pen. §44.3.
+
+`db/CATCH_UP_020.sql`, **before the deploy** — and this one is not a
+preference. The new bundle asks `businesses` for two columns by name;
+PostgREST answers a missing column with 42703 and fails the whole request, and
+`useBusinesses()` is what the add-invoice sheet waits on before anybody can
+type anything. Deployed first with the file unrun, the app does not work. Run
+first, it is invisible: two nullable columns and a function the live version
+never calls.
+
+796 tests, up from 784.
+
+---
+
+### 47.1 Live, not frozen — and why §44.3 was wrong about it
+
+§44.3 said these should be copied onto each invoice at issue, the way a line's
+price is copied (CATCH_UP_015 §2), so that changing them tomorrow does not
+rewrite what was handed over yesterday. **That was decided against.** The two
+look alike and are not:
+
+> A price is a **term that was agreed**. Reprinting an invoice with today's
+> price would rewrite what the customer accepted.
+>
+> A bank account is a **routing instruction**. This app reprints an invoice at
+> any time, so freezing would mean handing somebody an unpaid invoice naming
+> an account that has since closed — telling a customer to send money where it
+> cannot arrive.
+
+The cost of going the other way is real and is accepted out loud: a settled
+invoice reprinted next year shows today's details rather than the ones on the
+paper that was handed over. For a document whose job is to get money into the
+right account, that is the better failure.
+
+**If it ever has to change**, it is one nullable `jsonb` column on
+`sales_invoices` written by `create_sales_invoice`, with the renderer reading
+`invoice.issuer ?? the business row`. Null would mean "issued before we
+started snapshotting", which every invoice in the database today would be — so
+the fallback is needed whichever way it is built, and nothing in J2 makes it
+harder. A test asserts no such field exists yet, so the day one appears it
+will be a decision rather than a drift.
+
+---
+
+### 47.2 Free text, not fields
+
+Two `text` columns, not street/suburb/postcode and not BSB/account-number.
+
+An address is not the same shape in two countries and a bank line is not the
+same shape in two banks, so a form of named fields decides both on Deli's
+behalf and gets one of them wrong. What is wanted is a block that prints
+exactly as it was typed — newlines kept, rendered with `white-space:
+pre-line`, nothing parsing it and nothing labelling its parts.
+
+It also stays clear of the trap CATCH_UP_016 §4 met from the other side: a
+field labelled by its role rather than its content is a field that gets filled
+in wrongly. Nothing here is labelled by its role.
+
+**Null is a real answer and means not set.** The document prints no heading at
+all for a null rather than a heading with nothing under it — CATCH_UP_017's
+rule for the missing due date, and the same reasoning: an empty label reads as
+something that failed to load. Three of the four businesses are in exactly
+that state and will stay there, because they receive bills and never issue
+them, so it is the state the feature ships in and a test renders it.
+
+`set_business_document` turns blank into null, and it does the trimming even
+though the form trims too. The app is not the only caller a function ever
+gets, and `''` and `NULL` meaning different things on paper is the
+two-values-for-one-state shape this project keeps removing.
+
+---
+
+### 47.3 The signature line stores nothing
+
+Three ruled lines — *Received by / Signature / Date* — for whoever takes the
+delivery. Confirmed with the client as exactly that: not a digital signature,
+nothing stored, nothing to verify. So there is no column behind it and no
+state, and it is not in the SQL file at all.
+
+It is on the screen as well as the paper, because this page prints **itself**
+(notes §1.3): a block that existed only inside `@media print` is a block
+nobody can look at before handing it over.
+
+Each line is a bottom border on an empty box of fixed height, not a run of
+underscores. Underscores are a font's idea of a line and come out a different
+length in every face, which on three side by side is visible.
+
+---
+
+### 47.4 Owner-only, without giving `businesses` an update policy
+
+`businesses` has exactly one policy — `member_read` — and no UPDATE policy at
+all. Migration 007: *businesses are seeded, not managed in the app.* **That is
+still true after this phase**, and it matters more than it looks: every
+internal ref is built from `code`, so a renamed business is a renumbered
+history.
+
+So the door is a function, for the reason CATCH_UP_019 §6 gives in full — a
+grant is coarse and permanent and cannot ask who is calling. `is_owner()`
+guards it, and it confines itself to two columns, which RLS by nature cannot
+do: RLS decides rows, never columns.
+
+The verification block in CATCH_UP_020 §3 asserts the *absence*: if an update
+policy has appeared on `businesses`, it raises. That is the thing this file
+must not have done, so it is checked rather than assumed.
+
+The editor is a Settings section beside "Who can do what", and it is filtered
+by `SALES_INVOICE_CODES` rather than a hard-coded `'DDL'`. Offering to set
+bank details on GroceryMate Hurstville would be offering something with
+nowhere to appear — nothing in this app prints an invoice *from* a grocery, it
+only logs the bills they receive. Named as a constant because the two places
+that need to know are a settings form and a printed document, and a literal in
+each is two things to remember on the day a second business starts selling —
+with the failure being a document that prints nothing and a form that cannot
+be found, neither of which looks like a missing constant.
+
+The form seeds from the row and **does not re-sync to it**. A `useEffect`
+putting the server value back would wipe what somebody was halfway through
+typing the moment any refetch landed — the "the list was refreshing while you
+typed" failure. The row only changes here, by this form, so there is nothing
+to re-sync from. Save is disabled until something has actually changed, so the
+button is a statement about the form rather than a thing to press hopefully.
+
+---
+
+### 47.5 What only paper could show
+
+`.print-rule`, and it exists because of §45's lesson rather than in spite of
+it. Browsers drop borders they decide are decoration, and the print stylesheet
+was forcing `border-color` on `th` and `td` only. The payment block and the
+signature lines are ruled with a border on a plain element — dropped, the
+signature block is *nothing at all*, because the line is the entire feature.
+
+The class is on the elements rather than a selector guessing at them, for the
+same reason `no-print` is: a selector that guessed printed the app header on
+every invoice once. They also carry `break-inside: avoid`, so nobody signs on
+one sheet and dates on the next.
+
+**jsdom does no layout**, so the test asserts the structural half — the sheet
+holds exactly two `.print-rule` blocks — and the browser confirmed the rest:
+the `@media print` rules lifted out of their query with JS, all three lines
+measured at `rgb(0, 0, 0)`, 0.8px, 114px wide, on white.

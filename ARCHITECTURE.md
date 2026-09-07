@@ -4673,6 +4673,16 @@ something that failed to load. Three of the four businesses are in exactly
 that state and will stay there, because they receive bills and never issue
 them, so it is the state the feature ships in and a test renders it.
 
+**And the state it actually shipped in is one block, not two.** The client
+has Deli's address and does not have their bank details — *"I won't add the
+banking details, cause I don't have it"* — so the live document prints a
+contact block with no Payment heading under it. That mixture had no test and
+no preview when J2 was written: the fixture covered both-set and neither-set,
+and the arrangement the printer would actually see was the one nothing could
+reach. §39.8 exactly, and the compose screen threw for a whole round on it.
+Both now render it, and the preview harness ships the real state rather than a
+filled-in one nobody has.
+
 `set_business_document` turns blank into null, and it does the trimming even
 though the form trims too. The app is not the only caller a function ever
 gets, and `''` and `NULL` meaning different things on paper is the
@@ -4690,6 +4700,10 @@ state, and it is not in the SQL file at all.
 It is on the screen as well as the paper, because this page prints **itself**
 (notes §1.3): a block that existed only inside `@media print` is a block
 nobody can look at before handing it over.
+
+It is also not behind the payment block, which matters now rather than in
+principle: with no bank details set, the signature lines are the only thing
+below the total, and somebody still has to sign for the delivery.
 
 Each line is a bottom border on an empty box of fixed height, not a run of
 underscores. Underscores are a font's idea of a line and come out a different

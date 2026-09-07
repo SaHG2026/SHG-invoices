@@ -70,7 +70,17 @@ vi.mock('@/lib/queries/session', () => ({
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
-  useBusinesses: () => ({ data: BUSINESSES }),
+  /*
+   * Deli with an address and NO bank details, which is what the app is live
+   * with: the client has one and not the other. The preview exists to be
+   * looked at, so it should show the page that will actually be printed
+   * rather than a filled-in one nobody has.
+   */
+  useBusinesses: () => ({
+    data: BUSINESSES.map((entry) =>
+      entry.code === 'DDL' ? { ...entry, bank_details: null } : entry,
+    ),
+  }),
   useSuppliers: () => ({ data: [] }),
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

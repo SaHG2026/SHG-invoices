@@ -6,7 +6,7 @@ import { formatCents } from '@/lib/money';
 import { addDays } from '@/lib/date';
 import { DEFAULT_TERMS_DAYS } from '@/lib/constants';
 import { lineTotalCents, parseQuantityToMilli } from '@/lib/quantity';
-import type { Customer, Product, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
+import type { Business, Customer, Product, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
 
 /**
  * Deli composes an invoice, and prints it.
@@ -48,6 +48,13 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   createCustomer: vi.fn(),
   /*
+   * The businesses as a knob, because what is printed on an invoice now lives
+   * on the business row and the interesting cases are the empty ones. Deli has
+   * an address and no bank details in real life; three of the four have
+   * neither. A fixed array can only ever render the filled-in case.
+   */
+  businesses: { current: [] as Business[] },
+  /*
    * The customer list as a knob, because adding one has to change it.
    *
    * A fixed array would let the screen create a customer and then show a
@@ -84,7 +91,7 @@ vi.mock('@/lib/queries/session', () => ({
 }));
 
 vi.mock('@/lib/queries/reference', () => ({
-  useBusinesses: () => ({ data: BUSINESSES }),
+  useBusinesses: () => ({ data: mocks.businesses.current }),
   useSuppliers: () => ({ data: [] }),
   useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -209,6 +216,7 @@ beforeEach(() => {
   mocks.detail.current = null;
   mocks.today.current = FIXTURE_TODAY;
   mocks.customers.current = [...CUSTOMERS];
+  mocks.businesses.current = BUSINESSES;
   /* What the real mutation does: the row is in the list before the write
      lands, so the picker can point at it. */
   mocks.createCustomer.mockImplementation(async ({ id, name }: { id: string; name: string }) => {
@@ -789,6 +797,37 @@ describe('the printed document', () => {
     expect(sheet.queryByText(/12 Marsden St/)).not.toBeInTheDocument();
     // The document still renders. An absent block is not an absent invoice.
     expect(sheet.getByText('DDL-0001')).toBeInTheDocument();
+  });
+
+  it('prints the contact block with no bank details under it', () => {
+    /*
+     * ==================================================================
+     * The state the app is actually in, and the one nothing rendered.
+     *
+     * The client has Deli's address and does not have their bank details:
+     * *"I won't add the banking details, cause I don't have it."* So the live
+     * document has one block set and the other null -- and the two tests
+     * either side of this one cover both-set and neither-set, which is the
+     * §39.8 failure exactly: a fixture that cannot produce a real state
+     * guarantees bugs in it. The compose screen threw on every open for a
+     * whole round for this reason.
+     *
+     * Nothing clever is asserted. The point is that this arrangement renders
+     * at all, and that the Payment heading does not survive its own contents
+     * being absent.
+     * ==================================================================
+     */
+    mocks.businesses.current = BUSINESSES.map((entry) =>
+      entry.code === 'DDL' ? { ...entry, bank_details: null } : entry,
+    );
+    document_();
+    const sheet = within(window.document.querySelector('.print-sheet') as HTMLElement);
+
+    expect(sheet.getByText(/12 Marsden St/)).toBeInTheDocument();
+    expect(sheet.queryByText('Payment')).not.toBeInTheDocument();
+    // The pen still has somewhere to go: the signature block is not behind
+    // the payment block, and somebody still signs for the delivery.
+    expect(sheet.getAllByText('Signature').length).toBeGreaterThan(0);
   });
 
   it('leaves somewhere to put a pen', () => {

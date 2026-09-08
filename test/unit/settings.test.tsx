@@ -39,6 +39,9 @@ const mocks = vi.hoisted(() => ({
   resumePaused: vi.fn(),
   enablePush: vi.fn(),
   disablePush: vi.fn(),
+  /* J4's export. Mocked so the screen can be rendered without a session --
+     what it reads is tested in export.test.ts, against the bytes. */
+  runExport: vi.fn(),
 }));
 
 vi.mock('@/lib/pin', () => ({
@@ -103,6 +106,13 @@ vi.mock('@/lib/queries/push', () => ({
   useDisablePush: () => ({ mutateAsync: mocks.disablePush, isPending: false }),
 }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/settings' }));
+
+vi.mock('@/lib/export/run', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/export/run')>();
+  /* `rangeIsUsable` stays real -- it is the thing deciding whether the button
+     is offered, and a mocked predicate would test the mock. */
+  return { ...actual, runExport: mocks.runExport };
+});
 
 const { SettingsScreen } = await import('@/components/screens/SettingsScreen');
 
@@ -503,6 +513,143 @@ describe('everybody', () => {
   });
 });
 
+
+/* -------------------------------------------------------------------------- *
+ * Export. J4, ARCHITECTURE §49.
+ * -------------------------------------------------------------------------- */
+
+function csv(name: string): File {
+  return new File(['a,b'], name, { type: 'text/csv;charset=utf-8' });
+}
+
+describe('export', () => {
+  const prepare = /Prepare export/;
+
+  it('is offered to a manager as well as an owner', () => {
+    /*
+     * Every row in these files is a row a manager can already read on a
+     * screen, so making it owner-only would be a permission invented by the
+     * interface rather than one the database holds.
+     */
+    mocks.who = PROFILES.find((person) => person.role === 'manager')!;
+    open();
+    expect(screen.getByRole('button', { name: prepare })).toBeInTheDocument();
+  });
+
+  it('is not offered to a shop', () => {
+    // A venue reads its own invoices through `staff_invoices` and nothing
+    // else, so this would produce three files, two empty and one short.
+    mocks.who = VENUE_PROFILE;
+    open();
+    expect(screen.queryByRole('button', { name: prepare })).not.toBeInTheDocument();
+  });
+
+  it('says which date it goes by', () => {
+    // An export nobody can describe is an export nobody can check.
+    open();
+    expect(screen.getByText(/date on the invoice, not the date it falls due/)).toBeInTheDocument();
+  });
+
+  it('refuses a backwards range before it is run, and says why', () => {
+    // An empty file reads as "there was no business that month".
+    open();
+    fireEvent.change(screen.getByLabelText('Export from'), { target: { value: '2026-02-01' } });
+    fireEvent.change(screen.getByLabelText('Export to'), { target: { value: '2026-01-01' } });
+
+    expect(screen.getByText(/wrong way round/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: prepare })).toBeDisabled();
+    expect(mocks.runExport).not.toHaveBeenCalled();
+  });
+
+  it('cannot be run offline, and says what that means', () => {
+    mocks.queue.online = false;
+    open();
+    expect(screen.getByRole('button', { name: prepare })).toBeDisabled();
+    expect(screen.getByText(/only export what it can re-read/)).toBeInTheDocument();
+  });
+
+  it('asks for everything when neither date is filled in', async () => {
+    // Null is "no bound", not today and not the first invoice ever entered.
+    mocks.runExport.mockResolvedValue({
+      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      counts: { bills: 0, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    await waitFor(() => expect(mocks.runExport).toHaveBeenCalledWith({ from: null, to: null }));
+  });
+
+  it('shows each file with its row count before anything is saved', async () => {
+    /*
+     * The counts are the only chance somebody gets to notice that the period
+     * they typed was not the period they meant.
+     */
+    mocks.runExport.mockResolvedValue({
+      files: [
+        csv('shg-bills-everything.csv'),
+        csv('shg-deli-invoices-everything.csv'),
+        csv('shg-deli-invoice-lines-everything.csv'),
+      ],
+      counts: { bills: 412, sales: 37, lines: 189 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    /*
+      * The row is headed by what the file IS, not by what it is called. Two of
+      * the three filenames truncate at 375px, and they truncate inside the
+      * date range -- the only part that tells two exports apart.
+      */
+    const name = await screen.findByText('Bills');
+    expect(screen.getByText(/412 bills/)).toBeInTheDocument();
+    expect(screen.getByText(/37 invoices Deli issued/)).toBeInTheDocument();
+    expect(screen.getByText(/189 lines on those invoices/)).toBeInTheDocument();
+    /* Scoped, because the owner's invoice-document form has a Save of its own
+       and HANDOFF 5's accessible-name collision is exactly this. */
+    const files = within(name.closest('section')!);
+    expect(files.getAllByRole('button', { name: 'Save' })).toHaveLength(3);
+  });
+
+  it('says zero out loud rather than dropping the row', async () => {
+    // A missing file cannot be told apart from a failed one.
+    mocks.runExport.mockResolvedValue({
+      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      counts: { bills: 0, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    const zero = await screen.findByText(/0 bills/);
+    expect(within(zero.closest('section')!).getAllByRole('button', { name: 'Save' })).toHaveLength(
+      3,
+    );
+  });
+
+  it('shows the reason when the range is too wide, not a house message', async () => {
+    // A refused answer can be narrowed; a short file gets kept.
+    mocks.runExport.mockRejectedValue(new Error('That range covers more than 20,000 bills. Choose a shorter period.'));
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    expect(await screen.findByText(/more than 20,000 bills/)).toBeInTheDocument();
+  });
+
+  it('offers no Share button where the browser cannot take a file', async () => {
+    // §48.2: never a dead button. jsdom has no `navigator.share`.
+    mocks.runExport.mockResolvedValue({
+      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      counts: { bills: 1, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    await screen.findByText('Bills');
+    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument();
+  });
+});
+
+
 /* ------------------------------------------------------------------------ *
    Not a test. A way to look at the screen. ARCHITECTURE 21.6.
 
@@ -516,16 +663,11 @@ const OUT = process.env.PREVIEW_OUT ?? '';
 const CSS = process.env.PREVIEW_CSS ?? '';
 
 describe('preview', () => {
-  it.skipIf(!OUT)('snapshot', async () => {
+  async function write(name: string, html: string) {
     const { readFileSync, writeFileSync } = await import('node:fs');
-    mocks.who = profile;
-    const view = open();
-    const html = view.container.innerHTML;
-    view.unmount();
-
     const css = CSS ? readFileSync(CSS, 'utf8') : '';
     writeFileSync(
-      OUT,
+      name,
       `<!doctype html><html lang="en-AU"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Settings preview</title>
@@ -534,5 +676,43 @@ describe('preview', () => {
 </head><body>${html}</body></html>`,
       'utf8',
     );
+  }
+
+  it.skipIf(!OUT)('snapshot', async () => {
+    mocks.who = profile;
+    const view = open();
+    const html = view.container.innerHTML;
+    view.unmount();
+    await write(OUT, html);
+  });
+
+  /*
+   * A second page, with the export's files on it.
+   *
+   * The first page cannot show them -- they only exist after somebody has
+   * pressed Prepare -- and the row they render into is the one thing on this
+   * screen that could go wrong on glass and pass every assertion above: a
+   * filename carrying a date range, next to two pill buttons, on a 375px
+   * phone. jsdom does no layout, so nothing here can see that; this is what
+   * gets looked at. HANDOFF 5.
+   */
+  it.skipIf(!OUT)('snapshot with the files prepared', async () => {
+    mocks.who = profile;
+    mocks.runExport.mockResolvedValue({
+      files: [
+        csv('shg-bills-2026-07-01_2026-07-31.csv'),
+        csv('shg-deli-invoices-2026-07-01_2026-07-31.csv'),
+        csv('shg-deli-invoice-lines-2026-07-01_2026-07-31.csv'),
+      ],
+      counts: { bills: 412, sales: 37, lines: 189 },
+    });
+
+    const view = open();
+    fireEvent.click(screen.getByRole('button', { name: /Prepare export/ }));
+    await screen.findByText('Bills');
+
+    const html = view.container.innerHTML;
+    view.unmount();
+    await write(OUT.replace(/\.html$/, '-export.html'), html);
   });
 });

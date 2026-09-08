@@ -97,3 +97,20 @@ export type BusinessCode = (typeof BUSINESS_CODES)[number];
  * their own route. This decides who is asked for bank details.
  */
 export const SALES_INVOICE_CODES = ['DDL'] as const;
+
+/**
+ * How many rows one exported file may hold, and how big a page of the read is.
+ *
+ * The ceiling is `SUPPLIER_RANGE_MAX`'s reasoning at a larger scale: there has
+ * to be a limit, and the only question is what happens at it. This one refuses
+ * and says to narrow the period, rather than writing a file that is short by
+ * however many rows fell off the end — a refused answer can be asked again, a
+ * short file gets kept.
+ *
+ * The page size is PostgREST's own default maximum. It answers a request for
+ * more than 1000 rows with 1000 of them and no indication that it did, so the
+ * read is paged in exactly that step: asking for more per page would silently
+ * get 1000 back and the loop would think it had reached the end.
+ */
+export const EXPORT_PAGE_SIZE = 1000;
+export const EXPORT_MAX_ROWS = 20_000;

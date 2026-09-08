@@ -5122,3 +5122,252 @@ so the message stands alone if it is filed or forwarded — an email saying only
 attachment. An unnumbered invoice (created offline, CATCH_UP_015 §3) drops
 that half of the line rather than printing `Invoice  — $88.49` with a hole in
 it: the parts are assembled, not templated.
+
+
+---
+
+## 49. J4 — the records leaving the app
+
+§44.5 named two things and put them in one phase: a full-history CSV, and an
+owner-only wipe from inside the app. They are built in that order and the
+order is not arrangement — **the wipe's third act is "take the export first"**,
+so the export has to exist and be trusted before the thing that destroys the
+data can offer it.
+
+This section is the export. §49.5 onward is the wipe.
+
+---
+
+### 49.1 CSV, written by hand
+
+`lib/csv.ts`. The same judgement §44.4 made about the PDF, with far less to
+weigh: CSV is a comma, a quote and a newline, RFC 4180 is two pages, and a
+dependency here would be a supply-chain edge added to a project that has just
+removed three (§43.2) in exchange for about sixty lines.
+
+The reason it is worth writing down at all is that **a CSV that is subtly
+wrong does not fail.** It opens, and one column is off. So each decision is
+one line of code and a test that reads the bytes back:
+
+| | |
+|---|---|
+| **CRLF** | RFC 4180, and Excel on Windows is the reader this is for |
+| **A byte-order mark** | Without it Excel opens UTF-8 as the system codepage and `Ngô` arrives as `NgÃ´`. Three bytes |
+| **Quoting** | comma, quote, CR, LF — and also **leading or trailing spaces**, which is not in the RFC. `' Coles'` round-trips through a quoted field and is silently trimmed through an unquoted one, turning a data-entry mistake into a mystery |
+| **A trailing newline** | readers disagree about a file ending mid-row, and the disagreement shows up as a dropped record |
+| **`NaN`** | an empty cell, not the word. An unusable number is a cell nobody filled in |
+
+**The BOM is also the answer §48.1 could not give the PDF.** The standard-14
+fonts are drawn through WinAnsiEncoding, so a name outside it becomes `?` and
+the screen has to say so. A CSV has no fonts in it and carries any name the
+phone can type, exactly. If a customer name ever does hit §48.1, this is
+already the way to get it out of the app intact.
+
+#### The formula guard, and the one character deliberately left alone
+
+`=`, `+` and `@` at the start of a field make Excel and Sheets treat the text
+as a formula rather than as text. This is somebody's typed note arriving in the
+owner's spreadsheet, so it is worth stopping, and the guard is a **leading tab
+inside the quotes** rather than the more common leading apostrophe: the tab is
+invisible in the cell and the apostrophe is not — Numbers and LibreOffice both
+show it, so the reader sees `'=x` and concludes the app mangled the data.
+
+**`-` is not in that list, on purpose.** It begins real data constantly: a
+negative figure, a note reading `-40, short delivery`. Neutralising it would
+corrupt ordinary values every day to prevent something that has never happened,
+and **an export that quietly alters what was typed is worse than the thing it
+is guarding against.**
+
+---
+
+### 49.2 Three files, not one
+
+`lib/export/tables.ts`, pure and separate from the reading, because deciding
+that the amount column holds `1234.56` rather than `$1,234.56` needs no session
+and is the half that will be wrong if either half is.
+
+The obvious shape is one file with a column saying which direction each row
+points. That is the flag §17 refused when it made `customers` its own table
+rather than a direction on `suppliers`, and the reason goes one step further
+here: **a spreadsheet with a direction column cannot be summed without a
+condition inside every formula, and the person doing the summing is not a
+developer.**
+
+So: `bills`, `deli-invoices`, and `deli-invoice-lines`. Lines are a third file
+because a line-per-row table is the only shape a spreadsheet can total, and
+folding them into the invoice file would repeat every header across every line
+and make the amount column sum to nonsense.
+
+Five decisions inside them, each of which is a rule being obeyed rather than a
+preference:
+
+**Money goes through `centsToInputValue`.** Rule 6 says `lib/money.ts` is the
+only thing that turns cents into a string, and this is exactly the boundary
+that rule is about. No `$` and no thousands separator — both make Excel read
+the column as text, and a column of text cannot be summed, which is the one
+thing this file is for.
+
+**Timestamps become Sydney calendar dates**, through `sydneyDateOf`. The date,
+not the instant: "paid on the 3rd" is what somebody is looking for, and the
+exact second an RPC ran is noise in a spreadsheet column.
+
+**Line totals are copied, never recomputed.** The database computes
+`line_total_cents` (CATCH_UP_015 §4) and a second multiplication here would be
+a second answer — rule 4's failure arriving in the one place nobody would check
+it.
+
+**Names come from a lookup that includes deactivated people.** `useProfiles()`
+filters to `active`, which is right for a chip on a live screen and wrong for a
+file: two years of history that cannot name whoever entered half of it is an
+export with a hole in it. And where a name is genuinely missing the cell holds
+**the id**, not a blank and not "Unknown" — a profile row is never deleted
+(rule 5), so an unmatched id means the lookup was short, and the id is the
+thing somebody can take to the database. A blank throws the answer away.
+
+**Voided invoices are in the file.** The history *screen* hides them by default
+because they are corrections rather than history and somebody scrolling wants
+what happened. A file is a different thing: this is the record leaving the app,
+and an export that silently drops rows is §35.4's failure — a total quietly
+short. The `Status` column says which is which and a spreadsheet can filter.
+
+#### The vocabulary is kept apart
+
+The sales file says **`Received on`**, never `Paid on`. §17's rule: you do not
+pay an invoice you issued, and a shared word is how two directions end up added
+together by somebody who has both files open.
+
+#### The filename carries the period
+
+`shg-bills-2026-07-01_2026-07-31.csv`. A folder holding `bills.csv`,
+`bills (1).csv` and `bills (2).csv` is a folder where nobody can say which
+period any of them covers, and the question this export answers is always
+"between these two dates".
+
+With no range it is `shg-bills-everything.csv` rather than an invented pair of
+dates. §40.1: a default is a claim, and a filename claiming `2019-01-01` would
+be stating a start nobody chose.
+
+---
+
+### 49.3 Reading the whole ledger — the one place a second query is correct
+
+`lib/export/run.ts`.
+
+Rule 4 — one array, one total — exists because a figure computed from a
+separate query can disagree with the list above it. **That rule is about a
+screen.** Nothing here renders and nothing here is totalled against anything.
+And the screens' own arrays could not be reused anyway, for a reason that has
+nothing to do with the rule: they stop. `useHistory` returns 50 rows and
+`useSupplierInvoices` 300, and an export built on either would be quietly
+short — §35.4's refusal, arriving in a file somebody keeps.
+
+#### PostgREST answers at most 1000 rows and does not say so
+
+There is no error and no flag. A request for every invoice against a table of
+1,400 returns 1,000 of them and looks exactly like a complete answer.
+
+**This makes "an unpaginated read" the wrong words for what §44.5 asked for.**
+The read has to be *paged* — `EXPORT_PAGE_SIZE` is 1000 precisely because
+asking for more per page would silently get 1000 back and the loop would
+believe it had reached the end.
+
+And at the ceiling it **throws rather than returning what it has**. That is
+`useSupplierRange`'s lesson (§35.4) applied to a file, and the stakes are
+higher: a refused export can be narrowed and asked for again, a short one gets
+filed.
+
+#### One basis, stated, not offered
+
+`useSupplierRange` makes its caller choose between the due date and the invoice
+date and labels which it used, because "what falls due in October" and "what
+they billed us in October" are different questions and neither default is safe
+to assume. That is a screen answering a question.
+
+This is a record leaving the app, and **the date on the paper is what a record
+is filed under**: a due date is a plan, and half the sales invoices do not have
+one at all (CATCH_UP_017). So the basis is `invoice_date`, there is no control
+for it, and the screen says so in a line under the fields. A range export with
+two radio buttons is a screen asking somebody to make a decision they have no
+way to make.
+
+#### Null means unbounded, on each end separately
+
+Not "today" and not "the first invoice ever entered". The wipe asks with both
+ends null, because "everything that is about to be deleted" is genuinely
+unbounded. A backwards range is **refused before the button can be pressed**:
+an empty file reads as *"there was no business that month"*, which is a
+different and much worse answer than *"those dates are the wrong way round"*.
+
+#### Neither a query nor a mutation
+
+A `useQuery` would hold two years of invoices in memory for the rest of the
+session for the sake of one tap, and be stale the moment anybody logged a bill.
+And it must stay out of the offline queue entirely — `lib/offline/keys.ts` is
+the list of things replayed from a cold start, and **a read that replays is a
+download that arrives days later for no reason.** It is a plain async function
+the screen awaits, and the screen owns the spinner.
+
+Lines are fetched **by invoice id, in chunks of 100**, because
+`sales_invoice_lines` carries no date of its own — the date is on its header.
+Reading every line and filtering in the browser would be simpler and would
+download the whole price history to export one month.
+
+---
+
+### 49.4 The screen
+
+`components/app/ExportSection.tsx`, in Settings.
+
+**Shown to a manager as well as an owner.** Every row in these files is a row
+they can already read on a screen; the file is the same information in a format
+a spreadsheet can open. Making it owner-only would be a permission invented by
+the interface rather than one the database holds — the thing `lib/staff.ts`
+exists to stop. **Not shown to a shop**: a venue reads its own invoices through
+`staff_invoices` and nothing else, so it would get three files, two empty and
+one short, with nothing on screen explaining why.
+
+#### Prepare, then save each file
+
+Not one button that downloads three things. Chrome blocks a second download
+from the same gesture and asks about it with a permission bar that is easy to
+miss on a phone; Android's downloads UI then shows one file of three and looks
+like a failure.
+
+**The counts are as much the point as the download blocking is.** "412 bills"
+in front of somebody before they save anything is the only chance they get to
+notice that the period they typed was not the period they meant. An empty table
+still produces a file, with its headers, and the row still says `0 bills` — the
+alternative is handing over two files one time and three the next, with no way
+to tell whether the missing one was empty or failed.
+
+Share appears only where `canShare({ files })` says yes, exactly as §48.2 does
+for the PDF. Never a dead button.
+
+#### The row leads with what the file is, not what it is called
+
+The filename led the row for one draft. Two of the three truncated at 375px —
+and they truncated **inside the date range**, which is the only part that tells
+two exports in a folder apart. The half that mattered was the half that
+disappeared, which is §46.1's shape exactly.
+
+So the row reads **Bills** / *412 bills*, the period is in the two fields
+directly above the list, and the name is on the file when it lands. Found by
+looking at it: jsdom does no layout, every assertion passed, and
+`test/unit/settings.test.tsx` now writes a second preview page with the files
+on it so the next person can look too.
+
+#### What is still open
+
+CSV rather than a real `.xlsx`, and **§33.2's question is still unanswered**:
+what happens to the file when it arrives. Opened, read and closed — CSV is
+right. Kept, formatted and handed to somebody — the half day and the first
+dependency added purely for output are worth it. This is the version that costs
+nothing to replace, and every one of these files opens in Excel by
+double-clicking it.
+
+**And the reads have never run against the live database.** Every byte the
+encoder produces is tested; the three queries behind them are not, because
+signing in needs credentials that are not on the builder's machine (HANDOFF §7
+item 9, the same gap `verify_staff.mjs` sits in). This is the export's version
+of *"a fence proven to keep things out has not been proven to have a gate"* —
+the first real run is the test.

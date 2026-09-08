@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
 import { PasswordChange } from '@/components/app/PasswordChange';
+import { ExportSection } from '@/components/app/ExportSection';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useIsOnline, useQueuedWriteCount } from '@/lib/offline/pending';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,7 +24,7 @@ import {
 import { useBusinesses, useSetBusinessDocument } from '@/lib/queries/reference';
 import { formatTime, isTimeStr } from '@/lib/date';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
-import { isOwner, isStaff, STAFF_HOME } from '@/lib/staff';
+import { isFullMember, isOwner, isStaff, STAFF_HOME } from '@/lib/staff';
 import { PIN_LENGTH, SALES_INVOICE_CODES } from '@/lib/constants';
 
 /**
@@ -296,6 +297,23 @@ export function SettingsScreen() {
         manager a form that cannot save is notes §6 failing.
       */}
       {isOwner(profile) ? <InvoiceDocumentSection /> : null}
+
+      {/*
+        Export. J4, ARCHITECTURE §49.
+
+        Shown to a manager as well as an owner, and that is deliberate. Every
+        row in these files is a row they can already read on a screen; the file
+        is the same information in a format a spreadsheet can open, so making
+        it owner-only would be a permission invented by the interface rather
+        than one the database holds — which is the thing lib/staff.ts exists to
+        stop.
+
+        Not shown to a shop. A venue reads its own invoices through
+        `staff_invoices` and nothing else, so this would produce three files,
+        two of them empty and one of them short, with no explanation on the
+        screen for why.
+      */}
+      {isFullMember(profile) ? <ExportSection /> : null}
 
       {/*
         Only shown to whoever maintains the app, who is the only person who can

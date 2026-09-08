@@ -24,7 +24,43 @@
  * `lib/money.ts`, because a currency decision made inside a CSV encoder is a
  * currency decision made twice.
  */
-export type Cell = string | number | null;
+export type Cell = string | number | null | NumberCell;
+
+/**
+ * A value that must land in a NUMERIC column, carried as its exact decimal
+ * text rather than as a JavaScript number.
+ *
+ * ---------------------------------------------------------------------------
+ * This exists because of the workbook, and it is the whole reason the export
+ * can be totalled.
+ *
+ * In a CSV the distinction is invisible: `5220.00` unquoted is read as a
+ * number by every spreadsheet, and a supplier called `2024` is quoted for
+ * other reasons anyway. In an `.xlsx` it is the difference between a cell you
+ * can sum and a cell of text that looks identical and cannot be added up —
+ * which is the one thing the export exists to do (§50.2).
+ *
+ * Carrying the DECIMAL STRING rather than a `number` keeps rule 6 intact.
+ * `centsToInputValue` produces the exact figure from integer cents; turning it
+ * into a float on the way past would put binary rounding between the ledger
+ * and the file, in the column somebody adds up.
+ *
+ * A plain `number` is still a numeric cell — it is used for counts and
+ * positions, where there is nothing to round.
+ * ---------------------------------------------------------------------------
+ */
+export interface NumberCell {
+  /** Digits, an optional `-`, an optional single `.`. Never formatted. */
+  readonly decimal: string;
+}
+
+export function numeric(decimal: string): NumberCell {
+  return { decimal };
+}
+
+export function isNumberCell(value: Cell): value is NumberCell {
+  return typeof value === 'object' && value !== null && 'decimal' in value;
+}
 
 /** RFC 4180 says CRLF, and Excel on Windows is the reader this is for. */
 const EOL = '\r\n';
@@ -75,6 +111,10 @@ function isFormula(text: string): boolean {
  */
 export function csvField(value: Cell): string {
   if (value === null) return '';
+  /* Written bare, and it never needs quoting: digits, a dot and a minus carry
+     no comma, quote or newline between them. Bare is also what makes a
+     spreadsheet read the column as numbers. */
+  if (isNumberCell(value)) return value.decimal;
   if (typeof value === 'number') {
     // Not `String(NaN)` -> "NaN" sitting in a money column. An unusable number
     // is an empty cell, which is what it means.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOM, csvField, csvFile, csvRow } from '@/lib/csv';
+import { BOM, csvField, csvFile, csvRow, numeric } from '@/lib/csv';
 import {
   billsTable,
   exportFilename,
@@ -57,6 +57,16 @@ describe('csvField', () => {
     // something that has never happened.
     expect(csvField('-40, short delivery')).toBe('"-40, short delivery"');
     expect(csvField('-12.50')).toBe('-12.50');
+  });
+
+  it('writes a numeric cell bare, so a spreadsheet reads the column as numbers', () => {
+    /*
+     * The distinction is invisible in a CSV and is the whole of §50.2 in a
+     * workbook: a text cell and a number cell look identical, and only one of
+     * them can be added up.
+     */
+    expect(csvField(numeric('5220.00'))).toBe('5220.00');
+    expect(csvField(numeric('-12.50'))).toBe('-12.50');
   });
 
   it('writes an unusable number as an empty cell rather than NaN', () => {
@@ -153,6 +163,43 @@ describe('billsTable', () => {
     const body = csv.split('\r\n')[1]!;
     expect(body).toContain(',,'); // paid on, paid by
     expect(body).not.toContain('null');
+  });
+
+  it('says awaiting review rather than unpaid for an unreviewed entry', () => {
+    /*
+     * The defect this fixes: `status` is `unpaid` for two different things --
+     * a bill one of the four has accepted, and a shop's entry nobody has
+     * looked at. The app never confuses them (`onlyOwed` is unpaid AND
+     * approved), but the file wrote the raw word, so filtering Status=unpaid
+     * in Excel gave a total the app itself refuses to show. Rule 4 broken at
+     * the last step, in a file somebody keeps.
+     */
+    const csv = renderTable(
+      billsTable(
+        [bill({ status: 'unpaid', paid_at: null, paid_by: null, approved_at: null })],
+        names,
+      ),
+    );
+    expect(csv).toContain('awaiting review');
+  });
+
+  it('still says unpaid once it has been let into the ledger', () => {
+    const csv = renderTable(
+      billsTable(
+        [
+          bill({
+            status: 'unpaid',
+            paid_at: null,
+            paid_by: null,
+            approved_at: '2026-08-29T02:00:00.000Z',
+            approved_by: 'p-mani',
+          }),
+        ],
+        names,
+      ),
+    );
+    expect(csv).toContain(',unpaid,');
+    expect(csv).not.toContain('awaiting review');
   });
 
   it('includes voided invoices, and says so in the status column', () => {

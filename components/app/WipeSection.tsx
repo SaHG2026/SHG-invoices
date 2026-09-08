@@ -383,7 +383,12 @@ function ExportStep({
   async function build() {
     setBuilding(true);
     try {
-      setFiles(await runExport({ from: null, to: null }));
+      /* Everything, every business, as one Excel workbook per business in a
+         zip. The only correct request here: what is about to be deleted is
+         unbounded, and the copy has to cover all four. */
+      setFiles(
+        await runExport({ from: null, to: null, businessId: null, format: 'xlsx' }),
+      );
     } catch (error) {
       toast.show(
         error instanceof Error ? error.message : 'Couldn’t build the export.',

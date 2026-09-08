@@ -30,7 +30,8 @@
 import { centsToInputValue } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
 import { sydneyDateOf, type Timestamp } from '@/lib/date';
-import { csvFile, type Cell } from '@/lib/csv';
+import { csvFile, numeric, type Cell } from '@/lib/csv';
+import { isAwaitingReview } from '@/lib/derive/select';
 import type { InvoiceRow, Profile, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
 
 /** A file about to be written: what it is called and what is in it. */
@@ -78,9 +79,14 @@ function who(id: string | null, names: NameLookup): Cell {
  * and this is exactly the boundary that rule is about. No `$` and no thousands
  * separator: both make Excel read the column as text, and a column of text
  * cannot be summed, which is the one thing this file is for.
+ *
+ * Wrapped as a `numeric` cell rather than returned as a bare string, and in
+ * the workbook that wrapper is the difference between a column you can total
+ * and a column of text that looks identical (§50.2). It carries the exact
+ * decimal, so integer cents reach the sheet without passing through a float.
  */
 function money(cents: number): Cell {
-  return centsToInputValue(cents);
+  return numeric(centsToInputValue(cents));
 }
 
 /**
@@ -119,6 +125,24 @@ const BILL_HEADER = [
 ] as const;
 
 /**
+ * What the Status column says, which is NOT always what the column holds.
+ *
+ * `status` is `unpaid` for two different things: a bill one of the four has
+ * accepted into the ledger, and a shop's entry that nobody has looked at yet.
+ * The app never confuses them -- `onlyOwed` is unpaid AND approved, and
+ * nothing awaiting review reaches a single owed figure -- but the file wrote
+ * the raw word, so anybody filtering Status = unpaid in Excel got a total the
+ * app itself refuses to show.
+ *
+ * Rule 4 broken at the last step, in a file somebody keeps and does arithmetic
+ * on. The predicate is `lib/derive/select.ts`'s own, so the sheet and the
+ * screen cannot drift apart.
+ */
+function billStatus(invoice: InvoiceRow): Cell {
+  return isAwaitingReview(invoice) ? 'awaiting review' : invoice.status;
+}
+
+/**
  * Every status, including void.
  *
  * The history SCREEN hides voided invoices by default because they are
@@ -141,7 +165,7 @@ export function billsTable(rows: readonly InvoiceRow[], names: NameLookup): Expo
       invoice.invoice_date,
       invoice.due_date,
       money(invoice.amount_cents),
-      invoice.status,
+      billStatus(invoice),
       day(invoice.paid_at),
       who(invoice.paid_by, names),
       invoice.payment_ref,
@@ -271,7 +295,9 @@ export function linesTable(
         line.position + 1,
         line.description,
         line.unit,
-        formatQuantity(line.quantity_milli),
+        // Numeric for the same reason as money: a quantity column that
+        // cannot be totalled is a quantity column nobody can check.
+        numeric(formatQuantity(line.quantity_milli)),
         money(line.unit_price_cents),
         money(line.line_total_cents),
       ];
@@ -295,9 +321,14 @@ export function linesTable(
  * because a filename claiming 2019-01-01 would be stating a start that nobody
  * chose. §40.1: a default is a claim.
  */
-export function exportFilename(slug: string, from: string | null, to: string | null): string {
+export function exportFilename(
+  slug: string,
+  from: string | null,
+  to: string | null,
+  extension: 'csv' | 'xlsx' | 'zip' = 'csv',
+): string {
   const range = from === null && to === null ? 'everything' : `${from ?? 'start'}_${to ?? 'today'}`;
-  return `shg-${slug}-${range}.csv`;
+  return `shg-${slug}-${range}.${extension}`;
 }
 
 /** The bytes of one table. */

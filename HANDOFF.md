@@ -35,6 +35,7 @@ end to end. Grep for the section you need:
 | J2 — what is printed on an invoice | §47 |
 | J3 — the PDF, and how a file leaves the app | §48 |
 | J4 — the export, the wipe, and the dialog bug | §49 |
+| J4b — the workbook, the archive, and a lying status column | §50 |
 | The audit from scratch, and what it found | §43 |
 
 ---
@@ -101,7 +102,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 909 tests
+npx vitest run       # 944 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -135,6 +136,18 @@ proof a PDF is a PDF is a reader opening it (§48.3).
 ```bash
 PDF_OUT=/tmp/shg/invoice.pdf npx vitest run test/unit/pdf.test.ts
 ```
+
+**The workbook is the same discipline** (§50.3). The only proof an `.xlsx` is
+an `.xlsx` is a reader opening it, so it writes real files too — a workbook and
+a zip of workbooks:
+
+```bash
+WORKBOOK_OUT=/tmp/shg npx vitest run test/unit/workbook.test.ts
+```
+
+Both were verified with Python's `zipfile` and `ElementTree`, which know
+nothing about this app. The assertion that matters is that **the Amount column
+sums**: a text column sums to zero and looks perfectly fine.
 
 Three files — the ordinary invoice, a 45-line one for the page break, and the
 no-bank-details one the app is live with. A static file server sends a `.pdf`
@@ -277,6 +290,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §47 | **J2** — the contact block, the bank details and the signature line |
 | §48 | **J3** — a PDF written by hand, Download and Share |
 | §49 | **J4** — the ledger as three CSVs, and the wipe behind four acts |
+| §50 | **J4b** — Excel workbooks with sheets, a zip of them, and a status column that was lying |
 
 ### The two lessons worth more than the features
 
@@ -359,7 +373,7 @@ waiting to go out. J5 is agreed and not started.** ARCHITECTURE §44 has the des
 | **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
 | **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
 | **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, nothing compressed), with Deli's logo embedded as a JPEG. Download always, Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
-| **J4** | **Built, not deployed** — §49 | Three CSVs (bills, Deli's invoices, their lines) over an optional date range, written by hand like the PDF; and the wipe behind four acts, gated on `is_owner()` in `wipe_everything`. Needs `CATCH_UP_021` run FIRST. It also fixed a dialog bug that predates it — §49.6. |
+| **J4** | **Built, not deployed** — §49, §50 | Three CSVs (bills, Deli's invoices, their lines) over an optional date range, written by hand like the PDF; and the wipe behind four acts, gated on `is_owner()` in `wipe_everything`. Needs `CATCH_UP_021` run FIRST. It also fixed a dialog bug that predates it — §49.6. |
 | **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
 **The three things J1 established, which the rest of the roadmap leans on:**
@@ -437,13 +451,33 @@ arrived.
      produces is tested; the three reads behind it have never run against the
      live database, because signing in needs credentials that are not on the
      builder's machine. The first real run is the test.
-   - **§33.2's question is still unanswered** — *what happens to the file when
-     it arrives*. Opened, read and closed: CSV is right and this is finished.
-     Kept, formatted and handed to somebody: a real `.xlsx` is half a day and
-     the first dependency added purely for output. Worth asking now that there
-     is something in front of him to react to.
+   - **§33.2's question is answered.** It asked what happens to the file
+     when it arrives — opened and closed, or kept and handed to somebody.
+     Asking for *"payable and receivable on two sheets of the same excel"* is
+     the second answer, so §50 wrote the workbook. It cost far less than §33.2
+     assumed, because the zip the "download it all" archive needed **is** the
+     container an `.xlsx` uses.
 
-7. **J5 — discounts and refunds.** §44.6. Deli's customers only, the
+7. **Eventually, only Mani may mark a bill paid — not the builder.** Said
+   plainly: *"For now rabindra can pay it off, but eventually it has to be
+   just mani."* Not now, and not a one-line change when it comes.
+
+   **The trap:** `is_owner()` is one predicate gating **seven** things —
+   `mark_invoices_paid`, `unmark_invoice_paid`, `mark_sales_received`,
+   `unmark_sales_received`, `set_user_role`, `set_business_document` and
+   `wipe_everything`. Dropping `builder` from it does not just stop Rabindra
+   paying bills; it locks him out of maintaining the app he maintains, and
+   §44.2 put him there on purpose.
+
+   So the day it happens it is **a split, not an edit**: one predicate for
+   *may move money* and another for *may administer*, with `builder` in the
+   second and not the first. One name carrying two meanings is the exact shape
+   this project keeps unpicking (§19), and it is cheaper to see it coming.
+
+   Both are allowlists, so both are on §46.3's list of six the day they exist —
+   which becomes seven.
+
+8. **J5 — discounts and refunds.** §44.6. Deli's customers only, the
    receivables side, payables untouched. **Manager level, unlike marking
    paid.** Append-only adjustment rows carrying who and why, every total
    derived. Reopens a decision §28.3 closed, deliberately.
@@ -453,7 +487,7 @@ arrived.
 
 ### Known, and not urgent
 
-8. **An intermittent test failure under `TZ=America/Los_Angeles`.** Seen twice
+9. **An intermittent test failure under `TZ=America/Los_Angeles`.** Seen twice
    in roughly nine full runs and **never captured** — seven instrumented runs
    afterwards were all clean, so there is no test name to work from. The
    failing runs were the slow ones (`mark-paid` took 47s in one), which points
@@ -467,22 +501,22 @@ arrived.
    Do not spend a session hunting it blind; one captured name is worth more
    than an hour of re-running.
 
-9. **`verify_staff.mjs` has never been run for real.** It needs
+10. **`verify_staff.mjs` has never been run for real.** It needs
    `STAFF_EMAIL`/`STAFF_PASSWORD` in `.env.local`, which are not on the
    builder's machine. HANDOFF §6's lesson is exactly this file: a fence proven
    to keep things out has not been proven to have a gate. Run it, or run the
    query at the bottom of `db/CATCH_UP_018.sql` signed in as a shop.
 
-10. **The app feels a touch slower on a phone.** Reported long ago, never
+11. **The app feels a touch slower on a phone.** Reported long ago, never
     diagnosed. The database is fast (~45ms warm), so this is round trips.
     §34.12 has the three things to localise.
 
-11. **`npm audit` reports one high and one moderate**, both `postcss` via
+12. **`npm audit` reports one high and one moderate**, both `postcss` via
     `next`, both about processing untrusted CSS at build time — unreachable by
     any user of this app. The only fix is Next 15 → 16, a major version. Worth
     doing deliberately, on its own, **never bundled with other work**. §43.2.
 
-12. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). The
+13. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). The
     standard-14 fonts are drawn through WinAnsiEncoding; a name outside it
     becomes `?` and the screen says so. **Print is unaffected** and renders
     anything the phone can. Fixing it properly means embedding a Unicode font,
@@ -499,6 +533,11 @@ arrived.
 - **§49 J4** — three CSVs and the wipe. `CATCH_UP_021`, **not yet applied**.
 - **§49.6** every dialog in the app was fixed to the page rather than to the
   viewport, and had been since `ConfirmDialog` was written.
+- **§50 J4b** — Excel workbooks with a sheet per direction, a zip for all
+  four businesses, and the CSV kept as the alternative. No SQL.
+- **§50.5** the bills export called an unreviewed shop entry `unpaid`, so a
+  spreadsheet could total what the app refuses to. It says `awaiting
+  review` now, from `lib/derive/select.ts`'s own predicate.
 - **§40.3** `/receivables`, the global list of what Deli is owed.
 - **§43.2** the three unused packages are gone. `/specimen` and the
   middleware's `offline` exemption stay, with reasons recorded.

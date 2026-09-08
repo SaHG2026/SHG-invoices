@@ -208,12 +208,30 @@ export function searchInvoices(rows: ReadonlyArray<InvoiceRow>, query: string): 
  * ---------------------------------------------------------------------------
  */
 export function onlyOwed(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
-  return rows.filter((row) => row.status === 'unpaid' && row.approved_at !== null);
+  return rows.filter((row) => row.status === 'unpaid' && !isAwaitingReview(row));
+}
+
+/**
+ * One invoice, waiting for one of the four to accept it. Only ever a venue's
+ * entry -- `stamp_approval` approves everybody else's on insert.
+ *
+ * A predicate over ONE row, extracted so the export can ask the same question
+ * (§50.4). The bills file wrote `status` straight from the database, so a
+ * shop's unreviewed entry arrived in a spreadsheet as plain `unpaid` -- and
+ * anybody filtering on that got a total the app itself refuses to show,
+ * because nothing unapproved reaches an owed figure. Rule 4 broken at the last
+ * step, in a file somebody keeps.
+ *
+ * One predicate, three callers, rather than the same condition written out in
+ * a filter here and a ternary there.
+ */
+export function isAwaitingReview(row: Pick<InvoiceRow, 'status' | 'approved_at'>): boolean {
+  return row.status === 'unpaid' && row.approved_at === null;
 }
 
 /** Waiting for one of the four to accept it. Only ever a venue's entry. */
 export function awaitingReview(rows: ReadonlyArray<InvoiceRow>): InvoiceRow[] {
-  return rows.filter((row) => row.status === 'unpaid' && row.approved_at === null);
+  return rows.filter(isAwaitingReview);
 }
 
 export interface OutstandingSummary {

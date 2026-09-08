@@ -691,6 +691,16 @@ function csv(name: string): File {
   return new File(['a,b'], name, { type: 'text/csv;charset=utf-8' });
 }
 
+/** One row in the prepared list: a file, what it is called on screen, and
+    what is in it. */
+function built(
+  name: string,
+  title: string,
+  counts: { label: string; count: number }[],
+) {
+  return { file: csv(name), title, counts };
+}
+
 describe('export', () => {
   const prepare = /Prepare export/;
 
@@ -740,13 +750,23 @@ describe('export', () => {
   it('asks for everything when neither date is filled in', async () => {
     // Null is "no bound", not today and not the first invoice ever entered.
     mocks.runExport.mockResolvedValue({
-      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      files: [built('a.zip', 'Every business', [{ label: 'Bills', count: 0 }])],
       counts: { bills: 0, sales: 0, lines: 0 },
     });
     open();
     fireEvent.click(screen.getByRole('button', { name: prepare }));
 
-    await waitFor(() => expect(mocks.runExport).toHaveBeenCalledWith({ from: null, to: null }));
+    /* Every business and a workbook, which are the two defaults: "download it
+       all" is the question somebody has when they open this, and the workbook
+       is the format the client asked for. */
+    await waitFor(() =>
+      expect(mocks.runExport).toHaveBeenCalledWith({
+        from: null,
+        to: null,
+        businessId: null,
+        format: 'xlsx',
+      }),
+    );
   });
 
   it('shows each file with its row count before anything is saved', async () => {
@@ -756,9 +776,11 @@ describe('export', () => {
      */
     mocks.runExport.mockResolvedValue({
       files: [
-        csv('shg-bills-everything.csv'),
-        csv('shg-deli-invoices-everything.csv'),
-        csv('shg-deli-invoice-lines-everything.csv'),
+        built('shg-ddl-everything.xlsx', 'Deli Delights', [
+          { label: 'Bills', count: 412 },
+          { label: 'Deli\u2019s invoices', count: 37 },
+          { label: 'Deli\u2019s invoice lines', count: 189 },
+        ]),
       ],
       counts: { bills: 412, sales: 37, lines: 189 },
     });
@@ -767,23 +789,30 @@ describe('export', () => {
 
     /*
       * The row is headed by what the file IS, not by what it is called. Two of
-      * the three filenames truncate at 375px, and they truncate inside the
-      * date range -- the only part that tells two exports apart.
+      * three filenames truncated at 375px in an earlier draft, and they
+      * truncated inside the date range -- the only part that tells two exports
+      * apart.
+      *
+      * One workbook now, with its sheets counted on the line beneath. The
+      * counts are the only chance somebody gets to notice that the period they
+      * typed was not the period they meant.
       */
-    const name = await screen.findByText('Bills');
+    const name = await screen.findByText('Deli Delights');
     expect(screen.getByText(/412 bills/)).toBeInTheDocument();
-    expect(screen.getByText(/37 invoices Deli issued/)).toBeInTheDocument();
-    expect(screen.getByText(/189 lines on those invoices/)).toBeInTheDocument();
+    expect(screen.getByText(/37 deli\u2019s invoices/)).toBeInTheDocument();
+    expect(screen.getByText(/189 deli\u2019s invoice lines/)).toBeInTheDocument();
     /* Scoped, because the owner's invoice-document form has a Save of its own
        and HANDOFF 5's accessible-name collision is exactly this. */
     const files = within(name.closest('section')!);
-    expect(files.getAllByRole('button', { name: 'Save' })).toHaveLength(3);
+    expect(files.getAllByRole('button', { name: 'Save' })).toHaveLength(1);
   });
 
   it('says zero out loud rather than dropping the row', async () => {
     // A missing file cannot be told apart from a failed one.
     mocks.runExport.mockResolvedValue({
-      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      files: [
+        built('a.xlsx', 'GroceryMate Hurstville', [{ label: 'Bills', count: 0 }]),
+      ],
       counts: { bills: 0, sales: 0, lines: 0 },
     });
     open();
@@ -791,8 +820,83 @@ describe('export', () => {
 
     const zero = await screen.findByText(/0 bills/);
     expect(within(zero.closest('section')!).getAllByRole('button', { name: 'Save' })).toHaveLength(
-      3,
+      1,
     );
+  });
+
+  it('offers every business, and all of them together', () => {
+    open();
+    const picker = screen.getByLabelText('Which business');
+    expect(within(picker).getByRole('option', { name: 'All businesses' })).toBeInTheDocument();
+    // The four seeded businesses, plus the "all" row.
+    expect(within(picker).getAllByRole('option')).toHaveLength(BUSINESSES.length + 1);
+  });
+
+  it('asks for one business when one is chosen', async () => {
+    mocks.runExport.mockResolvedValue({
+      files: [built('a.xlsx', 'x', [{ label: 'Bills', count: 0 }])],
+      counts: { bills: 0, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.change(screen.getByLabelText('Which business'), {
+      target: { value: BUSINESSES[0]!.id },
+    });
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    await waitFor(() =>
+      expect(mocks.runExport).toHaveBeenCalledWith(
+        expect.objectContaining({ businessId: BUSINESSES[0]!.id }),
+      ),
+    );
+  });
+
+  it('can be asked for CSV instead, and says what that costs', async () => {
+    mocks.runExport.mockResolvedValue({
+      files: [built('a.csv', 'x', [{ label: 'Bills', count: 0 }])],
+      counts: { bills: 0, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
+    expect(screen.getByRole('button', { name: 'CSV' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+    await waitFor(() =>
+      expect(mocks.runExport).toHaveBeenCalledWith(expect.objectContaining({ format: 'csv' })),
+    );
+  });
+
+  it('says what it is about to produce, before it is produced', () => {
+    /*
+      * The KIND of thing the button makes changes with both controls -- one
+      * workbook, one archive, or several separate files -- and it is the only
+      * place on the screen that mentions the sheets at all.
+      */
+    open();
+    expect(screen.getByText(/zip holding one Excel workbook/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Which business'), {
+      target: { value: BUSINESSES[0]!.id },
+    });
+    expect(screen.getByText(/One Excel workbook/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
+    expect(screen.getByText(/cannot hold more than one sheet/)).toBeInTheDocument();
+  });
+
+  it('throws away what was built when the question changes', () => {
+    /* A Save button that writes a file for a period nobody has on screen any
+       more is worse than no Save button. */
+    mocks.runExport.mockResolvedValue({
+      files: [built('a.xlsx', 'Every business', [{ label: 'Bills', count: 7 }])],
+      counts: { bills: 7, sales: 0, lines: 0 },
+    });
+    open();
+    fireEvent.click(screen.getByRole('button', { name: prepare }));
+
+    return waitFor(() => expect(screen.getByText(/7 bills/)).toBeInTheDocument()).then(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
+      expect(screen.queryByText(/7 bills/)).not.toBeInTheDocument();
+    });
   });
 
   it('shows the reason when the range is too wide, not a house message', async () => {
@@ -807,13 +911,13 @@ describe('export', () => {
   it('offers no Share button where the browser cannot take a file', async () => {
     // §48.2: never a dead button. jsdom has no `navigator.share`.
     mocks.runExport.mockResolvedValue({
-      files: [csv('a.csv'), csv('b.csv'), csv('c.csv')],
+      files: [built('a.xlsx', 'Every business', [{ label: 'Bills', count: 1 }])],
       counts: { bills: 1, sales: 0, lines: 0 },
     });
     open();
     fireEvent.click(screen.getByRole('button', { name: prepare }));
 
-    await screen.findByText('Bills');
+    await screen.findByText('Every business');
     expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument();
   });
 });
@@ -913,16 +1017,18 @@ describe('preview', () => {
     mocks.who = profile;
     mocks.runExport.mockResolvedValue({
       files: [
-        csv('shg-bills-2026-07-01_2026-07-31.csv'),
-        csv('shg-deli-invoices-2026-07-01_2026-07-31.csv'),
-        csv('shg-deli-invoice-lines-2026-07-01_2026-07-31.csv'),
+        built('shg-ddl-2026-07-01_2026-07-31.xlsx', 'Deli Delights', [
+          { label: 'Bills', count: 412 },
+          { label: 'Deli\u2019s invoices', count: 37 },
+          { label: 'Deli\u2019s invoice lines', count: 189 },
+        ]),
       ],
       counts: { bills: 412, sales: 37, lines: 189 },
     });
 
     const view = open();
     fireEvent.click(screen.getByRole('button', { name: /Prepare export/ }));
-    await screen.findByText('Bills');
+    await screen.findByText('Deli Delights');
 
     const html = view.container.innerHTML;
     view.unmount();

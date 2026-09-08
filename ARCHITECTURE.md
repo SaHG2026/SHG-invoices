@@ -5536,3 +5536,220 @@ sits on top of, and measure the real thing in a browser.
 `screen.getByRole('alertdialog').closest('main')` is null — which is the fact
 underneath, and the one thing jsdom *can* see — and writes four preview pages,
 one per step, so the next person can look rather than take this on trust.
+
+---
+
+## 50. J4b — a workbook, an archive, and a status that was lying
+
+A second round on the export, after he used it. Three things, and one of them
+was a defect in what §49 shipped.
+
+> *"would it be possible to choose to download it all (zip) or download of each
+> business individually, and when selected deli, it will download a csv with
+> payable and receivable on two sheets of the same excel?"*
+
+**And the thing that prompted the check:** *"I hope the contents you have
+created within the csv are all relevant and are mapped well within the app
+too."* They were not, in one place. §50.5.
+
+---
+
+### 50.1 A zip, written by hand — and it is two features for the price of one
+
+`lib/zip.ts`.
+
+The archive and the workbook sound like separate jobs. **They are the same job:
+an `.xlsx` file IS a zip archive of XML parts.** So the zip writer buys both,
+and the second feature costs almost nothing once the first exists.
+
+The reason it can be written rather than imported is the part worth keeping:
+**zip supports uncompressed entries** — storage method 0 — and every reader
+accepts them, Excel included. *Compression* is what would have needed zlib, and
+nothing here needs compression. This is XML and CSV going onto a phone, not
+over a wire.
+
+§44.4's judgement about the PDF, applied again and landing more easily this
+time: a few hundred lines against a dependency, for a format that has not
+changed since 1989.
+
+**The CRC is the one part that cannot be fudged.** Every entry carries a
+checksum twice — local header and central directory — and a reader that finds
+them wrong says *"we found a problem with some content"*, which reads as a
+broken workbook rather than as a broken container. The test pins it against the
+standard check value for `123456789`.
+
+**The timestamp is a constant, and that is rule 2.** Zip wants a packed DOS
+date and time, which is neither a calendar date nor a time of day as this app
+understands them, and reaching for a clock inside a file format is how the
+worst bug class gets in somewhere nobody looks. Fixed at 1980-01-01, the
+earliest the format can express, so it reads as *"no time recorded"* rather
+than as a wrong one. The pleasant side effect is that identical content
+produces identical bytes, which is what lets a test assert on them at all.
+
+**Stated limit:** no Zip64, so nothing over 4GB. `runExport` refuses at
+`EXPORT_MAX_ROWS` long before that.
+
+---
+
+### 50.2 The workbook
+
+`lib/xlsx.ts`. Six small XML documents and the rules about what may go in a
+cell.
+
+**Every part is required.** A workbook missing any of them opens as a content
+error, so none of it is trimmed to look tidy — including `styles.xml`, which
+the schema says is optional and Excel treats as damage.
+
+**No shared-strings table.** The format offers one so a repeated word is stored
+once, which is a compression idea, and nothing here is compressed. Inline
+strings put the text in the cell where it belongs and delete an entire part
+that would have to stay in step with every sheet. Bigger file, half the
+machinery, no index to get wrong.
+
+#### The `NumberCell`, which is the whole reason the file is useful
+
+A text cell and a number cell look identical on screen and only one of them can
+be added up. `lib/csv.ts` gained a `numeric()` wrapper carrying **the exact
+decimal string** rather than a JavaScript number, so integer cents reach the
+sheet without passing through a float — rule 6 intact all the way to the last
+byte.
+
+In a CSV the distinction is invisible; in a workbook it is the difference
+between an Amount column that sums and one that silently reports zero. It is
+also why quantities are numeric now.
+
+#### Dates stay text, deliberately
+
+A real Excel date is a serial number, plus a number format, plus a style index,
+counted from an epoch that differs between Excel for Windows and Excel for Mac.
+Rule 2 says a calendar date here is `'YYYY-MM-DD'` text and is never turned
+into anything with a timezone. ISO text also sorts correctly, which is most of
+what sorting a date column is for.
+
+#### The failures that are silent, and what stops them
+
+| | |
+|---|---|
+| **A control character** | XML 1.0 forbids most of C0, and one stray byte in one note makes Excel refuse the **whole workbook**. That byte arrives from somebody's phone keyboard months from now and the failure looks nothing like its cause. Stripped; tab, newline and carriage return kept, because a note typed across two lines should read across two |
+| **A sheet name** | at most 31 characters, none of `: \ / ? * [ ]`, never blank, never duplicated. Excel does not report a bad name — it refuses the file |
+| **`&` or `<` in a supplier** | malformed XML, same refusal |
+| **Column letters** | not base 26. `columnName(26)` is `AA`, and a lookup table of today's sixteen columns is right until somebody adds a seventeenth |
+
+Only one piece of formatting earns its bytes: **the header row is frozen.**
+These sheets are hundreds of rows long, and headings that scroll away are how
+somebody reads the wrong column.
+
+---
+
+### 50.3 Proving it, which assertions cannot do
+
+§48.3 said it about the PDF and it is true again: **the only proof an `.xlsx`
+is an `.xlsx` is a reader opening it.** Everything in
+`test/unit/workbook.test.ts` is the program checking its own arithmetic.
+
+So the file is written out for real, and opened by readers that know nothing
+about this app:
+
+```bash
+WORKBOOK_OUT=/tmp/shg npx vitest run test/unit/workbook.test.ts
+```
+
+Verified with Python's `zipfile` and `ElementTree` — the container parses, every
+CRC checks, every part is well-formed XML, the sheet names read back, the
+non-Latin name survives (which §48.1's PDF cannot manage), and **the Amount
+column sums to the right figure**, which is the assertion that matters most
+because a text column sums to zero and looks fine.
+
+The nested case is written too: a zip containing workbooks, each of which is
+itself a zip. Both open cleanly.
+
+---
+
+### 50.4 What one download is
+
+`ExportRequest` is a range, a business, and a format.
+
+| chosen | produced |
+|---|---|
+| All businesses, Excel | a **zip** of four workbooks |
+| One business, Excel | one **workbook** |
+| All businesses, CSV | a **zip** of CSVs |
+| One business, CSV | one CSV **per table** — a CSV cannot hold sheets |
+
+**One business is one workbook, not one workbook with twelve tabs.** Four
+businesses' bills in a single file would put GroceryMate's suppliers one tab
+from Majheri's, and the first thing anybody would do is filter by business — a
+column they already have inside each file.
+
+**Deli gets three sheets, the groceries get one**, and the asymmetry is the
+schema's: only Deli issues invoices (`SALES_INVOICE_CODES`), so only Deli has a
+receivables side or any lines. A grocery's workbook offering two empty tabs
+would explain a feature it does not have. There is deliberately no "bill lines"
+sheet for anybody — a supplier bill here is a single amount with no line items.
+
+**Why lines get a sheet of their own**, when he asked for two: a spreadsheet has
+no join. An invoice with five lines is one row on sheet 2 and five on sheet 3;
+folding them together either repeats the header five times — and then the
+Amount column sums to five times the real figure, a wrong total that looks
+right, arrived at by the person least able to spot it — or leaves the header
+blank on four rows, and the sheet stops surviving a sort. It is not "two sheets
+or three". It is three sheets, or two where one cannot be added up.
+
+**The rows are read once and split**, not read once per business. Four round
+trips for one button on shop wifi is the smaller reason; the bigger one is that
+four reads of a live ledger can disagree — a bill entered between the second and
+the third would be in one workbook's arithmetic and not another's.
+
+#### On the screen
+
+A dropdown for the business, pills for the format — the same split
+`PendingList` already makes. Pills for a binary you flip, a list for a list.
+
+And **one line saying what the button will produce**, because the *kind* of
+thing it makes changes with both controls. It is also the only place on the
+screen that mentions the sheets: nothing else would tell somebody Deli's file
+has tabs in it.
+
+Changing either control **throws away what was already built**. A Save button
+that writes a file for a period nobody has on screen any more is worse than no
+Save button, and §49.4 already moved the filename off the row, so nothing would
+contradict it.
+
+**CSV stays**, as the alternative rather than the only offer. It opens
+anywhere and needs nothing, and it costs no second code path: `ExportTable` is
+one shared row-builder and the two formats are two encoders over it.
+
+---
+
+### 50.5 The status column was lying
+
+**A defect in what §49 shipped, found by going to check the mapping when the
+client said he hoped it was right.**
+
+`status` is `unpaid` for two different things: a bill one of the four has
+accepted into the ledger, and a shop's entry nobody has looked at yet. The app
+has never confused them — `onlyOwed` is `unpaid AND approved`, and **nothing
+awaiting review reaches a single owed figure** (§36, CATCH_UP_013).
+
+The bills file wrote the raw word. So anybody filtering `Status = unpaid` in
+Excel got a total the app itself refuses to show.
+
+**Rule 4 broken at the last step, in a file somebody keeps and does arithmetic
+on** — which is worse than breaking it on a screen, because a screen is
+re-derived every time it opens and a spreadsheet is filed.
+
+The Status column now says `awaiting review`, and the predicate is
+`lib/derive/select.ts`'s own: `isAwaitingReview` was extracted from the filter
+that already existed, so the sheet and the screen cannot drift apart. One
+predicate, three callers.
+
+**The general lesson, and it is not "check the export".** The export is the
+first thing this app has ever produced that leaves it. Every rule in
+`ARCHITECTURE` about totals agreeing was written about screens, where the app
+controls the arithmetic. A file hands the arithmetic to somebody else — so
+every column that carries a *word the app interprets* has to carry the
+interpretation with it, or the file is a set of premises with the reasoning
+removed.
+
+Worth re-reading before J5 for exactly that reason: a discount is another
+figure that changes what a total means.

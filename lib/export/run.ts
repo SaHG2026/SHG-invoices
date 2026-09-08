@@ -45,9 +45,18 @@ import {
   renderTable,
   salesTable,
   type ExportTable,
+  type NameLookup,
 } from './tables';
 import { csvBlobFile } from '@/lib/csv';
-import type { InvoiceRow, Profile, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
+import { xlsx, xlsxBlobFile, type Sheet } from '@/lib/xlsx';
+import { zipBlobFile } from '@/lib/zip';
+import type {
+  Business,
+  InvoiceRow,
+  Profile,
+  SalesInvoiceLine,
+  SalesInvoiceRow,
+} from '@/lib/types';
 
 /**
  * Both ends optional, and both meaning what they say.
@@ -181,6 +190,44 @@ async function readProfiles(): Promise<Pick<Profile, 'id' | 'display_name'>[]> {
  * proxy's limit rather than discovering the limit on the day the ledger gets
  * big.
  */
+/**
+ * The four, so a file can be named after one of them.
+ *
+ * Its own read rather than `useBusinesses()`, for the same reason as the
+ * profiles above: this is not a hook and must not hold a cache entry open.
+ * Four rows.
+ */
+async function readBusinesses(): Promise<Business[]> {
+  const { data, error } = await supabase()
+    .from('businesses')
+    .select('id, name, code, sort_order, active, contact_block, bank_details')
+    .order('sort_order');
+  if (error) throw error;
+  return (data ?? []) as Business[];
+}
+
+/**
+ * The filename stem for one business: its code, lower-cased. `gmh`, `ddl`.
+ *
+ * The code rather than the name, because a name has spaces and apostrophes in
+ * it and a filename should survive being emailed, unzipped on Windows and
+ * attached again. The code is already the thing every internal reference is
+ * built from (`GMH-260828-03`), so it is the name these four are filed under
+ * everywhere else too.
+ */
+function slugOf(business: Business | undefined, all: readonly Business[]): string {
+  if (business) return business.code.toLowerCase();
+  /* No such business. Not an invented stem: this can only happen if a business
+     id reached here that is not in the list the same call just read, which is
+     a bug rather than a state, and a file called `shg-undefined-…` is how it
+     would be discovered a week later. */
+  throw new Error(
+    all.length === 0
+      ? 'Could not read the list of businesses.'
+      : 'That business is no longer in the list.',
+  );
+}
+
 const ID_CHUNK = 100;
 
 async function readLines(invoiceIds: readonly string[]): Promise<SalesInvoiceLine[]> {
@@ -204,61 +251,239 @@ async function readLines(invoiceIds: readonly string[]): Promise<SalesInvoiceLin
 }
 
 /**
+ * What one download is: a format, and which business it is about.
+ *
+ * ---------------------------------------------------------------------------
+ * `businessId: null` means every business, and it is the reason there are two
+ * shapes of download rather than one.
+ *
+ * Asked for directly: *"choose to download it all (zip) or download of each
+ * business individually, and when selected deli, it will download a csv with
+ * payable and receivable on two sheets of the same excel"*.
+ *
+ * One business is one workbook. Every business is a zip of those workbooks
+ * rather than one workbook with twelve tabs — four businesses' bills in one
+ * file would put GroceryMate's suppliers one tab away from Majheri's, and the
+ * first thing anybody would do is filter by business, which is a column they
+ * already have inside each file.
+ * ---------------------------------------------------------------------------
+ */
+export type ExportFormat = 'xlsx' | 'csv';
+
+export interface ExportRequest extends ExportRange {
+  /** One business, or null for all of them. */
+  businessId: string | null;
+  format: ExportFormat;
+}
+
+/**
  * Everything, as files, ready to be saved or shared.
  *
  * ---------------------------------------------------------------------------
- * An empty table still produces a file, with its headers.
+ * An empty table still produces a sheet, with its headers.
  *
  * The alternative — skipping a table with no rows — means the wipe's "take
  * the export first" offer hands over two files one time and three the next,
- * and nobody can tell whether the missing one was empty or failed. A file
+ * and nobody can tell whether the missing one was empty or failed. A sheet
  * with a header row and nothing under it says "there were none of these",
  * which is an answer.
  * ---------------------------------------------------------------------------
  */
+export interface ExportFile {
+  file: File;
+  /** What the row on screen is headed. */
+  title: string;
+  /** Row counts per table, in the order the tables appear. */
+  counts: { label: string; count: number }[];
+}
+
 export interface ExportResult {
-  files: File[];
-  /** Row counts, for the sentence the screen shows afterwards. */
+  files: ExportFile[];
+  /** The totals across everything, for the sentence the screen shows. */
   counts: { bills: number; sales: number; lines: number };
 }
 
-export async function runExport(range: ExportRange): Promise<ExportResult> {
+/**
+ * The tables one business gets.
+ *
+ * ---------------------------------------------------------------------------
+ * Three for Deli, one for a grocery, and the asymmetry is the schema's.
+ *
+ * Only Deli issues invoices (`SALES_INVOICE_CODES`), so only Deli has a
+ * receivables side or any lines. A grocery's workbook offering two empty tabs
+ * would be a file explaining a feature it does not have — and §17's whole
+ * argument is that the two directions are different questions, not a flag on
+ * one table.
+ *
+ * There is deliberately no "bill lines" sheet for anybody. A supplier bill in
+ * this app is a single amount with no line items, which is a real asymmetry
+ * rather than an omission.
+ * ---------------------------------------------------------------------------
+ */
+function tablesFor(
+  invoices: readonly InvoiceRow[],
+  sales: readonly SalesInvoiceRow[],
+  lines: readonly SalesInvoiceLine[],
+  names: NameLookup,
+): ExportTable[] {
+  const tables = [billsTable(invoices, names)];
+  /* By whether this business has a receivables side at all, not by counting
+     its rows. A Deli export for a quiet month must still say "0 invoices
+     issued" rather than silently becoming a grocery's workbook. */
+  if (sales.length > 0 || lines.length > 0) {
+    tables.push(salesTable(sales, names), linesTable(sales, lines));
+  }
+  return tables;
+}
+
+function sheetsOf(tables: readonly ExportTable[]): Sheet[] {
+  return tables.map((table) => ({
+    name: table.label,
+    header: table.header,
+    rows: table.rows,
+  }));
+}
+
+function countsOf(tables: readonly ExportTable[]) {
+  return tables.map((table) => ({ label: table.label, count: table.rows.length }));
+}
+
+export async function runExport(request: ExportRequest): Promise<ExportResult> {
+  const range: ExportRange = { from: request.from, to: request.to };
   if (!rangeIsUsable(range)) {
     throw new Error('Those dates are the wrong way round.');
   }
 
-  const [profiles, invoices, sales] = await Promise.all([
+  const [profiles, businesses, invoices, sales] = await Promise.all([
     readProfiles(),
-    readAll<InvoiceRow>('bills', (from, to) =>
-      withinRange(
-        supabase().from('invoices').select(INVOICE_SELECT),
-        range,
-      )
-        .order(BASIS_COLUMN)
-        .order('internal_ref')
-        .range(from, to),
-    ),
-    readAll<SalesInvoiceRow>('invoices', (from, to) =>
-      withinRange(supabase().from('sales_invoices').select(SALES_SELECT), range)
-        .order(BASIS_COLUMN)
-        .order('invoice_number')
-        .range(from, to),
-    ),
+    readBusinesses(),
+    readAll<InvoiceRow>('bills', (from, to) => {
+      let query = withinRange(supabase().from('invoices').select(INVOICE_SELECT), range);
+      if (request.businessId) query = query.eq('business_id', request.businessId);
+      return query.order(BASIS_COLUMN).order('internal_ref').range(from, to);
+    }),
+    readAll<SalesInvoiceRow>('invoices', (from, to) => {
+      let query = withinRange(supabase().from('sales_invoices').select(SALES_SELECT), range);
+      if (request.businessId) query = query.eq('business_id', request.businessId);
+      return query.order(BASIS_COLUMN).order('invoice_number').range(from, to);
+    }),
   ]);
 
   const lines = await readLines(sales.map((invoice) => invoice.id));
   const names = nameLookup(profiles);
+  const totals = { bills: invoices.length, sales: sales.length, lines: lines.length };
 
-  const tables: ExportTable[] = [
-    billsTable(invoices, names),
-    salesTable(sales, names),
-    linesTable(sales, lines),
-  ];
+  /*
+   * One business: one file, whatever the format.
+   *
+   * CSV cannot hold sheets, so the CSV form of a multi-table export is several
+   * files — which is what §49.2 already produced and why that decision is
+   * unchanged. The workbook form is the one the client asked for and is the
+   * default; CSV stays because it opens anywhere, needs nothing, and both are
+   * built from the same rows.
+   */
+  if (request.businessId !== null) {
+    const business = businesses.find((entry) => entry.id === request.businessId);
+    const stem = slugOf(business, businesses);
+    const tables = tablesFor(invoices, sales, lines, names);
+
+    if (request.format === 'csv') {
+      return {
+        files: tables.map((table) => ({
+          file: csvBlobFile(
+            exportFilename(`${stem}-${table.slug}`, range.from, range.to),
+            renderTable(table),
+          ),
+          title: table.label,
+          counts: [{ label: table.label, count: table.rows.length }],
+        })),
+        counts: totals,
+      };
+    }
+
+    return {
+      files: [
+        {
+          file: xlsxBlobFile(
+            exportFilename(stem, range.from, range.to, 'xlsx'),
+            sheetsOf(tables),
+          ),
+          title: business?.name ?? 'Everything',
+          counts: countsOf(tables),
+        },
+      ],
+      counts: totals,
+    };
+  }
+
+  /*
+   * Every business.
+   *
+   * The rows are read ONCE and split here rather than read four times. Four
+   * round trips for one button on shop wifi is the cost, and the bigger reason
+   * is that four separate reads of a live ledger can disagree with each other:
+   * a bill entered between the second and third would appear in one workbook's
+   * arithmetic and not in another's.
+   */
+  const perBusiness = businesses.map((business) => {
+    const theirInvoices = invoices.filter((row) => row.business_id === business.id);
+    const theirSales = sales.filter((row) => row.business_id === business.id);
+    const theirSaleIds = new Set(theirSales.map((row) => row.id));
+    const theirLines = lines.filter((line) => theirSaleIds.has(line.sales_invoice_id));
+    return {
+      business,
+      tables: tablesFor(theirInvoices, theirSales, theirLines, names),
+    };
+  });
+
+  if (request.format === 'csv') {
+    /* A zip either way. Four businesses' CSVs is up to six files, and six
+       separate Save taps is worse than one archive — which is the whole point
+       of the client asking for a zip. */
+    return {
+      files: [
+        {
+          file: zipBlobFile(
+            exportFilename('everything', range.from, range.to, 'zip'),
+            perBusiness.flatMap(({ business, tables }) =>
+              tables.map((table) => ({
+                name: exportFilename(
+                  `${slugOf(business, businesses)}-${table.slug}`,
+                  range.from,
+                  range.to,
+                ),
+                bytes: new TextEncoder().encode(renderTable(table)),
+              })),
+            ),
+          ),
+          title: 'Every business',
+          counts: perBusiness.map(({ business, tables }) => ({
+            label: business.name,
+            count: tables.reduce((sum, table) => sum + table.rows.length, 0),
+          })),
+        },
+      ],
+      counts: totals,
+    };
+  }
 
   return {
-    files: tables.map((table) =>
-      csvBlobFile(exportFilename(table.slug, range.from, range.to), renderTable(table)),
-    ),
-    counts: { bills: invoices.length, sales: sales.length, lines: lines.length },
+    files: [
+      {
+        file: zipBlobFile(
+          exportFilename('everything', range.from, range.to, 'zip'),
+          perBusiness.map(({ business, tables }) => ({
+            name: exportFilename(slugOf(business, businesses), range.from, range.to, 'xlsx'),
+            bytes: xlsx(sheetsOf(tables)),
+          })),
+        ),
+        title: 'Every business',
+        counts: perBusiness.map(({ business, tables }) => ({
+          label: business.name,
+          count: tables.reduce((sum, table) => sum + table.rows.length, 0),
+        })),
+      },
+    ],
+    counts: totals,
   };
 }

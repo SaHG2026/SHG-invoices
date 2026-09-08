@@ -99,6 +99,9 @@ const paidInvoice = makeInvoice({
 
 const mocks = vi.hoisted(() => ({
   who: { current: null as unknown },
+  /* Who is on the list. Switchable, so the SECOND owner can exist for
+     one test -- the demote path is unreachable while there is only one. */
+  team: { current: [] as unknown[] },
   invoice: { current: null as unknown },
   setRole: vi.fn(),
   setDocument: vi.fn(),
@@ -107,7 +110,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: mocks.who.current, isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
-  useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
+  useTeam: () => ({ data: mocks.team.current }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -223,6 +226,7 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   mocks.who.current = MANI;
+  mocks.team.current = PROFILES.filter((person) => person.role !== 'builder');
   mocks.invoice.current = unpaidInvoice;
   mocks.setDocument.mockResolvedValue(BUSINESSES[3]);
   mocks.setRole.mockImplementation(async ({ id, role }: { id: string; role: string }) => ({
@@ -320,8 +324,18 @@ describe('who can do what', () => {
   });
 
   it('promotes somebody, after asking', () => {
+    /*
+     * The row's control says "Change" and names the person it belongs to, so
+     * five identical labels can still be told apart -- by a screen reader, by
+     * a test, and by anybody who has tabbed onto one.
+     *
+     * The DESTINATION is named in the dialog, not on the button. It used to be
+     * on the button ("Make owner"), which is spec §8's rule; what made that
+     * read as promote-only is that the demote label appears only once there
+     * are two owners, and there has only ever been one.
+     */
     settings();
-    fireEvent.click(within(roleList()).getAllByRole('button', { name: 'Make owner' })[0]!);
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
 
     const dialog = within(screen.getByRole('alertdialog'));
     expect(dialog.getByText(/mark bills paid/)).toBeInTheDocument();
@@ -334,9 +348,32 @@ describe('who can do what', () => {
 
   it('writes nothing if you go back', () => {
     settings();
-    fireEvent.click(within(roleList()).getAllByRole('button', { name: 'Make owner' })[0]!);
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Go back' }));
     expect(mocks.setRole).not.toHaveBeenCalled();
+  });
+
+  it('demotes through the same button, once there is somebody to demote', () => {
+    /*
+     * The reason the control stopped naming its destination.
+     *
+     * "Make manager" only ever appears when there are TWO owners, and there
+     * has only ever been one -- so every row on the real screen said "Make
+     * owner", and a list where every button promotes reads as a list that can
+     * only promote. One button called Change, and the dialog says which way.
+     */
+    const secondOwner = { ...MILAN, role: 'owner' as const };
+    mocks.team.current = [MANI, secondOwner];
+    settings();
+
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    const dialog = within(screen.getByRole('alertdialog'));
+    expect(dialog.getByText(/stop being able to mark anything paid/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Make manager' }));
+
+    return waitFor(() => {
+      expect(mocks.setRole).toHaveBeenCalledWith({ id: MILAN.id, role: 'manager' });
+    });
   });
 
   it('will not offer to demote the only owner', () => {
@@ -344,13 +381,16 @@ describe('who can do what', () => {
      * Stated before the tap, unlike the other four refusals in
      * `set_user_role`. Those are conditions on rows that are not on this list
      * — a builder, a shop — so there is no button to leave out. This one is a
-     * condition on a row that IS here, and "Make manager" on the only owner is
-     * a button whose entire job is to fail.
+     * condition on a row that IS here, and a Change button on the only owner
+     * is a button whose entire job is to fail.
      */
     settings();
     const list = within(roleList());
-    expect(list.queryByRole('button', { name: 'Make manager' })).not.toBeInTheDocument();
+    expect(list.queryByRole('button', { name: /Change Mani/ })).not.toBeInTheDocument();
     expect(list.getByText('The only owner')).toBeInTheDocument();
+    /* And the rows that CAN change still have one, so the assertion above is
+       about the last owner rather than about the button having disappeared. */
+    expect(list.getByRole('button', { name: /Change Milan/ })).toBeInTheDocument();
   });
 });
 

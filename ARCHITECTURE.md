@@ -5753,3 +5753,41 @@ removed.
 
 Worth re-reading before J5 for exactly that reason: a discount is another
 figure that changes what a total means.
+
+---
+
+### 50.6 One button that says Change
+
+> *"in the who can do what, can we have a button that says change. pressing it
+> will promote/demote their roles. right now there is just promote."*
+
+He is right, and the interesting part is that the code was never promote-only.
+Each row named its destination — **Make owner** on a manager, **Make manager**
+on an owner — which is spec §8's rule that a control is named for what it does.
+
+**The demote label only appears when there are two owners, and there has only
+ever been one.** So every row on his screen said "Make owner", and a list where
+every button promotes reads as a list that can only promote. The behaviour was
+complete; the screen could not show it.
+
+So the row now carries one control saying **Change**, and the destination is
+stated in the dialog that follows: *"Make Milan an owner?"*, with what it gains
+and what it costs. The tier being changed is already on the row, one line under
+the name, so "Change" beside "Manager" is not ambiguous — there are two tiers
+and one of them is printed.
+
+**The trade, stated because it is a real one:** the button no longer says what
+it will do before it is pressed. That is a genuine cost against spec §8, paid
+because the alternative was a control whose two states are so unevenly reachable
+that one of them looked missing. `aria-label` carries the person's name —
+`Change Milan's role` — so five identical labels can still be told apart by a
+screen reader, by a test, and by anybody who has tabbed onto one.
+
+**The only owner still has no button at all**, and still says "The only owner"
+instead. That refusal is stated before the tap rather than after, because it is
+a condition on a row that IS on the list — unlike the other four in
+`set_user_role`, which are conditions on rows that are not.
+
+`test/unit/tiers.test.tsx` now renders a **second owner** so the demote path is
+reachable at all. It was not before, which is the same shape as §39.8: a mock
+that cannot produce a real state guarantees nobody looks at it.

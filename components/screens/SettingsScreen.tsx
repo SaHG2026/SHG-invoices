@@ -541,9 +541,38 @@ function RoleSection({ me }: { me: Profile }) {
                   onClick={() =>
                     setChanging({ person, to: owner ? 'manager' : 'owner' })
                   }
+                  /*
+                   * Named for the row, not just for itself.
+                   *
+                   * Every one of these says "Change", so the visible label
+                   * cannot tell two of them apart -- for a screen reader, for
+                   * a test, or for anybody who has tabbed to one. The person's
+                   * name comes from the row it sits in.
+                   */
+                  aria-label={`Change ${person.display_name}’s role`}
                   className="touch shrink-0 rounded-full border border-hairline bg-card px-3 text-sm text-action disabled:opacity-40"
                 >
-                  {owner ? 'Make manager' : 'Make owner'}
+                  {/*
+                    Asked for directly: *"can we have a button that says
+                    change. pressing it will promote/demote their roles."*
+
+                    It used to name its destination -- "Make owner" on a
+                    manager, "Make manager" on an owner -- which is spec §8's
+                    rule that a control is named for what it does. What made
+                    that read as promote-only is that the demote label appears
+                    ONLY when there are two owners, and there has only ever
+                    been one: every row on his screen said "Make owner", and a
+                    list where every button promotes looks like a list that
+                    can only promote.
+
+                    The tier it would have named is already on the row, one
+                    line under the name, so "Change" beside "Manager" is not
+                    ambiguous -- there are two tiers and one of them is being
+                    read. And the destination is still stated in words before
+                    anything happens: the dialog below asks "Make Milan an
+                    owner?" and lists what that gains and costs.
+                  */}
+                  Change
                 </button>
               )}
             </li>

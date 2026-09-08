@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * "This looks odd — is it deliberate?"
@@ -52,9 +53,35 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onCancel]);
 
-  if (!open) return null;
+  /*
+   * -------------------------------------------------------------------------
+   * Rendered into `document.body`, not where it is written.
+   *
+   * `AppChrome` puts every screen inside `<main class="screen-in">`, and that
+   * class carries `animation: ... both` -- so when the animation finishes the
+   * element KEEPS an identity `transform`, and an element with a transform is
+   * a containing block for `position: fixed` descendants.
+   *
+   * The effect is that `fixed inset-0` here resolved against the whole page
+   * rather than the viewport: on a long screen this dialog was centred
+   * hundreds of pixels below the fold and scrolled with the content. It looked
+   * correct on a short page, which is why it survived.
+   *
+   * The drawer, the bottom sheet and the New invoice bar are siblings of
+   * `<main>` rather than inside it, so none of them ever hit this — which is
+   * the other half of why nobody found it.
+   *
+   * §45 for the fourth time: a change made for appearance silently disabling
+   * behaviour elsewhere, invisible to every assertion because jsdom does no
+   * layout. Found by measuring `getBoundingClientRect` in a real browser.
+   * -------------------------------------------------------------------------
+   */
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => setHost(document.body), []);
 
-  return (
+  if (!open || !host) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center px-6"
       role="alertdialog"
@@ -112,6 +139,7 @@ export function ConfirmDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

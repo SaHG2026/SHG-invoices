@@ -8,6 +8,7 @@ import { AppChrome } from '@/components/app/AppChrome';
 import { PushSwitch } from '@/components/app/PushSwitch';
 import { PasswordChange } from '@/components/app/PasswordChange';
 import { ExportSection } from '@/components/app/ExportSection';
+import { WipeSection } from '@/components/app/WipeSection';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useIsOnline, useQueuedWriteCount } from '@/lib/offline/pending';
 import { useQueryClient } from '@tanstack/react-query';
@@ -414,6 +415,20 @@ export function SettingsScreen() {
         }}
         onCancel={() => setAskingSignOut(false)}
       />
+
+      {/*
+        And the one thing that undoes all of it. J4, ARCHITECTURE §49.5.
+
+        Owner only, like the role list and the invoice document above it, and
+        for the same reason: `wipe_everything` refuses anybody else with 42501,
+        so offering a manager four steps ending in a refusal is notes §6
+        failing at the worst possible moment.
+
+        Last on the page but for the build stamp, deliberately. Nobody comes to
+        Settings to clear the records, and a control that empties the database
+        should not be passed on the way to the notification switch.
+      */}
+      {isOwner(profile) ? <WipeSection /> : null}
 
       {/*
         Which build this phone is running.

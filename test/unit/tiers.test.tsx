@@ -159,6 +159,23 @@ vi.mock('@/lib/queries/push', () => ({
   useDisablePush: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+/*
+ * The eighth mock, and it appeared the day J4 landed.
+ *
+ * `WipeSection` is owner-only and this file renders Settings AS an owner, so
+ * every test here reaches `useWipeEverything` -- which calls `useMutation`,
+ * which wants a real QueryClient the mock below does not provide. Nine tests
+ * that had nothing to do with the wipe failed with "No QueryClient set".
+ *
+ * HANDOFF 5's lesson arriving from the other direction: a file that mocks
+ * only what it thinks it needs breaks when the screen grows a hook. The screen
+ * is the mock list.
+ */
+vi.mock('@/lib/queries/wipe', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/queries/wipe')>();
+  return { ...actual, useWipeEverything: () => ({ mutateAsync: vi.fn(), isPending: false }) };
+});
+
 /* Settings reaches for the client itself, to flush paused writes before it
    offers to sign out. There is none in a bare render. */
 vi.mock('@tanstack/react-query', async (importOriginal) => {

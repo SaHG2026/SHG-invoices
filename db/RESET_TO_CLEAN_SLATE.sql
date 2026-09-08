@@ -6,6 +6,15 @@
 --   Nothing in this file can be undone. Read the two sections below before
 --   you run it.
 --
+--   THERE IS NOW A SECOND WAY TO DO THIS. `wipe_everything()`, from
+--   CATCH_UP_021, does exactly what this file does — same rows, same order,
+--   same things kept — from inside the app, owner only, behind four
+--   confirmations. ARCHITECTURE §49.5.
+--
+--   **If you change one, change the other**, or the app and this file mean
+--   different things by "empty". This file remains the way in when the app
+--   cannot be reached, or when nobody wants to sign in to do it.
+--
 --   Run it in the Supabase SQL editor, in one go. It is wrapped in a single
 --   transaction, so either all of it happens or none of it does — there is no
 --   half-wiped state to recover from.

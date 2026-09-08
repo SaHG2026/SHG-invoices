@@ -163,11 +163,17 @@ export function ExportSection() {
 /**
  * The three files, with what is in each.
  *
+ * Exported, because the wipe offers the same three files immediately before
+ * deleting the data (§49.5) and a second list would be a second thing to keep
+ * right. It does NOT reuse `ExportSection` whole: that would put a date range
+ * on a screen where choosing one is a mistake — exporting July and then wiping
+ * everything — and would leave two identical forms in the document.
+ *
  * Share is offered only where `canShare({files})` says yes, exactly as §48.2
  * does for the PDF — never a dead button. On a desktop browser this is a
  * Download-only screen and says nothing about it.
  */
-function ExportFiles({ result }: { result: ExportResult }) {
+export function ExportFiles({ result }: { result: ExportResult }) {
   const toast = useToast();
   const [bills, sales, lines] = result.files;
 

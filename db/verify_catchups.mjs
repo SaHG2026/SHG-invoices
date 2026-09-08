@@ -208,6 +208,29 @@ await fn('set_business_document', 'set_business_document', {
  */
 console.log('  ?      businesses still has no update policy  — see §3 of CATCH_UP_020');
 
+console.log('\nCATCH_UP_021 — the wipe, from inside the app\n');
+/*
+ * Probed with a DELIBERATELY WRONG phrase.
+ *
+ * The anon key makes `auth.uid()` null, so `is_owner()` is false and the
+ * function refuses with 42501 before it looks at anything else -- which is
+ * already a safe probe. The wrong phrase is the second lock, so that even in
+ * an impossible world where the first check passed, this call still cannot
+ * delete a row. Every probe in this file is a no-op on purpose, and for this
+ * one function that discipline is the difference between a check and an
+ * accident.
+ */
+await fn('wipe_everything', 'wipe_everything', { p_confirm: 'not the phrase' });
+/*
+ * Not probable from out here, and both matter:
+ *   - that it is SECURITY DEFINER (without it the deletes silently do nothing,
+ *     because RLS hides the rows and `delete` does not complain)
+ *   - that `activity_log` still has no INSERT policy
+ * §3 of the SQL file raises on both instead.
+ */
+console.log('  ?      wipe_everything is security definer     — see §3 of CATCH_UP_021');
+console.log('  ?      activity_log still has no insert policy — see §3 of CATCH_UP_021');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

@@ -34,6 +34,7 @@ end to end. Grep for the section you need:
 | J1 — the two bugs, and the tiers | §46 |
 | J2 — what is printed on an invoice | §47 |
 | J3 — the PDF, and how a file leaves the app | §48 |
+| J4 — the export, the wipe, and the dialog bug | §49 |
 | The audit from scratch, and what it found | §43 |
 
 ---
@@ -100,7 +101,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 858 tests
+npx vitest run       # 909 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -167,7 +168,9 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**.
+  **021 is written and NOT yet applied** — it is the wipe, and it must be
+  run before the deploy that carries J4
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -251,8 +254,12 @@ Scope queries with `within()`.
 ## 6. Where the build has got to
 
 **Live and in daily use. All database files through `CATCH_UP_020` applied.
-J1, J2 and J3 are built, pushed and deployed — `69ba38d`.** 858 tests under
-three timezones.
+J1, J2 and J3 are built, pushed and deployed — `69ba38d`.**
+
+**J4 is built and committed and is NOT deployed, and `CATCH_UP_021` has not
+been run.** Both are waiting on the client, in that order: the SQL first,
+the deploy second. §7 has the exact words to send him. 909 tests under three
+timezones.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -269,6 +276,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §46 | **J1** — the two bugs, and three real tiers |
 | §47 | **J2** — the contact block, the bank details and the signature line |
 | §48 | **J3** — a PDF written by hand, Download and Share |
+| §49 | **J4** — the ledger as three CSVs, and the wipe behind four acts |
 
 ### The two lessons worth more than the features
 
@@ -342,8 +350,8 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 ## 6b. What is being built next — J1 to J5
 
-**J1 (§46), J2 (§47) and J3 (§48) are built and live. J4 and J5 are agreed,
-not started.** ARCHITECTURE §44 has the design and the reasoning for each;
+**J1 (§46), J2 (§47) and J3 (§48) are built and live. J4 (§49) is built and
+waiting to go out. J5 is agreed and not started.** ARCHITECTURE §44 has the design and the reasoning for each;
 §46–§48 have what was actually done, including where §44 was overruled.
 
 | | | |
@@ -351,7 +359,7 @@ not started.** ARCHITECTURE §44 has the design and the reasoning for each;
 | **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
 | **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
 | **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, nothing compressed), with Deli's logo embedded as a JPEG. Download always, Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
-| **J4** | Export and the wipe | Full-history CSV, and an owner-only in-app wipe behind four conscious acts. §44.5 |
+| **J4** | **Built, not deployed** — §49 | Three CSVs (bills, Deli's invoices, their lines) over an optional date range, written by hand like the PDF; and the wipe behind four acts, gated on `is_owner()` in `wipe_everything`. Needs `CATCH_UP_021` run FIRST. It also fixed a dialog bug that predates it — §49.6. |
 | **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
 **The three things J1 established, which the rest of the roadmap leans on:**
@@ -377,8 +385,13 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**Nothing is blocking.** Every database file through `CATCH_UP_020` is applied
-and confirmed by `verify_catchups.mjs`. J1–J3 are deployed.
+**One thing is blocking, and it is the only ordering that matters.**
+`db/CATCH_UP_021.sql` has to be run before J4 is deployed. It only adds a
+function, so running it early is invisible; deployed first with the file not
+run, the wipe raises 42883 at the end of a four-step confirmation, which is
+the worst possible moment to find a missing function. Everything through
+`CATCH_UP_020` is applied and confirmed by `verify_catchups.mjs`, and J1–J3
+are deployed.
 
 The list is in the order it is worth picking things up, not in the order they
 arrived.
@@ -417,12 +430,18 @@ arrived.
 
 ### The roadmap
 
-6. **J4 — export, and the wipe.** §44.5. Full-history CSV, and an owner-only
-   in-app wipe behind four conscious acts. This absorbs the long-standing
-   *"from this date to this date export in excel or csv"* item: half of it
-   already exists as the supplier date range (§35.4), and §33.2 has the one
-   question to ask before writing a byte — **what happens to the file when it
-   arrives**.
+6. **J4 is built. Send `CATCH_UP_021`, then deploy.** §49. Two things then
+   need his eyes and neither can be checked from here:
+
+   - **Does the export open properly in Excel?** Every byte the encoder
+     produces is tested; the three reads behind it have never run against the
+     live database, because signing in needs credentials that are not on the
+     builder's machine. The first real run is the test.
+   - **§33.2's question is still unanswered** — *what happens to the file when
+     it arrives*. Opened, read and closed: CSV is right and this is finished.
+     Kept, formatted and handed to somebody: a real `.xlsx` is half a day and
+     the first dependency added purely for output. Worth asking now that there
+     is something in front of him to react to.
 
 7. **J5 — discounts and refunds.** §44.6. Deli's customers only, the
    receivables side, payables untouched. **Manager level, unlike marking
@@ -477,6 +496,9 @@ arrived.
 - **§47 J2** — the contact block, bank details, signature line. `CATCH_UP_020`.
 - **§48 J3** — the hand-written PDF, Download, Share, the logo, the message.
   No SQL.
+- **§49 J4** — three CSVs and the wipe. `CATCH_UP_021`, **not yet applied**.
+- **§49.6** every dialog in the app was fixed to the page rather than to the
+  viewport, and had been since `ConfirmDialog` was written.
 - **§40.3** `/receivables`, the global list of what Deli is owed.
 - **§43.2** the three unused packages are gone. `/specimen` and the
   middleware's `offline` exemption stay, with reasons recorded.

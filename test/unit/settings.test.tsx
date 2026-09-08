@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ToastProvider } from '@/components/ui/Toast';
 import { BUSINESSES, PROFILES, SUPPLIERS, VENUE_PROFILE, makeInvoices } from '../fixtures/invoices';
 import type { Profile } from '@/lib/types';
+import { WIPE_PHRASE } from '@/lib/queries/wipe';
 
 /**
  * Settings.
@@ -42,6 +43,9 @@ const mocks = vi.hoisted(() => ({
   /* J4's export. Mocked so the screen can be rendered without a session --
      what it reads is tested in export.test.ts, against the bytes. */
   runExport: vi.fn(),
+  /* J4's wipe. Rule 5's one exception, so the mock is the only thing any
+     test is allowed to reach. */
+  wipe: vi.fn(),
 }));
 
 vi.mock('@/lib/pin', () => ({
@@ -112,6 +116,13 @@ vi.mock('@/lib/export/run', async (importOriginal) => {
   /* `rangeIsUsable` stays real -- it is the thing deciding whether the button
      is offered, and a mocked predicate would test the mock. */
   return { ...actual, runExport: mocks.runExport };
+});
+
+vi.mock('@/lib/queries/wipe', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/queries/wipe')>();
+  /* `WIPE_PHRASE` stays real. The field compares against the same constant the
+     RPC is called with, and a mocked phrase would test the mock. */
+  return { ...actual, useWipeEverything: () => ({ mutateAsync: mocks.wipe, isPending: false }) };
 });
 
 const { SettingsScreen } = await import('@/components/screens/SettingsScreen');
@@ -515,6 +526,164 @@ describe('everybody', () => {
 
 
 /* -------------------------------------------------------------------------- *
+ * The wipe. J4, ARCHITECTURE §49.5 — rule 5's one exception.
+ * -------------------------------------------------------------------------- */
+
+describe('the wipe', () => {
+  const opener = /Clear all records/;
+
+  function start() {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: opener }));
+  }
+
+  it('is not offered to a manager', () => {
+    // `wipe_everything` refuses anybody but an owner with 42501, so four steps
+    // ending in a refusal is notes §6 failing at the worst possible moment.
+    mocks.who = PROFILES.find((person) => person.role === 'manager')!;
+    open();
+    expect(screen.queryByRole('button', { name: opener })).not.toBeInTheDocument();
+  });
+
+  it('is not offered to a shop', () => {
+    mocks.who = VENUE_PROFILE;
+    open();
+    expect(screen.queryByRole('button', { name: opener })).not.toBeInTheDocument();
+  });
+
+  it('renders outside the screen, so a transform cannot capture it', () => {
+    /*
+     * `<main class="screen-in">` keeps an identity transform after its
+     * animation finishes, and an element with a transform is a containing
+     * block for `position: fixed` children — so a dialog written inside a
+     * screen is fixed to the PAGE and scrolls with it. On Settings that put it
+     * hundreds of pixels below the fold.
+     *
+     * jsdom does no layout and can never see that. What it can see is the
+     * structural fact underneath it, which is what this asserts. §45.
+     */
+    start();
+    expect(screen.getByRole('alertdialog').closest('main')).toBeNull();
+  });
+
+  it('leads with what it cannot reach, not with what it deletes', () => {
+    /*
+     * RESET_TO_CLEAN_SLATE.sql spends its first screen on other phones' unsent
+     * work, and that was the right thing to lead with: the queue does not know
+     * the wipe happened and will send afterwards.
+     */
+    start();
+    expect(screen.getByText(/cannot reach anybody else/)).toBeInTheDocument();
+  });
+
+  it('refuses outright while this phone still has something to send', () => {
+    // The only hard stop in the four steps. That work would be destroyed with
+    // no record of it anywhere.
+    mocks.queue.queued = 2;
+    start();
+    expect(screen.getByText(/2 things on this phone haven’t sent yet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  });
+
+  it('refuses offline, and says which of the two problems it is', () => {
+    mocks.queue.online = false;
+    start();
+    expect(screen.getByText(/no signal/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  });
+
+  it('will not go on until the phrase is typed exactly', () => {
+    start();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const field = screen.getByLabelText('Confirmation phrase');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+    // Case matters, and so does the whole phrase. The database checks the same
+    // string again (CATCH_UP_021 §1).
+    fireEvent.change(field, { target: { value: 'wipe everything' } });
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+    fireEvent.change(field, { target: { value: 'Wipe' } });
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+    fireEvent.change(field, { target: { value: WIPE_PHRASE } });
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+  });
+
+  function reachTheOffer() {
+    start();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.change(screen.getByLabelText('Confirmation phrase'), {
+      target: { value: WIPE_PHRASE },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  }
+
+  it('offers the export before it offers the wipe', () => {
+    /*
+     * Third of the four, and the order is not arrangement: offered first it
+     * reads as a step in a form and gets tapped past. Here it is the last
+     * thing between somebody and an empty database.
+     */
+    reachTheOffer();
+    expect(screen.getByText(/no backups/)).toBeInTheDocument();
+    /*
+     * "everything", with no date range on it. The range picker lived here for
+     * one draft and offered a CHOICE of period directly above a button that
+     * deletes every period -- a mistake the screen would have helped somebody
+     * make. It also put two identical forms in the document.
+     */
+    /* Scoped to the sheet: Settings' own export section is still behind it,
+       with fields of the same name. HANDOFF 5's collision. */
+    const sheet = within(screen.getByRole('alertdialog'));
+    expect(sheet.getByRole('button', { name: /Prepare a copy of everything/ })).toBeInTheDocument();
+    expect(sheet.queryByLabelText('Export from')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear everything' })).not.toBeInTheDocument();
+  });
+
+  it('needs declining the copy to be its own tap', () => {
+    // Naming it "Skip" would let somebody past without reading the sentence.
+    reachTheOffer();
+    fireEvent.click(screen.getByRole('button', { name: /I don’t need a copy/ }));
+    expect(screen.getByRole('button', { name: 'Clear everything' })).toBeInTheDocument();
+    expect(mocks.wipe).not.toHaveBeenCalled();
+  });
+
+  it('clears, and says what was there', async () => {
+    // The counts come from the database, taken before the deletes. They are
+    // the only receipt anybody gets — afterwards there is nothing to count.
+    mocks.wipe.mockResolvedValue({
+      invoices: 412,
+      sales_invoices: 37,
+      suppliers: 19,
+      customers: 8,
+      products: 1,
+    });
+    reachTheOffer();
+    fireEvent.click(screen.getByRole('button', { name: /I don’t need a copy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear everything' }));
+
+    expect(await screen.findByText(/The records are cleared/)).toBeInTheDocument();
+    expect(screen.getByText('412 bills')).toBeInTheDocument();
+    expect(screen.getByText('37 invoices Deli issued')).toBeInTheDocument();
+    expect(screen.getByText('1 product')).toBeInTheDocument();
+  });
+
+  it('shows the database’s own sentence when it is refused', async () => {
+    // All the refusals in `wipe_everything` are written to be read by a
+    // person; a house message would replace a specific reason with a vague one.
+    mocks.wipe.mockRejectedValue(new Error('Only the owner can clear the records.'));
+    reachTheOffer();
+    fireEvent.click(screen.getByRole('button', { name: /I don’t need a copy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear everything' }));
+
+    expect(await screen.findByText('Only the owner can clear the records.')).toBeInTheDocument();
+  });
+});
+
+
+/* -------------------------------------------------------------------------- *
  * Export. J4, ARCHITECTURE §49.
  * -------------------------------------------------------------------------- */
 
@@ -696,6 +865,50 @@ describe('preview', () => {
    * phone. jsdom does no layout, so nothing here can see that; this is what
    * gets looked at. HANDOFF 5.
    */
+  /*
+   * The wipe's four steps, each written out.
+   *
+   * These are dialogs full of prose on a 375px phone, and the last thing
+   * anybody wants is a warning that scrolls out of sight above a Continue
+   * button. jsdom does no layout (HANDOFF 5), so this is the only way to
+   * find that.
+   */
+  it.skipIf(!OUT)('snapshot of each wipe step', async () => {
+    mocks.who = profile;
+    mocks.wipe.mockResolvedValue({
+      invoices: 412,
+      sales_invoices: 37,
+      suppliers: 19,
+      customers: 8,
+      products: 1,
+    });
+
+    const view = open();
+    /* `document.body`, not the container: the sheets are portalled out of the
+       screen so that `<main class="screen-in">` cannot become their containing
+       block. A container snapshot would be a page with no dialog on it. */
+    const stem = OUT.replace(/\.html$/, '');
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear all records/ }));
+    await write(`${stem}-wipe-1.html`, document.body.innerHTML);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await write(`${stem}-wipe-2.html`, document.body.innerHTML);
+
+    fireEvent.change(screen.getByLabelText('Confirmation phrase'), {
+      target: { value: WIPE_PHRASE },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await write(`${stem}-wipe-3.html`, document.body.innerHTML);
+
+    fireEvent.click(screen.getByRole('button', { name: /I don’t need a copy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear everything' }));
+    await screen.findByText(/The records are cleared/);
+    await write(`${stem}-wipe-4.html`, document.body.innerHTML);
+
+    view.unmount();
+  });
+
   it.skipIf(!OUT)('snapshot with the files prepared', async () => {
     mocks.who = profile;
     mocks.runExport.mockResolvedValue({

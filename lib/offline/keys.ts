@@ -124,6 +124,21 @@ export const mk = {
  * no signal.
  * ---------------------------------------------------------------------------
  */
+/**
+ * The one write that is deliberately NOT in `mk`, and must never be.
+ *
+ * `wipe_everything` (§49.5). Everything above is safe to replay from a cold
+ * start days later, because each one adds a row that was already true when it
+ * was typed. A wipe is not: queued on a phone with no signal and sent on
+ * Thursday, it would delete every invoice entered between Tuesday and
+ * Thursday, by people who never asked for it and are not looking at a
+ * confirmation.
+ *
+ * With no key here it has no mutation default and no offline path, so with no
+ * signal it fails and says so. A destructive action must be a thing that
+ * happens now or not at all.
+ */
+
 export const OFFLINE_SCHEMA = 'v2';
 
 /** Every key above, flattened — what `register.ts` and the persister check against. */

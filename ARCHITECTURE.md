@@ -5371,3 +5371,168 @@ signing in needs credentials that are not on the builder's machine (HANDOFF §7
 item 9, the same gap `verify_staff.mjs` sits in). This is the export's version
 of *"a fence proven to keep things out has not been proven to have a gate"* —
 the first real run is the test.
+
+---
+
+### 49.5 The wipe
+
+`db/CATCH_UP_021.sql`, `lib/queries/wipe.ts`, `components/app/WipeSection.tsx`.
+
+`db/RESET_TO_CLEAN_SLATE.sql` already empties the app. It is a file run
+deliberately in another tool, and **that friction was doing real work** — so
+moving it into a screen means replacing the friction, not removing it. The
+client was told exactly that, and answered with a better design than the
+objection (§44.5):
+
+1. Confirm.
+2. Type **"Wipe everything"**.
+3. Be offered the full export first — take it or decline it.
+4. Then wipe.
+
+Four conscious acts cannot be butter fingers. Each of the four is its own
+sheet with its own way back, and none of them is a checkbox beside a button.
+
+**Rule 5 says nothing is ever deleted, and this is its one exception.** Named
+in the SQL file and again here so it stays an exception rather than becoming a
+precedent: if a second `delete` ever appears in a function, the question to ask
+is why it is not a void.
+
+#### The order of the four is not arrangement
+
+The export is offered **third** — after the phrase, immediately before the
+deletion. Offered first, it sits in front of somebody who has not yet decided,
+where it reads as a step in a form and gets tapped past. Third, it is the last
+thing between them and an empty database, and §33.1 is what makes that matter:
+there are no backups, accepted on the client's own reasoning that the records
+live elsewhere. These files are the only copy that will exist.
+
+Declining is its own tap on a control that says what it means — *"I don't need
+a copy"*, not *"Skip"*, because a button called Skip lets somebody past without
+reading the sentence above it.
+
+#### The first step is about other phones, not this one
+
+`RESET_TO_CLEAN_SLATE.sql` spends its whole first screen on this and was right
+to: every phone can be holding work that has not been sent, **that queue does
+not know the wipe happened**, and it will send afterwards — one invoice in an
+otherwise empty ledger. The wipe clears the queue on the device that runs it
+and cannot reach anybody else's.
+
+This device's own count is the one number the app can actually answer, so it is
+shown live and it is a **hard stop**: with anything queued here, Continue is
+disabled rather than warned about. That work would be destroyed with no record
+of it anywhere. It is the only hard stop in the four steps, and being offline is
+the other — there is no wipe without a connection.
+
+#### It is deliberately not queueable, and it is the only write that must not be
+
+Every other write in `lib/offline/keys.ts` is safe to replay from a cold start
+days later, because it adds one row that was already true when it was typed.
+This one is not: a wipe queued on a phone with no signal and sent on Thursday
+would delete every invoice entered between Tuesday and Thursday, by people who
+never asked for it and are not looking at a confirmation.
+
+So it has no `mk` key, no mutation default and no offline path. **A destructive
+action must be a thing that happens now or not at all.**
+
+#### The phrase is checked twice, and the second check is not security
+
+`wipe_everything` refuses anything but `'Wipe everything'`, exactly and
+case-sensitively. The phrase is in the client bundle and anybody reading it can
+send the string, so this is not a lock against a person. It is a lock against
+an ACCIDENT: a retried request, a stray call, a script written against the
+schema by somebody who did not read the file. **A function named
+`wipe_everything` that fires on an empty argument list is one mistyped line
+away from an empty database.**
+
+The app and the RPC compare against the same exported constant rather than two
+string literals that happen to match today — notes §5.
+
+#### The row that survives its own deletion
+
+§44.2's rule at its limit: an account that can change money and leaves no trace
+makes the audit trail lie. A wipe is the largest thing anybody can do in this
+app, and the log it would appear in is one of the things it destroys — so after
+the deletes, one row is written back into the empty table naming who did it and
+what was there.
+
+`entity_type` is `'system'`, and **that is what keeps it off every screen**:
+`useInvoiceActivity` and `useRecentActivity` both filter
+`entity_type = 'invoice'`, so no renderer has to learn a word for it and
+nothing had to change to accommodate it. It exists for whoever opens the
+database and asks what happened. `entity_id` is the actor's own profile id —
+the column is `not null`, there is no entity, and pointing it at the person is
+the only value that is true rather than invented.
+
+`activity_log` still has no INSERT policy. Migration 007's rule holds: the only
+writers are the trigger and this function, both through `security definer`, and
+there is still no way to write a row from a browser. `CATCH_UP_021` §3 raises
+if a policy has appeared.
+
+#### The counts are the only receipt
+
+Taken **before** the deletes, because afterwards there is nothing left to
+count, and returned to the screen as its own sheet rather than as a toast: this
+is the last time those numbers exist anywhere in the app, and a message that
+fades after four seconds is one a thumb can cover. That sheet is the one the
+backdrop does not close — after the wipe there is nothing to go back to, and
+dismissing it by tapping beside it would mean never reading what happened.
+
+#### The button is not red
+
+Spec §9 reserves brick for overdue and says *"never decoratively"*. A red button
+here would be the only red on a settings screen and would pull the eye to the
+one control nobody should be drawn to. What stops this being pressed by
+accident is the four steps behind it, not its colour — and a button that
+**looks** dangerous but opens straight onto a wipe is far worse than a plain one
+that opens onto four questions.
+
+#### What the SQL file and the function must keep agreeing about
+
+`wipe_everything` deletes exactly what `RESET_TO_CLEAN_SLATE.sql` deletes, in
+exactly that order, and keeps exactly what it keeps — the six logins, the four
+businesses, push subscriptions and uploaded artwork. **If one is ever changed,
+change both**, or the app and the SQL file mean different things by "empty".
+
+A function is atomic by nature, so unlike the file there is no `begin`/`commit`
+to forget: either all of it happens or none of it does.
+
+---
+
+### 49.6 The dialog that was fixed to the wrong thing
+
+Found by looking at the four sheets in a browser, which is the whole argument
+for looking.
+
+`AppChrome` renders every screen inside `<main class="screen-in">`. That class
+carries `animation: screen-in var(--dur-fade) var(--ease-ios) both` — and
+`both` keeps the final keyframe applied for ever, so **the element keeps an
+identity `transform` after the animation finishes**. An element with a
+transform is a containing block for `position: fixed` descendants.
+
+So `fixed inset-0` on a dialog written inside a screen resolved against the
+whole page rather than the viewport. On Settings, which is long, the sheet was
+centred **849px down** and scrolled with the content. Measured, not guessed:
+`getBoundingClientRect().top` before and after `scrollTo`.
+
+**This was not introduced by J4. `ConfirmDialog` has had it since it was
+written**, which means the duplicate warning, the void confirmation, the
+promote/demote question and the sign-out warning have all been landing in the
+wrong place on any screen taller than the viewport. Nobody found it because the
+three other fixed things in the app — the drawer, the bottom sheet and the New
+invoice bar — are siblings of `<main>` rather than inside it, and because on a
+short screen the page and the viewport are the same height and it looks right.
+
+The fix is one line of intent in both components: render into `document.body`
+through `createPortal`, so no ancestor of the writing site can capture them.
+
+**§45 for the fourth time.** A change made for appearance — a screen-entry
+animation — silently disabling behaviour elsewhere, invisible to every
+assertion because jsdom does no layout. The pattern each time has been the
+same, and so is the response: assert the structural fact that the layout bug
+sits on top of, and measure the real thing in a browser.
+
+`test/unit/settings.test.tsx` now asserts
+`screen.getByRole('alertdialog').closest('main')` is null — which is the fact
+underneath, and the one thing jsdom *can* see — and writes four preview pages,
+one per step, so the next person can look rather than take this on trust.

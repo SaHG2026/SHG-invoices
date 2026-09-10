@@ -275,8 +275,8 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. All database files through `CATCH_UP_020` applied.
-J1, J2 and J3 are built, pushed and deployed — `69ba38d`.**
+**Live and in daily use. Every database file through `CATCH_UP_025` applied
+and verified. J1 to J5 complete. Deployed — `7f7b43a`.**
 
 **J4 is built and committed and is NOT deployed, and `CATCH_UP_021` has not
 been run.** Both are waiting on the client, in that order: the SQL first,
@@ -305,6 +305,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §52 | The assistant tier — a person who logs a bill and cannot act on one |
 | §53 | J5 — discounts and refunds, and everywhere the net had to reach |
 | §54 | Suspending an account, and the lookup that was hiding half of them |
+| §55 | Next 16, vitest 5, and a linter's first run over this codebase |
 
 ### The two lessons worth more than the features
 
@@ -383,8 +384,8 @@ without upsert: generate the id on the client, use a plain insert, and treat a
 
 ## 6b. What is being built next — J1 to J5
 
-**J1 (§46), J2 (§47) and J3 (§48) are built and live. J4 (§49) is built and
-waiting to go out. J5 is agreed and not started.** ARCHITECTURE §44 has the design and the reasoning for each;
+**J1 to J5 are built, deployed and complete.** The roadmap agreed after a
+week of real use is finished. §46 to §53. ARCHITECTURE §44 has the design and the reasoning for each;
 §46–§48 have what was actually done, including where §44 was overruled.
 
 | | | |
@@ -393,7 +394,7 @@ waiting to go out. J5 is agreed and not started.** ARCHITECTURE §44 has the des
 | **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
 | **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, nothing compressed), with Deli's logo embedded as a JPEG. Download always, Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
 | **J4** | **Built, not deployed** — §49, §50 | Three CSVs (bills, Deli's invoices, their lines) over an optional date range, written by hand like the PDF; and the wipe behind four acts, gated on `is_owner()` in `wipe_everything`. Needs `CATCH_UP_021` run FIRST. It also fixed a dialog bug that predates it — §49.6. |
-| **J5** | Discounts and refunds | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
+| **J5** | **Done** — §53 | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
 
 **The three things J1 established, which the rest of the roadmap leans on:**
 
@@ -418,203 +419,133 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**One thing is blocking, and it is the only ordering that matters.**
-`db/CATCH_UP_021.sql` has to be run before J4 is deployed. It only adds a
-function, so running it early is invisible; deployed first with the file not
-run, the wipe raises 42883 at the end of a four-step confirmation, which is
-the worst possible moment to find a missing function. Everything through
-`CATCH_UP_020` is applied and confirmed by `verify_catchups.mjs`, and J1–J3
-are deployed.
+**Nothing is blocking.** Everything through `CATCH_UP_025` is applied and
+confirmed by `verify_catchups.mjs`, `npm audit` is clean, and 987 tests pass
+under three timezones.
 
-The list is in the order it is worth picking things up, not in the order they
-arrived.
+The list is in the order it is worth picking things up.
+
+### Never exercised, and that is the real gap
+
+Each of these is BUILT and TESTED and has never been used against live data by
+a person. Tests prove the program checks its own arithmetic; they do not prove
+the feature works on a phone.
+
+1. **The export has never been run against the live database.** Every byte the
+   CSV and workbook writers produce is asserted, and both were opened with
+   independent readers (§50.3). The three *reads* behind them have never run
+   with a real session. §49.4.
+
+2. **The wipe has never been run**, deliberately, and should not be tested on
+   real data. Its four steps and its refusals are tested; the deletion is not.
+
+3. **Suspension has never been used.** §54.
+
+4. **No discount or refund exists yet.** J5's arithmetic, document, PDF and
+   panel are all tested against fixtures. Nothing has been applied to a real
+   invoice. §53.
 
 ### Waiting on the client, not on code
 
-1. **Check the build id in Settings reads `69ba38d`.** Not done, and it is the
-   one check that has caught a silently-stale deploy before. The `Aliased`
-   line was confirmed by `vercel inspect` rather than by the CLI summary, and
-   the served bundle could not be checked from the builder's machine because
-   every route but `/login` redirects when signed out — so the stamp is the
-   only independent confirmation and it needs somebody signed in.
+5. **Deli's bank details are still not set**, by choice — *"I don't have it."*
+   The document handles it (§47.2). Nothing to do unless he gets them.
 
-2. **Does Share appear on his Android, and does Gmail attach the PDF?**
-   Everything up to `navigator.share()` is tested; what the phone does with
-   the file afterwards is the phone's business. If Share never appears, the
-   browser is answering `canShare({ files })` false and Download is the path.
-   Also worth his eyes: the auto-generated message (§48.6) goes out under
-   Deli's name, and he has not yet read one in Gmail.
-
-3. **Push reaches nobody but the builder.** Proven to work, once. Mani, Milan
-   and Sujan have never turned the switch on, because §28.4 decided the app
-   never asks — so somebody has to tell them it is in Settings. **Until then
-   every notification in this app goes nowhere**, including the daily reminder
-   and the payment notice.
-
-4. **Deli's bank details are not set**, by choice — *"I don't have it."* The
-   document handles it (§47.2, no heading where there is nothing) and the
-   preview harness renders that exact state. Nothing to do unless he gets them.
-
-5. **A 7-day undo after a deletion.** Asked for; still undecided. Nothing in
+6. **A 7-day undo after a deletion.** Asked for; still undecided. Nothing in
    the app deletes anything, so losing an account loses no data — but there is
    **no backup at all**, accepted at handover (§33.1). The real answer is
    Supabase point-in-time recovery, a paid add-on. Needs the plan checked and
    a decision, not code.
 
-### The roadmap
-
-6. **J4 is built. Send `CATCH_UP_021`, then deploy.** §49. Two things then
-   need his eyes and neither can be checked from here:
-
-   - **Does the export open properly in Excel?** Every byte the encoder
-     produces is tested; the three reads behind it have never run against the
-     live database, because signing in needs credentials that are not on the
-     builder's machine. The first real run is the test.
-   - **§33.2's question is answered.** It asked what happens to the file
-     when it arrives — opened and closed, or kept and handed to somebody.
-     Asking for *"payable and receivable on two sheets of the same excel"* is
-     the second answer, so §50 wrote the workbook. It cost far less than §33.2
-     assumed, because the zip the "download it all" archive needed **is** the
-     container an `.xlsx` uses.
-
-7. **Eventually, only Mani may mark a bill paid — not the builder.** Said
-   plainly: *"For now rabindra can pay it off, but eventually it has to be
-   just mani."* Not now, and not a one-line change when it comes.
-
-   **The trap:** `is_owner()` is one predicate gating **seven** things —
-   `mark_invoices_paid`, `unmark_invoice_paid`, `mark_sales_received`,
-   `unmark_sales_received`, `set_user_role`, `set_business_document` and
-   `wipe_everything`. Dropping `builder` from it does not just stop Rabindra
-   paying bills; it locks him out of maintaining the app he maintains, and
-   §44.2 put him there on purpose.
-
-   So the day it happens it is **a split, not an edit**: one predicate for
-   *may move money* and another for *may administer*, with `builder` in the
-   second and not the first. One name carrying two meanings is the exact shape
-   this project keeps unpicking (§19), and it is cheaper to see it coming.
-
-   Both are allowlists, so both are on §46.3's list of six the day they exist —
-   which becomes seven.
-
-8. **J5 — discounts and refunds.** §44.6. Deli's customers only, the
-   receivables side, payables untouched. **Manager level, unlike marking
-   paid.** Append-only adjustment rows carrying who and why, every total
-   derived. Reopens a decision §28.3 closed, deliberately.
-
-   Nothing forces J4 before J5 now that J1 exists. J5 is the one he named
-   unprompted, twice.
+7. **Mani and Milan have never signed in.** `last_sign_in_at` is null for both
+   (2026-09-11). Only Parramatta, Sujan and the builder have used the app.
+   That reframes anything about notifications: it is not that they have not
+   found the switch.
 
 ### Known, and not urgent
 
-9. **An intermittent test failure. It is NOT timezone-specific — that was
-   wrong.** This was recorded for a year as happening under
-   `TZ=America/Los_Angeles`.
+8. **An intermittent test failure, and it is NOT timezone-specific.** See the
+   long note in this section's history — recorded for a year as a
+   Los_Angeles problem, disproved on 2026-09-11 when it failed under UTC and
+   Sydney and passed under Los_Angeles. Timing under load is the only
+   surviving hypothesis. Still never captured.
 
-   **On 2026-09-10 it failed under `UTC` (1 test) and `Australia/Sydney` (2
-   tests) in the same sweep, and passed under `America/Los_Angeles`.** So the
-   timezone in the original note was a coincidence of when it was seen, and
-   the date-bug hypothesis it implied is dead. What is left is timing: the
-   failing runs have always been the slow ones, which points at `waitFor`
-   timeouts under load.
+9. **`npm run lint` reports 15 problems**, all of them deliberate documented
+   patterns — a ref read during render, `window.location.href` on sign-out,
+   and nine `set-state-in-effect` findings that are the hydration pattern.
+   The two that were real bugs are fixed. §55.5, §55.6. **Do not "fix" the
+   fifteen** without reading what each one is protecting.
 
-   **Still never captured.** Seven instrumented runs on the same day — four
-   across all three timezones, three more under UTC — were all clean, which is
-   the same shape as the seven clean runs recorded the first time. The
-   instrumented runs may simply be slower and therefore safer, and if so the
-   JSON reporter is the worst possible way to catch it.
-
-   Two things worth trying instead of another sweep: run the suite **while
-   something else is loading the machine**, since load is the only surviving
-   hypothesis; and note that `--reporter=json` writes UTF-8 that Windows
-   Python will not read with the default codepage — open it with
-   `encoding='utf-8'` or the report reads as zero failures whatever happened.
-
-   If it reappears:
-
-   ```bash
-   TZ=America/Los_Angeles npx vitest run --reporter=json --outputFile=fail.json
-   ```
-
-   Do not spend a session hunting it blind; one captured name is worth more
-   than an hour of re-running.
-
-10. **`verify_staff.mjs` has been run. Everything passed.** 2026-09-11, as
-   `gmp@shg.com`. This had been open since §43.
-
-   **Run it as PARRAMATTA, not Hurstville.** Run as `gmh@shg.com` first, three
-   checks came back as failures — correctly, because that venue has no
-   invoices and the checks had nothing to test. A check that cannot run must
-   not report green, and the script counts a skip as a failure on purpose.
-   Parramatta has real invoices and notes, so the same three ran properly:
-
-   - `is_mine` answers on a real row (the note policy needs it)
-   - a note cannot be signed as one of the four — refused 42501
-   - a venue cannot approve its own invoice — the trigger puts the columns back
-
-   The one that mattered most is **`no payment columns in the view`**, which
-   could finally list them against a real row: `id, business_id, supplier_id,
-   supplier_name, invoice_number, internal_ref, invoice_date, due_date,
-   amount_cents, created_at, is_mine`. No `status`, no `paid_at`, no
-   `paid_by`, no `payment_ref`. That is CATCH_UP_010 §3 proven rather than
-   asserted.
-
-   **And the gate is proven too, without a test write.** §6's lesson was that a
-   fence proven to keep things out has not been proven to have a gate — the
-   positive write test sat behind `--write` and was never run. It no longer
-   needs to be: Parramatta has **entered an invoice and written a note in
-   production**, which the run above reads back. Real use beats a synthetic
-   insert, and it leaves no test row to clean up.
-
-   Re-run it after ANY change to the staff policies, the `staff_invoices`
-   view, or `pin_invoice_facts`. It needs `STAFF_EMAIL`/`STAFF_PASSWORD` in
-   `.env.local` — a shop login's, and Parramatta's is the one with data behind
-   it.
-
-11. **The app feels a touch slower on a phone.** Reported long ago, never
+10. **The app feels a touch slower on a phone.** Reported long ago, never
     diagnosed. The database is fast (~45ms warm), so this is round trips.
     §34.12 has the three things to localise.
 
-12. **`npm audit` is clean. Next 16 and vitest 5, 2026-09-11.** §55.
+11. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1).
+    Print is unaffected, and the CSV and workbook carry any name exactly
+    (§49.1). Only worth reopening if a real customer name hits it.
 
-    It had drifted from the one-high-one-moderate recorded here to **seven,
-    including a critical** — vitest and friends had joined the postcss pair.
-    Two upgrades, not one, and the runner went first because it is the
-    instrument the framework upgrade is judged with.
+---
 
-    **`npm run lint` now works and reports 17 problems.** None caused by the
-    upgrade; a linter had simply never run on this codebase. Most are
-    deliberate documented patterns. Two were real and are fixed — §55.6.
+## 7b. If the next session is a security, bug or stability review
 
-    **The preview command changed.** Turbopack writes CSS to
-    `.next/static/chunks/`, so §21.6's `cp` is now a `find`. The old path would
-    have failed silently and rendered previews unstyled, which looks like a CSS
-    bug.
+Written for that, because it is the next thing planned.
 
-13. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). The
-    standard-14 fonts are drawn through WinAnsiEncoding; a name outside it
-    becomes `?` and the screen says so. **Print is unaffected** and renders
-    anything the phone can. Fixing it properly means embedding a Unicode font,
-    which is hundreds of KB on every phone — the exact cost writing the PDF
-    by hand was meant to avoid. Only worth reopening if a real customer name
-    hits it.
+### What has already been proven, and how — do not redo these
 
-### Done since the roadmap was written
+| | |
+|---|---|
+| **Anonymous access** | `node db/verify_rls.mjs` — every table refuses the anon key |
+| **The venue fence AND its gate** | `node db/verify_staff.mjs` — **all pass**, 2026-09-11, as `gmp@shg.com`. §54's note explains why it must be run as Parramatta, not Hurstville |
+| **Every migration applied** | `node db/verify_catchups.mjs` — clean through `CATCH_UP_025` |
+| **Schema, functions, policies** | `db/verify_schema.sql`, pasted into the Supabase SQL editor. **Re-run it — the last run predates `CATCH_UP_025`**, so `set_user_active` is not in that output |
+| **Dependencies** | `npm audit` — 0 vulnerabilities, Next 16 and vitest 5 |
+| **The assistant tier** | 8 policies, 6 read and 2 insert, and nothing that can UPDATE or DELETE. Confirmed in a live schema dump. §52.3 |
+| **The workbook and the zip** | opened with Python's `zipfile` and `ElementTree`; the money column sums. §50.3 |
+| **The PDF** | opened in a real reader. §48.3, §53.2 |
 
-- **§46 J1** — the two bugs, and three real tiers. `CATCH_UP_019`.
-- **§47 J2** — the contact block, bank details, signature line. `CATCH_UP_020`.
-- **§48 J3** — the hand-written PDF, Download, Share, the logo, the message.
-  No SQL.
-- **§49 J4** — three CSVs and the wipe. `CATCH_UP_021`, **not yet applied**.
-- **§49.6** every dialog in the app was fixed to the page rather than to the
-  viewport, and had been since `ConfirmDialog` was written.
-- **§50 J4b** — Excel workbooks with a sheet per direction, a zip for all
-  four businesses, and the CSV kept as the alternative. No SQL.
-- **§50.5** the bills export called an unreviewed shop entry `unpaid`, so a
-  spreadsheet could total what the app refuses to. It says `awaiting
-  review` now, from `lib/derive/select.ts`'s own predicate.
-- **§40.3** `/receivables`, the global list of what Deli is owed.
-- **§43.2** the three unused packages are gone. `/specimen` and the
-  middleware's `offline` exemption stay, with reasons recorded.
+### Where the risk actually is
+
+Not in the policies — those are measured. It is in these:
+
+- **`is_owner()` gates seven things** and one of them is the wipe. If a fifth
+  role is ever added, §46.3's allowlist walk is now **eight** places, and
+  §52.2 explains why widening `is_manager_or_above()` is the tempting wrong
+  move.
+- **`wipe_everything` must stay SECURITY DEFINER.** As invoker it would delete
+  nothing and report success, because RLS hides the rows and `delete` does not
+  complain about rows it cannot see.
+- **Three grants must stay narrow**: `profiles` update is two columns only,
+  `profiles.active` has no grant at all, and `sales_invoice_adjustments` has
+  no write policy whatsoever. Each is checked by its own CATCH_UP file's
+  verification block.
+- **The offline queue.** `lib/offline/keys.ts` is the list of writes that can
+  be replayed from a cold start. The wipe and suspension are deliberately NOT
+  on it; adjustments deliberately are. `test/unit/offline-queue.test.ts` fails
+  if a write is added without being registered.
+
+### What must NOT be reported as findings
+
+**§33.1's ten accepted risks.** No backups, deletion possible outside the app,
+`paid_by` forgeable by a crafted request, staff photographs at public urls, no
+bucket size limit. The client weighed each on his own reframing — *"this is
+meant to be just an advanced interactive notes"* — and accepted them. They are
+decisions, not oversights. If the app ever stops being a notebook and starts
+being the record, every one must be reopened; that is the condition the
+acceptance rests on.
+
+**And there is no rate limiting**, anywhere, by design: there is no server of
+ours to put it in. Every request goes from the phone to Supabase. Anonymous
+callers are refused by RLS, only six logins exist, and creating a seventh needs
+the service-role key this architecture is built without. A signed-in account
+making unlimited requests is unprotected, and that falls under the same
+acceptance.
+
+### The one thing a review should actually try
+
+**Use the features nobody has used** — items 1 to 4 above. The policies are
+measured; the untested surface is a person on a phone doing something for the
+first time. Every bug this project has found on a real phone was a shape
+problem, not a logic problem (§19), and no test suite has ever found one of
+those.
 
 ### The clean slate
 

@@ -315,6 +315,11 @@ both `42501`. Its one positive write test sat behind `--write` and was never
 run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
 to the staff policies.
 
+**Both halves are now proven** (2026-09-11, §7 item 10). The fence by running
+the script as Parramatta; the gate by that venue having entered a real invoice
+and a real note, which the script reads back. The lesson stands — it was true
+for weeks — but the gap it describes is closed.
+
 **A change made for appearance can silently disable behaviour elsewhere.**
 `overflow-hidden`, added to the header to contain the mountain ridge, clipped
 the activity panel that hangs below it — the bell was dead for a whole round
@@ -533,11 +538,37 @@ arrived.
    Do not spend a session hunting it blind; one captured name is worth more
    than an hour of re-running.
 
-10. **`verify_staff.mjs` has never been run for real.** It needs
-   `STAFF_EMAIL`/`STAFF_PASSWORD` in `.env.local`, which are not on the
-   builder's machine. HANDOFF §6's lesson is exactly this file: a fence proven
-   to keep things out has not been proven to have a gate. Run it, or run the
-   query at the bottom of `db/CATCH_UP_018.sql` signed in as a shop.
+10. **`verify_staff.mjs` has been run. Everything passed.** 2026-09-11, as
+   `gmp@shg.com`. This had been open since §43.
+
+   **Run it as PARRAMATTA, not Hurstville.** Run as `gmh@shg.com` first, three
+   checks came back as failures — correctly, because that venue has no
+   invoices and the checks had nothing to test. A check that cannot run must
+   not report green, and the script counts a skip as a failure on purpose.
+   Parramatta has real invoices and notes, so the same three ran properly:
+
+   - `is_mine` answers on a real row (the note policy needs it)
+   - a note cannot be signed as one of the four — refused 42501
+   - a venue cannot approve its own invoice — the trigger puts the columns back
+
+   The one that mattered most is **`no payment columns in the view`**, which
+   could finally list them against a real row: `id, business_id, supplier_id,
+   supplier_name, invoice_number, internal_ref, invoice_date, due_date,
+   amount_cents, created_at, is_mine`. No `status`, no `paid_at`, no
+   `paid_by`, no `payment_ref`. That is CATCH_UP_010 §3 proven rather than
+   asserted.
+
+   **And the gate is proven too, without a test write.** §6's lesson was that a
+   fence proven to keep things out has not been proven to have a gate — the
+   positive write test sat behind `--write` and was never run. It no longer
+   needs to be: Parramatta has **entered an invoice and written a note in
+   production**, which the run above reads back. Real use beats a synthetic
+   insert, and it leaves no test row to clean up.
+
+   Re-run it after ANY change to the staff policies, the `staff_invoices`
+   view, or `pin_invoice_facts`. It needs `STAFF_EMAIL`/`STAFF_PASSWORD` in
+   `.env.local` — a shop login's, and Parramatta's is the one with data behind
+   it.
 
 11. **The app feels a touch slower on a phone.** Reported long ago, never
     diagnosed. The database is fast (~45ms warm), so this is round trips.

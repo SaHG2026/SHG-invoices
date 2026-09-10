@@ -231,6 +231,33 @@ await fn('wipe_everything', 'wipe_everything', { p_confirm: 'not the phrase' });
 console.log('  ?      wipe_everything is security definer     — see §3 of CATCH_UP_021');
 console.log('  ?      activity_log still has no insert policy — see §3 of CATCH_UP_021');
 
+console.log('\nCATCH_UP_022 — a fourth tier: assistant\n');
+/*
+ * Probed against an id that cannot match, like every other function here, so
+ * finding out whether it exists can never change a row.
+ */
+await fn('is_assistant', 'is_assistant', {});
+/*
+ * `set_user_role` is re-probed with the NEW value. It existed before 022 and
+ * refused 'assistant' with 22023; after 022 it refuses an anonymous caller
+ * with 42501 first. Both are a refusal, so this line proves the function is
+ * there and not which version it is -- the role constraint below is what
+ * separates them, and it needs a session.
+ */
+await fn('set_user_role', 'set_user_role', { p_profile_id: NO_SUCH_ID, p_role: 'assistant' });
+/*
+ * Not probable from out here, and each matters:
+ *   - the check constraint actually allows 'assistant'
+ *   - six assistant_read policies and two assistant_insert, and NO assistant
+ *     policy that can UPDATE or DELETE — the absence is the whole tier
+ *   - `is_manager_or_above()` still does NOT mention assistant, or every
+ *     `for all` policy in the database has silently included it
+ * §8 of the SQL file raises on all of them.
+ */
+console.log('  ?      profiles_role_valid allows assistant     — see §8 of CATCH_UP_022');
+console.log('  ?      8 assistant policies, none that write    — see §8 of CATCH_UP_022');
+console.log('  ?      is_manager_or_above() excludes assistant — see §8 of CATCH_UP_022');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

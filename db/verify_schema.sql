@@ -50,6 +50,16 @@ select kind, name, detail from (
                        -- with the thing it should be checking stops being a
                        -- check and becomes a claim (HANDOFF §6).
                        'is_manager_or_above','is_owner','set_user_role',
+                       -- CATCH_UP_020, 021 and 022. This list was three files
+                       -- behind, which is the failure the comment above warns
+                       -- about happening to the comment above.
+                       --
+                       -- `wipe_everything` MUST read 'security definer'. As
+                       -- invoker it would delete nothing and report success:
+                       -- RLS hides the rows and `delete` does not complain
+                       -- about rows it cannot see.
+                       'set_business_document','wipe_everything','is_assistant',
+                       'is_staff','staff_venue','stamp_approval',
                        'mark_invoices_paid','unmark_invoice_paid','void_invoice',
                        'find_duplicate_invoices')
 

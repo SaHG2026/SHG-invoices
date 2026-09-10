@@ -45,6 +45,8 @@ const PRODUCTS: Product[] = [
 ];
 
 const mocks = vi.hoisted(() => ({
+  adjust: vi.fn(),
+  unadjust: vi.fn(),
   create: vi.fn(),
   createCustomer: vi.fn(),
   /*
@@ -138,6 +140,10 @@ vi.mock('@/lib/queries/sales', () => ({
   useCustomerSales: () => ({ data: [] }),
   useMarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnmarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  /* J5. The document screen carries the adjustment panel, so anything that
+     renders it reaches both writes. §53. */
+  useAddSalesAdjustment: () => ({ mutateAsync: mocks.adjust, isPending: false }),
+  useVoidSalesAdjustment: () => ({ mutateAsync: mocks.unadjust, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/detail', () => ({

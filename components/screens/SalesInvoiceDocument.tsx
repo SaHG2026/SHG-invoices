@@ -18,6 +18,7 @@ import { formatQuantity } from '@/lib/quantity';
 import { formatDayWithYear } from '@/lib/date';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
 import { canShareFile, downloadFile, shareFile } from '@/lib/pdf/share';
+import { AdjustmentPanel } from '@/components/invoice/AdjustmentPanel';
 import { fetchLogoBytes } from '@/lib/pdf/logo';
 import { invoiceShareMessage, invoiceShareTitle } from '@/lib/pdf/message';
 
@@ -345,10 +346,14 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
                 <th className="py-2 text-left text-xs uppercase tracking-widest text-muted">
                   Description
                 </th>
-                <th className="py-2 text-right text-xs uppercase tracking-widest text-muted">
+                <th className="py-2 pr-2 text-right text-xs uppercase tracking-widest text-muted">
                   Qty
                 </th>
-                <th className="py-2 text-right text-xs uppercase tracking-widest text-muted">
+                {/* `pr-2` to match the cells beneath it. Without it the two
+                    headings ran together as "PRICEAMOUNT" at 375px, on a
+                    document a customer reads — the data cells had the padding
+                    and the headers did not. Found by looking. */}
+                <th className="py-2 pr-2 text-right text-xs uppercase tracking-widest text-muted">
                   Price
                 </th>
                 <th className="py-2 text-right text-xs uppercase tracking-widest text-muted">
@@ -511,6 +516,17 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
         </section>
 
       </article>
+
+      {/*
+        Outside the <article>, which is the printable document. §53.
+
+        The adjustments themselves ARE on the paper — in the total block, with
+        their reasons. This is the machinery for changing them, and machinery
+        has no business on a customer's invoice. It carries `no-print` of its
+        own as well; being outside the article is the structural half and the
+        class is the one that survives somebody restructuring this file.
+      */}
+      <AdjustmentPanel invoice={invoice} />
     </AppChrome>
   );
 }

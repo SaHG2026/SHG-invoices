@@ -106,6 +106,9 @@ vi.mock('@/lib/queries/sales', () => ({
   useCustomerSales: () => ({ data: [] }),
   useMarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnmarkReceived: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  /* J5's adjustment panel hangs off the document screen. §53. */
+  useAddSalesAdjustment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVoidSalesAdjustment: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/lib/queries/detail', () => ({
@@ -182,7 +185,47 @@ const INVOICE: SalesInvoiceRow = {
   payment_ref: null, void_reason: null, note: 'Delivered to the back dock.',
   created_by: PROFILES[0]!.id, created_at: '2026-09-05T00:00:00Z', updated_at: '2026-09-05T00:00:00Z',
   customer: { id: 'c-1', name: 'Harris Farm Markets' },
-    adjustments: [],
+    /* Two live adjustments and one undone, so the preview shows the total
+       block doing its whole job — and proves the voided one stays off the
+       paper. §53. */
+    adjustments: [
+      {
+        id: 'adj-1',
+        sales_invoice_id: 'sv-1',
+        kind: 'discount' as const,
+        amount_cents: 4_000,
+        reason: 'short delivery',
+        created_by: PROFILES[1]!.id,
+        created_at: '2026-09-01T02:00:00.000Z',
+        voided_at: null,
+        voided_by: null,
+        void_reason: null,
+      },
+      {
+        id: 'adj-2',
+        sales_invoice_id: 'sv-1',
+        kind: 'refund' as const,
+        amount_cents: 1_250,
+        reason: 'two jars broken in transit',
+        created_by: PROFILES[2]!.id,
+        created_at: '2026-09-03T04:00:00.000Z',
+        voided_at: null,
+        voided_by: null,
+        void_reason: null,
+      },
+      {
+        id: 'adj-3',
+        sales_invoice_id: 'sv-1',
+        kind: 'discount' as const,
+        amount_cents: 9_900,
+        reason: 'typed in error',
+        created_by: PROFILES[1]!.id,
+        created_at: '2026-09-02T02:00:00.000Z',
+        voided_at: '2026-09-02T02:05:00.000Z',
+        voided_by: PROFILES[0]!.id,
+        void_reason: null,
+      },
+    ],
 };
 
 mocks.detail.current = { invoice: INVOICE, lines: LINES };

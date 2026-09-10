@@ -1174,7 +1174,7 @@ be looked at without signing in. Skipped unless `PREVIEW_OUT` is set:
 
 ```
 npm run build
-cp .next/static/css/*.css /tmp/shg/app.css
+cp "$(find .next/static -name '*.css' -not -path '*/cache/*' | head -1)" /tmp/shg/app.css
 cp -r public/icons /tmp/shg/
 PREVIEW_OUT=/tmp/shg/dashboard.html PREVIEW_CSS=/tmp/shg/app.css \
   npx vitest run test/preview-dashboard.test.tsx
@@ -6320,3 +6320,138 @@ with the adjustments (§53). A suspension is about access *right now*. One that
 left a phone on Tuesday and arrived on Thursday would shut somebody out two
 days after the reason had passed, and one lifting a suspension would leave
 somebody locked out while everybody assumed it was done.
+
+---
+
+## 55. Next 15 to 16, and vitest 2 to 5
+
+The `npm audit` item HANDOFF carried for months. Done on its own, as that note
+insisted, and it turned out to be **two** upgrades rather than one.
+
+### 55.1 The audit had drifted
+
+HANDOFF recorded *"one high and one moderate, both `postcss` via `next`"*. By
+the time it was picked up it was **seven, including a critical**: vitest,
+`@vitest/mocker`, vite, vite-node and esbuild had joined the pair.
+
+They split cleanly, and the split decided the order:
+
+| | |
+|---|---|
+| **The test toolchain** | vitest and friends. All devDependencies — **none of it ships**. The critical one needs the Vitest UI server, which this project does not install |
+| **The framework** | `postcss` via `next`. Build-time only, and the pair HANDOFF always named |
+
+**The runner went first**, because it is the instrument the framework upgrade
+would be judged with. Upgrading both at once means two variables and 987 tests
+that cannot tell you which one moved.
+
+### 55.2 The jsdom bump that was not asked for
+
+npm could not resolve a three-major vitest jump against the existing tree, so
+`package.json` was set to the targets and the lock regenerated.
+
+While doing that I bumped **jsdom 25 → 28** for peer compatibility. Nothing
+required it, and it **doubled the environment cost**: 365 seconds of jsdom
+creation across 53 files, 53% of the run. Four tests went past the 5s timeout.
+
+**They were timeouts, not assertion failures, and the fix was not a longer
+timeout.** Reverting jsdom to 25 fixed it outright — 987 pass, and the suite is
+now *faster* than before the upgrade: 26.7s against roughly 30s.
+
+Vitest's own suggestion, `pool: 'vmThreads'`, was tried and reverted: faster
+still, and it broke 12 tests because it does not expose the crypto globals the
+PIN storage needs.
+
+**The lesson is the size of the change, not the direction.** A version bump
+nobody asked for, taken along for the ride, was the only thing that broke.
+
+### 55.3 Most of Next 16's breaking changes did not apply
+
+Checked one at a time against this codebase before anything was installed:
+
+| change | this app |
+|---|---|
+| Async request APIs now mandatory | already async — every dynamic route is a two-file pair that awaits `params` (§21) |
+| Every `next/image` default | **`next/image` is not used at all.** `BusinessMark` and the header say why in comments |
+| Parallel route `default.js` | none used |
+| `scroll-behavior` override | no global `smooth` |
+| ESLint flat config migration | there was no `.eslintrc` to migrate |
+| `serverRuntimeConfig` removed | never used; `env` in `next.config` is a different thing and still supported |
+| Custom webpack config | none, so Turbopack-by-default builds without complaint |
+
+Two did apply.
+
+**`middleware` → `proxy`.** A rename, and the matcher, the exclusion list and
+`updateSession` are untouched. Worth knowing that `proxy` runs on the **nodejs**
+runtime and cannot be configured to edge — nothing here asked for edge, so
+nothing is lost, but a future change that wants it has to go back to
+`middleware`. Two comments elsewhere still named `middleware.ts` and now name
+`proxy.ts`; `lib/supabase/middleware.ts` keeps its name, being a helper rather
+than the convention file.
+
+**`next lint` was removed**, and with it the `eslint` option in the config. The
+script would simply have failed. §55.5.
+
+### 55.4 The path that would have broken silently
+
+Turbopack writes CSS to `.next/static/chunks/*.css`, not `.next/static/css/`.
+
+§21.6's preview command copied from the old path. It would have failed, the
+preview pages would have rendered unstyled, and that looks exactly like a CSS
+bug rather than a moved file. The command is now a `find`, so the next move
+does not break it either.
+
+Caught by running the preview after the build rather than assuming it still
+worked — and confirmed by measuring: the action button still computes to
+`rgb(4, 106, 56)`, `999px`, 44px tall.
+
+### 55.5 A linter ran on this codebase for the first time
+
+`next lint` creates its config on first run and nobody had ever run it, so
+there was nothing to migrate — and nothing had ever been linted. Rather than
+let a security upgrade quietly delete a capability, `eslint.config.mjs` is the
+smallest flat config that keeps it, and `npm run lint` points at the ESLint
+CLI.
+
+It reports **17 problems, none of them caused by the upgrade.** Most are
+deliberate patterns this codebase documents at length — reading a ref during
+render in `AppChrome` (§41, and the comment says why), `window.location.href`
+on sign-out (§32, a full navigation is the point), and nine
+`set-state-in-effect` findings that are the "storage cannot be read during
+render without breaking hydration" pattern.
+
+**Two are real**, and are §55.6.
+
+Lint is a second opinion here, not the gate. The gate is `tsc --noEmit` and 987
+tests under three timezones.
+
+### 55.6 The two findings that were real
+
+Fixed in their own commit, because the upgrade should not also be a cleanup —
+and because one of them is a crash.
+
+**`SettingsScreen` called `useState` after an early return.** The sign-out
+state was declared two hundred lines below `if (!profile) return ...`, so a
+render where the profile had not arrived called one fewer hook than the render
+after it. React counts hooks; going from fewer to more is *"Rendered more
+hooks than during the previous render"*, and it throws.
+
+It never fired because `useCurrentProfile` is almost always already cached by
+the time Settings mounts — the drawer and the header both read it. **Landing
+on `/settings` cold, or refreshing while on it, is the path that would have
+crashed.** The fix is to declare it above the return.
+
+**`InvoiceDetail`'s void dialog passed an array of elements without keys.**
+`points` is an array rather than children, so React cannot tell the two entries
+apart — and the second holds an `<input>` with state. An unkeyed sibling list
+is how a focused field ends up remounted mid-typing.
+
+**The other fifteen are left alone, deliberately.** They are patterns this
+codebase documents and chose: a ref read during render in `AppChrome` (the
+comment says why), `window.location.href` on sign-out (§32 — a full navigation
+is the point), and nine `set-state-in-effect` findings that are all the
+"storage cannot be read during render without breaking hydration" shape.
+
+A linter meeting a codebase for the first time will always have opinions about
+decisions it was not present for. The two that were bugs are fixed; the rest
+are not bugs.

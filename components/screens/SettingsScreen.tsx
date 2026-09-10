@@ -83,6 +83,25 @@ export function SettingsScreen() {
    */
   const backHref = isStaff(profile) ? STAFF_HOME : ('/' as Route);
 
+  /*
+   * Declared ABOVE the early return, and that is not tidiness.
+   *
+   * It used to sit two hundred lines below `if (!profile) return ...`, so on a
+   * render where the profile had not arrived this hook was never called, and
+   * on the next one it was. React counts hooks: going from fewer to more
+   * between renders is "Rendered more hooks than during the previous render",
+   * and it throws.
+   *
+   * It never fired in practice because `useCurrentProfile` is usually already
+   * cached by the time Settings mounts — the drawer and the header both read
+   * it. Landing on /settings cold, or refreshing while on it, is the path that
+   * would have crashed.
+   *
+   * Found by the linter that ran on this codebase for the first time during
+   * the Next 16 upgrade (§55.5). Nothing about the upgrade caused it.
+   */
+  const [askingSignOut, setAskingSignOut] = useState(false);
+
   if (!profile) {
     return (
       <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
@@ -133,7 +152,6 @@ export function SettingsScreen() {
     }
   }
 
-  const [askingSignOut, setAskingSignOut] = useState(false);
 
   /**
    * Never sign out quietly over the top of unsent work.

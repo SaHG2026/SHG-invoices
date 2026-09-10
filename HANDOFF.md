@@ -574,10 +574,21 @@ arrived.
     diagnosed. The database is fast (~45ms warm), so this is round trips.
     §34.12 has the three things to localise.
 
-12. **`npm audit` reports one high and one moderate**, both `postcss` via
-    `next`, both about processing untrusted CSS at build time — unreachable by
-    any user of this app. The only fix is Next 15 → 16, a major version. Worth
-    doing deliberately, on its own, **never bundled with other work**. §43.2.
+12. **`npm audit` is clean. Next 16 and vitest 5, 2026-09-11.** §55.
+
+    It had drifted from the one-high-one-moderate recorded here to **seven,
+    including a critical** — vitest and friends had joined the postcss pair.
+    Two upgrades, not one, and the runner went first because it is the
+    instrument the framework upgrade is judged with.
+
+    **`npm run lint` now works and reports 17 problems.** None caused by the
+    upgrade; a linter had simply never run on this codebase. Most are
+    deliberate documented patterns. Two were real and are fixed — §55.6.
+
+    **The preview command changed.** Turbopack writes CSS to
+    `.next/static/chunks/`, so §21.6's `cp` is now a `find`. The old path would
+    have failed silently and rendered previews unstyled, which looks like a CSS
+    bug.
 
 13. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). The
     standard-14 fonts are drawn through WinAnsiEncoding; a name outside it

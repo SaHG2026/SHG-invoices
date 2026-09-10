@@ -287,6 +287,24 @@ await fn('void_sales_adjustment', 'void_sales_adjustment', {
 console.log('  ?      no write policy on the adjustments  — see §5 of CATCH_UP_023');
 console.log('  ?      no profile still holds a hex accent — see §3 of CATCH_UP_024');
 
+console.log('\nCATCH_UP_025 — suspending an account\n');
+/*
+ * A no-op twice over, like every probe here. `is_owner()` is checked before
+ * anything else and the anon key makes `auth.uid()` null, so it refuses with
+ * 42501 before reading a row -- and the id cannot match anything anyway.
+ */
+await fn('set_user_active', 'set_user_active', { p_profile_id: NO_SUCH_ID, p_active: true });
+/*
+ * Not probable from out here, and the second is the one that would make every
+ * refusal in the function decorative:
+ *   - it is SECURITY DEFINER, or it could not write at all
+ *   - `authenticated` still has NO update grant on profiles.active, so the
+ *     function is the only door
+ * §3 of the SQL file raises on both.
+ */
+console.log('  ?      set_user_active is security definer      — see §3 of CATCH_UP_025');
+console.log('  ?      profiles.active is still not grantable   — see §3 of CATCH_UP_025');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

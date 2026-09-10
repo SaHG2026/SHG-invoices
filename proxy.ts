@@ -1,7 +1,17 @@
 import type { NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
-export async function middleware(request: NextRequest) {
+/*
+ * `proxy`, not `middleware`. Next 16 renamed the convention to make the
+ * network boundary explicit, and the old name is deprecated.
+ *
+ * The rename is the whole change: the matcher below, the exclusion list and
+ * `updateSession` are untouched. Worth knowing that `proxy` runs on the
+ * NODEJS runtime and cannot be configured to edge — this never asked for
+ * edge, so nothing is lost, but a future change that wants it would have to
+ * go back to `middleware`.
+ */
+export async function proxy(request: NextRequest) {
   return updateSession(request);
 }
 

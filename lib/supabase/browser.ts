@@ -9,7 +9,7 @@ import { createBrowserClient } from '@supabase/ssr';
  * makes `auth.uid()` reliably the real person inside the audit trigger and
  * every RLS policy (notes §2).
  *
- * The session lives in cookies rather than localStorage so `middleware.ts`
+ * The session lives in cookies rather than localStorage so `proxy.ts`
  * can see it and guard routes before a page renders.
  */
 

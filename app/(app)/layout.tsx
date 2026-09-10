@@ -5,7 +5,7 @@ import { VenueGate } from '@/components/auth/VenueGate';
  * Everything that requires a signed-in, unlocked person.
  *
  * Three layers, doing different jobs:
- *   middleware.ts  — no session at all, redirect to /login before this renders
+ *   proxy.ts       — no session at all, redirect to /login before this renders
  *   UnlockGate     — session but locked, show the PIN pad
  *   VenueGate      — a venue account somewhere only the four belong
  *

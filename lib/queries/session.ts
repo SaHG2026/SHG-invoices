@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/browser';
 import { clearOfflineQueue, clearShellCache } from '@/lib/offline/persister';
 import { clearAllLockState } from '@/lib/pin';
 import { clearRecentlyPaid } from '@/lib/recently-paid';
-import { runsTheBusinesses } from '@/lib/staff';
+import { roleMayBeChanged, runsTheBusinesses } from '@/lib/staff';
 import { qk } from './keys';
 import type { TimeStr } from '@/lib/date';
 import type { Profile } from '@/lib/types';
@@ -94,6 +94,25 @@ export function useTeam() {
   return {
     ...query,
     data: (query.data ?? []).filter(runsTheBusinesses),
+  };
+}
+
+/**
+ * Everybody whose role the owner may change. §52.
+ *
+ * The third list over the same query, and the third question: `useProfiles` is
+ * a LOOKUP, `useTeam` is the people who run the businesses, and this one is
+ * the rows `set_user_role` will accept.
+ *
+ * It has to include assistants where `useTeam` must not. Demote somebody and
+ * they leave `useTeam` immediately — so a screen built on that list would
+ * lose the row it had just changed, and with it the only way back.
+ */
+export function useChangeableRoles() {
+  const query = useProfiles();
+  return {
+    ...query,
+    data: (query.data ?? []).filter(roleMayBeChanged),
   };
 }
 
@@ -253,7 +272,10 @@ export function useUpdateReminderTime() {
 export function useSetUserRole() {
   const queryClient = useQueryClient();
 
-  return useMutation<Profile, Error, { id: string; role: 'manager' | 'owner' }>({
+  /* Three destinations since CATCH_UP_022, and `builder` and `staff` are
+     still not among them — `set_user_role` refuses both, so a type that
+     offered them would be offering something the database will not do. */
+  return useMutation<Profile, Error, { id: string; role: 'manager' | 'owner' | 'assistant' }>({
     mutationFn: async ({ id, role }): Promise<Profile> => {
       const { data, error } = await supabase().rpc('set_user_role', {
         p_profile_id: id,

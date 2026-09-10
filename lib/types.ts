@@ -41,7 +41,23 @@ export type InvoiceStatus = 'unpaid' | 'paid' | 'void';
  * One shared login per shop, which is why `lib/staff.ts` exists and why the
  * attribution chip renders these differently.
  */
-export type ProfileRole = 'manager' | 'owner' | 'builder' | 'staff';
+/**
+ * `assistant` is the fourth tier, CATCH_UP_022 and §52.
+ *
+ * A person who works across all four businesses, may LOG a bill, and may not
+ * act on one: no review, no edit, no void, no paid/unpaid, no suppliers,
+ * customers or products, and nothing of Deli's receivables.
+ *
+ * It is NOT `staff`, and the distinction is the reason it needed a new value.
+ * `staff` is a venue and must have a `business_id`; an assistant is a person
+ * and must not have one. One name for two tiers is the shape problem this
+ * project keeps removing, inverted.
+ *
+ * Enforced by its own policies, never by this type. `is_assistant()` guards a
+ * SELECT and an INSERT and nothing else, so there is no UPDATE policy an
+ * assistant can reach — the absence is the tier.
+ */
+export type ProfileRole = 'manager' | 'owner' | 'builder' | 'staff' | 'assistant';
 
 export interface Profile {
   id: string;

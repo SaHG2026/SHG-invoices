@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { isAssistant } from '@/lib/staff';
 import { Sheet } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
@@ -92,6 +93,16 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const createInvoice = useCreateInvoice();
   const createSupplier = useCreateSupplier();
   const addNote = useAddNote();
+
+  /*
+   * Whether this person may put a new supplier on the list.
+   *
+   * Not a check on the sheet's own state: the database decides, and this only
+   * decides what is offered. An assistant reads `suppliers` and cannot write
+   * it (CATCH_UP_022 §3 and §4).
+   */
+  const mayAddSupplier = !isAssistant(profile);
+  const placeholder = suppliers.find((entry) => entry.is_placeholder) ?? null;
 
   const pathname = usePathname();
   const today = useMemo(() => sydneyToday(), []);
@@ -393,9 +404,33 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           suppliers={suppliers}
           selected={supplier}
           onSelect={chooseSupplier}
-          onCreate={onCreateSupplier}
+          /*
+           * An assistant gets the venue treatment on this one field. §52.
+           *
+           * `suppliers` has no assistant INSERT policy (CATCH_UP_022 §4), so
+           * `+ Add "X" as a new supplier` would come back 42501 — and the
+           * field already knows how to not offer it, because CATCH_UP_013 §5
+           * took the same permission away from a shop and §34.6 built the
+           * answer.
+           *
+           * So the same two props, and the same way through: file it against
+           * the placeholder and write the real name in the note. Nothing new
+           * was needed for this tier, which is the sign the venue work chose
+           * the right shape.
+           */
+          onCreate={mayAddSupplier ? onCreateSupplier : () => {}}
+          allowCreate={mayAddSupplier}
+          includePlaceholder={!mayAddSupplier}
           creating={createSupplier.isPending}
           error={errors.supplier_id}
+          hint={
+            mayAddSupplier || !placeholder ? undefined : (
+              <>
+                Not on the list? Choose <span className="text-ink">{placeholder.name}</span> and
+                write who it is from in the note.
+              </>
+            )
+          }
         />
 
         <div className="mb-4">

@@ -9,7 +9,7 @@ import { PersonChip } from '@/components/ui/PersonChip';
 import { useBusinesses } from '@/lib/queries/reference';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useCurrentProfile } from '@/lib/queries/session';
-import { NAV_ITEMS, activeSection, isBusinessActive } from '@/lib/nav';
+import { activeSection, isBusinessActive, navItemsFor } from '@/lib/nav';
 import { onlyOwed } from '@/lib/derive/select';
 import { useAwaitingReview } from '@/lib/queries/review';
 import { scopeHref } from '@/lib/scope';
@@ -149,7 +149,7 @@ export function NavDrawer({ onClose }: NavDrawerProps) {
         </div>
 
         <nav aria-label="Sections" className="py-2">
-          {NAV_ITEMS.map((item) => {
+          {navItemsFor(profile).map((item) => {
             const current = section === item.section;
             // The parent of the row you are actually on is highlighted, but
             // it is not the page.

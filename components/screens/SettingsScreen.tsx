@@ -18,14 +18,14 @@ import {
   useCurrentProfile,
   useSetUserRole,
   useSignOut,
-  useTeam,
+  useChangeableRoles,
   useUpdateNotifyPreference,
   useUpdateReminderTime,
 } from '@/lib/queries/session';
 import { useBusinesses, useSetBusinessDocument } from '@/lib/queries/reference';
 import { formatTime, isTimeStr } from '@/lib/date';
 import { clearAllLockState, hasPin, pinAvailable } from '@/lib/pin';
-import { isFullMember, isOwner, isStaff, STAFF_HOME } from '@/lib/staff';
+import { isFullMember, isOwner, isStaff, STAFF_HOME, TIER_LABEL } from '@/lib/staff';
 import { PIN_LENGTH, SALES_INVOICE_CODES } from '@/lib/constants';
 
 /**
@@ -450,16 +450,86 @@ export function SettingsScreen() {
 }
 
 
+type Tier = 'owner' | 'manager' | 'assistant';
+
+/**
+ * In order of what somebody may do, most to least.
+ *
+ * Not alphabetical, and not the order the database happens to return: a row of
+ * pills is read left to right, and a list of permissions that does not descend
+ * is one somebody has to think about to compare.
+ */
+const TIERS: readonly Tier[] = ['owner', 'manager', 'assistant'];
+
+/**
+ * The tier a row is showing.
+ *
+ * `useChangeableRoles` already refuses a builder and a shop login, so nothing
+ * outside these three can reach this list -- but the fallback is `manager`
+ * rather than a crash, because a settings screen that throws on an unexpected
+ * role is a settings screen nobody can use to FIX the unexpected role.
+ */
+function tierOf(person: Profile): Tier {
+  return person.role === 'owner' || person.role === 'assistant' ? person.role : 'manager';
+}
+
+/** "an owner", "a manager". One place, so the toast and the title agree. */
+function article(tier: Tier): string {
+  return tier === 'owner' || tier === 'assistant' ? 'an' : 'a';
+}
+
+/**
+ * What changes, in the words of the thing being lost or gained.
+ *
+ * Written per destination rather than as a diff between two tiers. A diff
+ * would be more precise and much harder to read at the moment somebody is
+ * deciding -- and the destination is the fact that matters: what will this
+ * person be able to do tomorrow.
+ */
+function consequences(to: Tier, isMe: boolean): React.ReactNode[] {
+  if (to === 'owner') {
+    return [
+      <>They will be able to mark bills paid and record money received.</>,
+      <>They will be able to change this list, including your own place on it.</>,
+    ];
+  }
+  if (to === 'manager') {
+    return [
+      <>
+        They can review, edit and void invoices, and manage suppliers, customers and products.
+      </>,
+      <>
+        They cannot mark anything paid.
+        {isMe ? ' That includes you, from the moment you tap this.' : ''}
+      </>,
+    ];
+  }
+  return [
+    <>They can add invoices for every business, and see what has been paid.</>,
+    <>
+      They cannot review, edit or void anything, and cannot touch suppliers, customers,
+      products or Deli’s invoices.
+      {isMe ? ' That includes you, from the moment you tap this.' : ''}
+    </>,
+  ];
+}
+
 /**
  * Promote and demote, the only screen that can.
  *
  * ---------------------------------------------------------------------------
- * Two tiers on the list, not four.
+ * Three tiers on the list, not five.
  *
- * `useTeam()` is the allowlist of people who run the businesses — manager and
- * owner — so the builder and both shop logins are absent, which is what the
- * database refuses to change anyway. The list and the function agree by
- * construction rather than by both remembering the same three exceptions.
+ * `useChangeableRoles()` is the allowlist of rows `set_user_role` will accept
+ * — owner, manager and assistant — so the builder and both shop logins are
+ * absent, which is what the database refuses to change anyway. The list and
+ * the function agree by construction rather than by both remembering the same
+ * two exceptions.
+ *
+ * It is deliberately NOT `useTeam()`, which this used before the fourth tier
+ * existed. That list means "people who run the businesses", and an assistant
+ * does not — but a demoted person who fell off this list would have no way
+ * back except Supabase, so the two questions got two predicates. §52.
  *
  * The last owner is the one refusal this screen states BEFORE tapping. The
  * others are conditions on rows that are not here; this one is a condition on
@@ -469,11 +539,13 @@ export function SettingsScreen() {
  */
 function RoleSection({ me }: { me: Profile }) {
   const toast = useToast();
-  const { data: team = [] } = useTeam();
+  const { data: team = [] } = useChangeableRoles();
   const setRole = useSetUserRole();
-  const [changing, setChanging] = useState<{ person: Profile; to: 'manager' | 'owner' } | null>(
-    null,
-  );
+
+  /* Which row is showing its choices. One at a time: three sets of pills open
+     at once is a list nobody can read. */
+  const [open, setOpen] = useState<string | null>(null);
+  const [changing, setChanging] = useState<{ person: Profile; to: Tier } | null>(null);
 
   const owners = team.filter((person) => person.role === 'owner');
 
@@ -483,22 +555,19 @@ function RoleSection({ me }: { me: Profile }) {
     try {
       await setRole.mutateAsync({ id: person.id, role: to });
       setChanging(null);
-      toast.show(
-        to === 'owner'
-          ? `${person.display_name} is now an owner.`
-          : `${person.display_name} is now a manager.`,
-      );
+      setOpen(null);
+      toast.show(`${person.display_name} is now ${article(to)} ${TIER_LABEL[to].toLowerCase()}.`);
     } catch (error) {
       /*
        * The database's own sentence, not one of ours.
        *
-       * All five refusals in `set_user_role` are written to be read by a
-       * person -- "That is the only owner. Make somebody else the owner
-       * first." A house message here would replace five specific reasons with
-       * one vague one, and the specific reason is the whole value.
+       * Every refusal in `set_user_role` is written to be read by a person --
+       * "That is the only owner. Make somebody else the owner first." A house
+       * message here would replace specific reasons with one vague one, and
+       * the specific reason is the whole value.
        */
       setChanging(null);
-      toast.show(error instanceof Error ? error.message : 'Couldn’t change that.', 'problem');
+      toast.show(error instanceof Error ? error.message : 'Couldn\u2019t change that.', 'problem');
     }
   }
 
@@ -507,74 +576,97 @@ function RoleSection({ me }: { me: Profile }) {
       <p className="mb-1 text-xs uppercase tracking-widest text-muted">Who can do what</p>
       <p className="mb-3 text-sm text-muted">
         An owner marks bills paid, records money received, and changes this list. A manager does
-        everything else — reviewing, editing, voiding, suppliers, customers and invoices.
+        everything else — reviewing, editing, voiding, suppliers, customers and invoices. An
+        assistant logs invoices and nothing more.
       </p>
 
       <ul>
         {team.map((person) => {
-          const owner = person.role === 'owner';
+          const tier = tierOf(person);
           /* The refusal stated in advance. Demoting the only owner leaves
              nobody who can promote anybody, and no way back except a
              hand-written statement. */
-          const lastOwner = owner && owners.length <= 1;
+          const lastOwner = tier === 'owner' && owners.length <= 1;
+          const showing = open === person.id;
 
           return (
-            <li
-              key={person.id}
-              className="flex items-center gap-3 border-b border-hairline py-2 last:border-b-0"
-            >
-              <PersonChip profile={person} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-ink">
-                  {person.display_name}
-                  {person.id === me.id ? ' · you' : ''}
+            <li key={person.id} className="border-b border-hairline py-2 last:border-b-0">
+              <div className="flex items-center gap-3">
+                <PersonChip profile={person} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-ink">
+                    {person.display_name}
+                    {person.id === me.id ? ' \u00b7 you' : ''}
+                  </span>
+                  <span className="block text-xs text-muted">{TIER_LABEL[tier]}</span>
                 </span>
-                <span className="block text-xs text-muted">{owner ? 'Owner' : 'Manager'}</span>
-              </span>
 
-              {lastOwner ? (
-                <span className="shrink-0 text-xs text-muted">The only owner</span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={setRole.isPending}
-                  onClick={() =>
-                    setChanging({ person, to: owner ? 'manager' : 'owner' })
-                  }
-                  /*
-                   * Named for the row, not just for itself.
-                   *
-                   * Every one of these says "Change", so the visible label
-                   * cannot tell two of them apart -- for a screen reader, for
-                   * a test, or for anybody who has tabbed to one. The person's
-                   * name comes from the row it sits in.
-                   */
-                  aria-label={`Change ${person.display_name}’s role`}
-                  className="touch shrink-0 rounded-full border border-hairline bg-card px-3 text-sm text-action disabled:opacity-40"
+                {lastOwner ? (
+                  <span className="shrink-0 text-xs text-muted">The only owner</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={setRole.isPending}
+                    onClick={() => setOpen(showing ? null : person.id)}
+                    aria-expanded={showing}
+                    /*
+                     * Named for the row, not just for itself. Every one of
+                     * these says "Change", so the visible label cannot tell
+                     * two of them apart -- for a screen reader, for a test, or
+                     * for anybody who has tabbed onto one.
+                     */
+                    aria-label={`Change ${person.display_name}\u2019s role`}
+                    className="touch shrink-0 rounded-full border border-hairline bg-card px-3 text-sm text-action disabled:opacity-40"
+                  >
+                    Change
+                  </button>
+                )}
+              </div>
+
+              {/*
+                The tiers, under the row they belong to.
+
+                Not a modal. §46.1's lesson was that a control which edits a
+                panel belongs inside the panel it edits -- and the thing being
+                changed here is the line one row above these pills. A dialog
+                would take the name off the screen at the moment somebody is
+                deciding about that person.
+
+                There were two tiers and one destination, so a button could
+                name it. There are three now, so it cannot: "Change" opens the
+                choice and the confirmation states the consequence.
+              */}
+              {showing ? (
+                <div
+                  className="mt-2 flex flex-wrap gap-2 pl-11"
+                  role="group"
+                  aria-label={`Role for ${person.display_name}`}
                 >
-                  {/*
-                    Asked for directly: *"can we have a button that says
-                    change. pressing it will promote/demote their roles."*
-
-                    It used to name its destination -- "Make owner" on a
-                    manager, "Make manager" on an owner -- which is spec §8's
-                    rule that a control is named for what it does. What made
-                    that read as promote-only is that the demote label appears
-                    ONLY when there are two owners, and there has only ever
-                    been one: every row on his screen said "Make owner", and a
-                    list where every button promotes looks like a list that
-                    can only promote.
-
-                    The tier it would have named is already on the row, one
-                    line under the name, so "Change" beside "Manager" is not
-                    ambiguous -- there are two tiers and one of them is being
-                    read. And the destination is still stated in words before
-                    anything happens: the dialog below asks "Make Milan an
-                    owner?" and lists what that gains and costs.
-                  */}
-                  Change
-                </button>
-              )}
+                  {TIERS.map((option) => {
+                    const current = option === tier;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        /* The tier somebody already holds is shown and not
+                           offered. A button whose entire job is to write the
+                           value that is already there is notes §6 twice over:
+                           it does nothing, and it looks like it does. */
+                        disabled={current || setRole.isPending}
+                        aria-current={current}
+                        onClick={() => setChanging({ person, to: option })}
+                        className={`touch rounded-full border px-3 text-sm ${
+                          current
+                            ? 'border-action bg-action text-action-text'
+                            : 'border-hairline bg-card text-ink'
+                        } disabled:opacity-100`}
+                      >
+                        {TIER_LABEL[option]}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </li>
           );
         })}
@@ -583,31 +675,15 @@ function RoleSection({ me }: { me: Profile }) {
       <ConfirmDialog
         open={changing !== null}
         title={
-          changing?.to === 'owner'
-            ? `Make ${changing.person.display_name} an owner?`
-            : `Make ${changing?.person.display_name ?? ''} a manager?`
+          changing
+            ? `Make ${changing.person.display_name} ${article(changing.to)} ${TIER_LABEL[
+                changing.to
+              ].toLowerCase()}?`
+            : ''
         }
-        points={
-          changing?.to === 'owner'
-            ? [
-                <>They will be able to mark bills paid and record money received.</>,
-                <>They will be able to change this list, including your own place on it.</>,
-              ]
-            : [
-                <>
-                  They keep everything else — reviewing, editing, voiding, suppliers,
-                  customers and invoices.
-                </>,
-                <>
-                  They stop being able to mark anything paid.
-                  {changing?.person.id === me.id
-                    ? ' That includes you, from the moment you tap this.'
-                    : ''}
-                </>,
-              ]
-        }
-        question={changing?.to === 'owner' ? 'Make them an owner?' : 'Make them a manager?'}
-        confirmLabel={changing?.to === 'owner' ? 'Make owner' : 'Make manager'}
+        points={changing ? consequences(changing.to, changing.person.id === me.id) : []}
+        question="Change what they can do?"
+        confirmLabel={changing ? TIER_LABEL[changing.to] : ''}
         onConfirm={() => void apply()}
         onCancel={() => setChanging(null)}
       />

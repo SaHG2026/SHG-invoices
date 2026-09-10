@@ -44,9 +44,32 @@ export function isStaff(profile: Profile | null | undefined): boolean {
 }
 
 /**
- * One of the four. The opposite of `isStaff`, except while loading, when both
- * are false — which is the honest answer and the reason this is not written as
- * a negation at its call sites.
+ * May log a bill, and may not act on one. CATCH_UP_022, §52.
+ *
+ * The database is the boundary: `is_assistant()` guards a SELECT and an
+ * INSERT, and there is no UPDATE policy for this tier anywhere. If every use
+ * of this function were deleted, an assistant would still be unable to edit,
+ * void, approve or settle anything; they would simply be shown buttons that
+ * come back 42501 (notes §2).
+ *
+ * So what this decides is what they are OFFERED, which is the same job
+ * `isStaff` does one tier down.
+ */
+export function isAssistant(profile: Profile | null | undefined): boolean {
+  return profile?.role === 'assistant';
+}
+
+/**
+ * One of the people who run the businesses, with full use of the ledger.
+ *
+ * `assistant` is deliberately NOT here, and this is the app-side twin of the
+ * rule CATCH_UP_022 spends its header on: `is_manager_or_above()` was not
+ * widened either. Every screen that asks this question means "may change
+ * things", and an assistant may not.
+ *
+ * The opposite of `isStaff` for three of the four values, and no longer the
+ * exact opposite of it — which is why it is still not written as a negation
+ * at its call sites.
  */
 export function isFullMember(profile: Profile | null | undefined): boolean {
   if (!profile) return false;
@@ -54,6 +77,43 @@ export function isFullMember(profile: Profile | null | undefined): boolean {
     profile.role === 'manager' || profile.role === 'owner' || profile.role === 'builder'
   );
 }
+
+/**
+ * Whose role this app may change, which is a different question from every
+ * other allowlist in this file.
+ *
+ * ---------------------------------------------------------------------------
+ * Why this is not `runsTheBusinesses`.
+ *
+ * The role screen used that one, and it means "people who run the
+ * businesses" — the audience for a person picker and a notification. Adding
+ * `assistant` to it would put a demoted person into the paid-by filter on
+ * History, where they can never appear because they cannot pay anything, and
+ * into the builder's photo screen.
+ *
+ * But leaving them OUT of the role screen is worse than either: demote
+ * somebody and they drop off the only list that could promote them back, so
+ * the demotion is one-way from inside the app and the way back is Supabase.
+ *
+ * One predicate answering two questions is what this project keeps unpicking,
+ * so it is two predicates. `set_user_role` refuses a builder and a shop
+ * login, and this list holds exactly the rows it will accept — the screen and
+ * the function agree by construction rather than by both remembering the same
+ * two exceptions.
+ * ---------------------------------------------------------------------------
+ */
+export function roleMayBeChanged(profile: Pick<Profile, 'role'>): boolean {
+  return (
+    profile.role === 'manager' || profile.role === 'owner' || profile.role === 'assistant'
+  );
+}
+
+/** What the role screen calls each tier. The one place these words live. */
+export const TIER_LABEL: Record<'owner' | 'manager' | 'assistant', string> = {
+  owner: 'Owner',
+  manager: 'Manager',
+  assistant: 'Assistant',
+};
 
 /**
  * May move a bill between paid and unpaid, and may change anybody's role.

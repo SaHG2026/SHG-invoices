@@ -9,7 +9,7 @@ import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
 import { useToast } from '@/components/ui/Toast';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useProfiles, useCurrentProfile } from '@/lib/queries/session';
-import { isOwner } from '@/lib/staff';
+import { isAssistant, isOwner } from '@/lib/staff';
 import { useAddNote, useInvoice, useInvoiceActivity, useInvoiceNotes } from '@/lib/queries/detail';
 import { useUnmarkPaid, useVoidInvoice } from '@/lib/queries/payments';
 import { submitWrite } from '@/lib/offline/submit';
@@ -125,6 +125,21 @@ export function InvoiceDetail({ id }: { id: string }) {
    */
   const mayPay = isOwner(profile);
 
+  /*
+   * And voiding belongs to everybody EXCEPT an assistant. §52.
+   *
+   * The tier has no UPDATE policy on `invoices` at all, so `useVoidInvoice`
+   * comes back 42501 — a button that exists only to fail, which is notes §6.
+   *
+   * Written as `!isAssistant` rather than as an allowlist of the tiers that
+   * may, deliberately and against this project's usual direction: the question
+   * here is not "who is trusted with the ledger" but "who does the database
+   * refuse", and there is exactly one such tier that can reach this screen.
+   * An allowlist would silently drop a tier invented later out of a permission
+   * it should have had, and the failure would be a manager who cannot void.
+   */
+  const mayChange = !isAssistant(profile);
+
   const stream = useMemo(() => mergeStream(activity, notes), [activity, notes]);
   const payer = people.find((person) => person.id === invoice?.paid_by);
 
@@ -238,13 +253,15 @@ export function InvoiceDetail({ id }: { id: string }) {
                 Mark paid
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => setVoidOpen(true)}
-              className="touch rounded-sm border border-hairline bg-card px-4 text-sm text-muted"
-            >
-              Void
-            </button>
+            {mayChange ? (
+              <button
+                type="button"
+                onClick={() => setVoidOpen(true)}
+                className="touch rounded-sm border border-hairline bg-card px-4 text-sm text-muted"
+              >
+                Void
+              </button>
+            ) : null}
           </>
         ) : null}
 

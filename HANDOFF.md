@@ -78,7 +78,15 @@ include whatever comes next.
 **And an allowlist fails the opposite way.** Renaming `member` to `manager` in
 J1 meant visiting **six** allowlists on purpose, because a tier added without
 visiting each one is a tier quietly excluded. §46.3 names all six — four in
-SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
+SQL, two in `lib/staff.ts`.
+
+**§52 added a fourth tier and deliberately visited NONE of them.** `assistant`
+is not in `is_manager_or_above()`, not in `isFullMember`, and not in either
+push audience or the reminder — every one of those exclusions is correct, and
+the file says so in each place so that silence is not mistaken for an
+oversight. What it added instead is `is_assistant()` and `roleMayBeChanged`,
+which are narrower questions. **A fifth tier means asking the same question at
+all eight, and the answer will not be the same at every one.**
 
 ### Four things that are easy to undo by accident
 
@@ -102,7 +110,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 950 tests
+npx vitest run       # 954 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -182,8 +190,8 @@ SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
 - `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**.
-  **021 is written and NOT yet applied** — it is the wipe, and it must be
-  run before the deploy that carries J4
+  **021 and 022 are written and NOT yet applied** — the wipe and the
+  assistant tier. Both must be run before the deploy that carries them
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -293,6 +301,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §50 | **J4b** — Excel workbooks with sheets, a zip of them, and a status column that was lying |
 | §50.6 | One button that says Change — the demote label nobody could reach |
 | §51 | The notification badge, and the test that had to decode a PNG |
+| §52 | The assistant tier — a person who logs a bill and cannot act on one |
 
 ### The two lessons worth more than the features
 

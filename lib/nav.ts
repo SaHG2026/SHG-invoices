@@ -1,5 +1,7 @@
 import type { Route } from 'next';
 import { ALL_SCOPE } from './scope';
+import { isAssistant } from './staff';
+import type { Profile } from './types';
 
 /**
  * The side menu, as data.
@@ -74,6 +76,46 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { section: 'history', label: 'Paid history', href: `/b/${ALL_SCOPE}/history` as Route },
   { section: 'settings', label: 'Settings', href: '/settings' as Route },
 ] as const;
+
+/**
+ * The rows an assistant is offered. §52.
+ *
+ * ---------------------------------------------------------------------------
+ * A filter here rather than a flag on each item.
+ *
+ * Every row left out is left out for the same reason: `is_assistant()` guards
+ * a SELECT and an INSERT on invoices and nothing else, so Suppliers,
+ * Customers, Products and Receivables all come back empty, and Review offers
+ * a queue whose only two buttons the database refuses. Notes §6 — the
+ * interface should not offer what it cannot do — and four blank screens is
+ * that failure four times.
+ *
+ * **Invoices and Paid history stay**, and that is the tier working as
+ * intended: an assistant reads every business's ledger, paid and unpaid. They
+ * simply cannot change any of it.
+ *
+ * Settings stays too. It is where their own notification switch lives, and
+ * where the build stamp is.
+ *
+ * This is an ALLOWLIST of what is hidden rather than of what is shown, which
+ * is the one place in this codebase that direction is right: a row added in a
+ * later phase should appear for the tiers that can use it and be REVIEWED for
+ * this one, and a new row silently appearing for an assistant is a visible
+ * mistake, where a new row silently vanishing for everybody is not.
+ * ---------------------------------------------------------------------------
+ */
+const HIDDEN_FROM_ASSISTANT: readonly NavSection[] = [
+  'review',
+  'suppliers',
+  'customers',
+  'products',
+  'receivables',
+];
+
+export function navItemsFor(profile: Profile | null | undefined): readonly NavItem[] {
+  if (!isAssistant(profile)) return NAV_ITEMS;
+  return NAV_ITEMS.filter((item) => !HIDDEN_FROM_ASSISTANT.includes(item.section));
+}
 
 /**
  * Which menu row the current URL belongs to.

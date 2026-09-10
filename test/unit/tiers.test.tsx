@@ -111,6 +111,7 @@ vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: mocks.who.current, isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
   useTeam: () => ({ data: mocks.team.current }),
+  useChangeableRoles: () => ({ data: mocks.team.current }),
   useSignOut: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -335,11 +336,18 @@ describe('who can do what', () => {
      * are two owners, and there has only ever been one.
      */
     settings();
+    /* Change opens the choice; the tier is the second tap. Two tiers had one
+       destination and a button could name it; three cannot. §52. */
     fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: /Role for Milan/ })).getByRole('button', {
+        name: 'Owner',
+      }),
+    );
 
     const dialog = within(screen.getByRole('alertdialog'));
     expect(dialog.getByText(/mark bills paid/)).toBeInTheDocument();
-    fireEvent.click(dialog.getByRole('button', { name: 'Make owner' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Owner' }));
 
     return waitFor(() => {
       expect(mocks.setRole).toHaveBeenCalledWith({ id: MILAN.id, role: 'owner' });
@@ -349,8 +357,64 @@ describe('who can do what', () => {
   it('writes nothing if you go back', () => {
     settings();
     fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: /Role for Milan/ })).getByRole('button', {
+        name: 'Owner',
+      }),
+    );
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Go back' }));
     expect(mocks.setRole).not.toHaveBeenCalled();
+  });
+
+  it('offers the three tiers, and does not offer the one already held', () => {
+    /*
+     * A button whose entire job is to write the value that is already there
+     * is notes §6 twice over: it does nothing, and it looks like it does.
+     */
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    const choices = within(screen.getByRole('group', { name: /Role for Milan/ }));
+
+    expect(choices.getAllByRole('button')).toHaveLength(3);
+    expect(choices.getByRole('button', { name: 'Manager' })).toBeDisabled();
+    expect(choices.getByRole('button', { name: 'Owner' })).toBeEnabled();
+    expect(choices.getByRole('button', { name: 'Assistant' })).toBeEnabled();
+  });
+
+  it('demotes a manager to assistant, and says what that costs', () => {
+    /*
+     * The tier this round exists for. Asked for as "demote to staff"; `staff`
+     * is a venue and this is a person, so it is its own value (§52).
+     */
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: /Role for Milan/ })).getByRole('button', {
+        name: 'Assistant',
+      }),
+    );
+
+    const dialog = within(screen.getByRole('alertdialog'));
+    expect(dialog.getByText(/cannot review, edit or void/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Assistant' }));
+
+    return waitFor(() => {
+      expect(mocks.setRole).toHaveBeenCalledWith({ id: MILAN.id, role: 'assistant' });
+    });
+  });
+
+  it('lists an assistant, so a demotion is not one-way', () => {
+    /*
+     * `useTeam()` means "people who run the businesses" and an assistant does
+     * not — so the role screen reads its own list. Built on `useTeam` this row
+     * would vanish the moment it was demoted, and the way back would be
+     * Supabase.
+     */
+    mocks.team.current = [MANI, { ...MILAN, role: 'assistant' as const }];
+    settings();
+    const list = within(roleList());
+    expect(list.getByText('Assistant')).toBeInTheDocument();
+    expect(list.getByRole('button', { name: /Change Milan/ })).toBeInTheDocument();
   });
 
   it('demotes through the same button, once there is somebody to demote', () => {
@@ -367,9 +431,14 @@ describe('who can do what', () => {
     settings();
 
     fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: /Role for Milan/ })).getByRole('button', {
+        name: 'Manager',
+      }),
+    );
     const dialog = within(screen.getByRole('alertdialog'));
-    expect(dialog.getByText(/stop being able to mark anything paid/)).toBeInTheDocument();
-    fireEvent.click(dialog.getByRole('button', { name: 'Make manager' }));
+    expect(dialog.getByText(/cannot mark anything paid/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Manager' }));
 
     return waitFor(() => {
       expect(mocks.setRole).toHaveBeenCalledWith({ id: MILAN.id, role: 'manager' });

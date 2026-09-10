@@ -5879,3 +5879,196 @@ here: `badge-96.png` is a new url, so there is nothing stale to evict, and the
 
 Bumping would throw away the precached offline page and manifest on every phone
 to deliver a file that was never cached in the first place.
+
+---
+
+## 52. A fourth tier — assistant
+
+> *"there needs to be option to demote Milan/Sujan to staff as well within the
+> change button."*
+
+Put to the client with what `staff` actually is, and he chose the other
+reading: not the venue tier, but **a person who works across all four
+businesses, may log a bill, and may not act on one.**
+
+| | |
+|---|---|
+| **sees** | every business's invoices, paid and unpaid, and who did what |
+| **does** | enters an invoice; writes a note on one |
+| **cannot** | review, approve, edit, void, mark paid or unpaid, add or change a supplier, customer or product, or touch Deli's receivables at all |
+
+`db/CATCH_UP_022.sql`, and it must be run **before** the deploy.
+
+---
+
+### 52.1 Why it is not called `staff`, which is the word that was asked for
+
+`staff` already means something specific and different: **a venue, not a
+person.** `lib/types.ts` says so in as many words, and the database enforces
+it — `profiles_staff_has_venue` requires a staff row to have a `business_id`
+and forbids every other role from having one, with `staff_venue()`, the
+`staff_invoices` view and four policies all built on that pairing.
+
+Demoting Milan to `staff` would therefore have meant **picking one shop for
+him** and hiding the other three businesses. That is a real thing somebody
+might want and it is not what was being asked for.
+
+Putting a second meaning on the value would be this project's recurring shape
+problem inverted: not two names for one tier, but one name for two. So it is a
+new value, and the screen calls it **Assistant**.
+
+---
+
+### 52.2 The rule this phase was most likely to break
+
+`is_manager_or_above()` is an allowlist, and **every policy in the database
+that means "one of the people who run this" says it**. CATCH_UP_022 does not
+add `assistant` to it, and §1 of that file spends its opening on why.
+
+Widening it would have been one line and would have silently handed the new
+tier every permission that predicate has ever guarded — suppliers, customers,
+products, Deli's invoices — because those policies are `for all`. The property
+CATCH_UP_010 §2 bought is that **a policy written in a later phase excludes the
+narrower tiers by default**, and that property is spent the moment the
+predicate is widened once.
+
+So `assistant` got its own predicate and its own, narrower policies. The
+verification block raises if `is_manager_or_above()` ever mentions it.
+
+**The same rule applied on the app side**: `isFullMember` was not widened
+either, so the export section and everything else that asks "may this person
+change things" continues to exclude the new tier without being visited.
+
+---
+
+### 52.3 The tier is an absence, not a set of hidden buttons
+
+There is **no UPDATE policy and no DELETE policy** for an assistant anywhere.
+That is the whole tier. They cannot edit an invoice, void one, approve one or
+move it between paid and unpaid — not because a screen hides the button, but
+because no policy exists that would let the row change.
+
+Two writes, both narrowed to their own rows:
+
+```sql
+create policy assistant_insert on invoices
+  for insert with check (is_assistant() and created_by = auth.uid());
+```
+
+`created_by = auth.uid()` is not decoration. Without it an assistant could
+insert a row attributed to Mani, and attribution is the thing the four of them
+are trusting — the entire reasoning behind rule 1.
+
+**`profiles` is the read that is not optional.** Without it an assistant cannot
+read their own row, `useCurrentProfile` returns null, and the app decides they
+are not signed in. Every other table is a screen; that one is the front door.
+
+---
+
+### 52.4 Two decisions recorded because their evidence is silence
+
+**Their entries do not wait for review.** `stamp_approval` sends only a venue's
+insert to the queue, and nothing in CATCH_UP_022 changes it. A venue is a
+shared login on a shop counter; an assistant is a named person the owner chose
+to give a login to. The tier exists so somebody cannot ALTER or SETTLE the
+ledger, not because what they type is doubted — and routing their entries
+through Review would make the owner the bottleneck for every invoice on the
+days both managers are assistants, which is the objection already raised and
+accepted about paid/unpaid, and it would be sharper here.
+
+*If that is wrong it is one line*: `if is_staff() or is_assistant() then`. The
+Review screen and `onlyOwed` already do the rest.
+
+**They get no notifications.** The two push audiences and the daily reminder
+are allowlists, so a value not added to them is already excluded and no
+statement is what keeps them out. Written down because the failure mode of an
+allowlist is that **silence is not evidence it was considered.** It was.
+
+---
+
+### 52.5 One predicate could not answer three questions
+
+`useTeam()` — `runsTheBusinesses` — was being used for three different things:
+the builder's photo screen, History's paid-by filter, and the role list.
+
+Adding `assistant` to it would have been right for exactly one of them. An
+assistant can never appear in a paid-by filter, because they cannot pay
+anything; a pill that always returns nothing is a filter that lies.
+
+But leaving them out of the role list is worse than either: **demote somebody
+and they drop off the only list that could promote them back**, so the
+demotion is one-way from inside the app and the way back is Supabase.
+
+So it is two predicates. `roleMayBeChanged` holds exactly the rows
+`set_user_role` will accept — owner, manager, assistant — so the screen and the
+function agree by construction rather than by both remembering that a builder
+and a shop login are refused.
+
+---
+
+### 52.6 Change had to stop being a confirmation
+
+§50.6 made the row's control say **Change** because with two tiers the demote
+label was unreachable. With three tiers the button cannot name its destination
+at all, because there are two of them.
+
+So Change now opens the three tiers **inline, under the row they belong to** —
+not a modal. §46.1's lesson was that a control which edits a panel belongs
+inside the panel it edits, and the thing being changed here is the line one row
+above the pills; a dialog would take the person's name off the screen at the
+moment somebody is deciding about that person. The tier already held is shown
+and disabled: a button whose entire job is to write the value that is already
+there is notes §6 twice over — it does nothing, and it looks like it does.
+
+Choosing a tier still opens the confirmation, which states the consequence in
+the words of what is gained or lost. Written per destination rather than as a
+diff between two tiers: a diff would be more precise and much harder to read at
+the moment it matters, and the destination is the fact somebody actually wants
+— *what will this person be able to do tomorrow.*
+
+---
+
+### 52.7 What the venue work had already built
+
+The add-invoice sheet needed one change, and it needed no new code:
+`SupplierField` already takes `allowCreate` and `includePlaceholder`, because
+CATCH_UP_013 §5 took supplier creation away from shops and §34.6 built the
+answer — file it against **Supplier not listed** and write the real name in the
+note.
+
+An assistant gets exactly those two props. **Nothing new was required for this
+tier**, which is the strongest sign available that the venue phase chose the
+right shape rather than a shape that happened to work once.
+
+---
+
+### 52.8 Two mistakes worth recording, both mine
+
+**An escape sequence in JSX text.** A patch wrote `—` into a paragraph,
+where a backslash escape is not an escape at all — it is five characters — and
+the screen read *"everything else — reviewing"*. Inside a string literal
+the identical sequence is correct, which is what makes it hard to see in a
+diff: two lines that look the same behave differently depending on whether they
+are quoted.
+
+Found by looking at the screen, not by any assertion. `settings.test.tsx` now
+asserts that **nothing rendered anywhere on that screen contains a backslash
+followed by `u`** — the whole screen rather than the one paragraph, because the
+next one will be somewhere else. The guard was then **verified by
+reintroducing the defect and watching it fail**, which is the only way to know
+a check is a check rather than a claim.
+
+The test builds its backslash with `String.fromCharCode(92)` rather than typing
+one, which reads oddly and is deliberate: a regex literal hunting for
+backslashes is itself full of them, and this test exists because an escape
+ended up in the wrong kind of quotes.
+
+**`git checkout <file>` on a file with uncommitted work.** Used to undo a
+deliberately-broken scratch edit, it reverted the file to HEAD and destroyed
+the entire RoleSection rewrite along with it. Recovered by re-running the patch
+scripts, which existed only because HANDOFF §5 says to write patches to a file
+rather than pipe them through a heredoc — the practice paid for itself in a way
+it was not written for.
+
+**Use a file copy to stash a scratch edit**, never `git checkout`, on any file
+the working tree has real changes in.

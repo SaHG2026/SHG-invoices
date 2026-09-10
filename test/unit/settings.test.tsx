@@ -58,6 +58,13 @@ vi.mock('@/lib/queries/session', () => ({
   useCurrentProfile: () => ({ data: mocks.who, isLoading: false, isError: false }),
   useProfiles: () => ({ data: PROFILES }),
   useTeam: () => ({ data: PROFILES.filter((person) => person.role !== 'builder') }),
+  /* The role screen's own list since §52 — the rows `set_user_role` will
+     accept, which includes assistants where `useTeam` must not. */
+  useChangeableRoles: () => ({
+    data: PROFILES.filter((person) =>
+      ['manager', 'owner', 'assistant'].includes(person.role),
+    ),
+  }),
   useSignOut: () => ({ mutate: mocks.signOut, isPending: false }),
   useUpdateNotifyPreference: () => ({ mutateAsync: mocks.updateNotify, isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: mocks.updateReminder, isPending: false }),
@@ -147,6 +154,30 @@ beforeEach(() => {
   mocks.updateReminder.mockResolvedValue(profile);
   mocks.lock.supported = true;
   mocks.lock.set = false;
+});
+
+describe('the words on the screen', () => {
+  it('renders no unescaped escape sequences', () => {
+    /*
+     * Caught on glass, twice in one session: a patch wrote `—` into JSX
+     * TEXT, where a backslash escape is not an escape at all — it is five
+     * characters, and the paragraph read "everything else — reviewing".
+     *
+     * Inside a string literal the same sequence is correct, which is what
+     * makes this hard to see in a diff: two lines that look identical behave
+     * differently depending on whether they are quoted.
+     *
+     * jsdom renders the text, so this is one of the few visual defects a test
+     * CAN see. It covers the whole screen rather than the one paragraph,
+     * because the next one will be somewhere else.
+     */
+    open();
+    /* The backslash is built rather than typed. A regex literal looking
+       for one is itself full of them, and this whole test exists because
+       an escape went into the wrong kind of quotes. */
+    const backslash = String.fromCharCode(92);
+    expect(document.body.textContent ?? '').not.toContain(backslash + 'u');
+  });
 });
 
 describe('who you are', () => {
@@ -977,6 +1008,19 @@ describe('preview', () => {
    * button. jsdom does no layout (HANDOFF 5), so this is the only way to
    * find that.
    */
+  /* The role picker open, which the base page cannot show: the pills only
+     exist after somebody has tapped Change on a row. Three pills plus a name
+     and a chip on a 375px row is exactly the kind of thing that reads
+     correctly in an assertion and wraps badly on glass. */
+  it.skipIf(!OUT)('snapshot of the role picker', async () => {
+    mocks.who = profile;
+    const view = open();
+    fireEvent.click(screen.getByRole('button', { name: /Change Milan/ }));
+    await screen.findByRole('group', { name: /Role for Milan/ });
+    await write(OUT.replace(/\.html$/, '-roles.html'), view.container.innerHTML);
+    view.unmount();
+  });
+
   it.skipIf(!OUT)('snapshot of each wipe step', async () => {
     mocks.who = profile;
     mocks.wipe.mockResolvedValue({

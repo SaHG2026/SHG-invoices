@@ -66,6 +66,17 @@ export const mk = {
     create: ['sales', 'create'] as const,
     markReceived: ['sales', 'mark-received'] as const,
     unmarkReceived: ['sales', 'unmark-received'] as const,
+    /**
+     * A discount or a refund, and undoing one. §53, J5.
+     *
+     * Queueable, unlike the wipe, and the difference is the one the wipe's own
+     * note draws: this ADDS a row that was already true when it was typed, so
+     * arriving on Thursday is late rather than wrong. The id is generated on
+     * the client and passed to the RPC, so a replay is a primary-key clash
+     * rather than a second discount off the same invoice.
+     */
+    adjust: ['sales', 'adjust'] as const,
+    unadjust: ['sales', 'unadjust'] as const,
   },
   /**
    * A venue logging its own invoice.
@@ -159,6 +170,8 @@ export const QUEUEABLE_KEYS: readonly (readonly string[])[] = [
   mk.sales.create,
   mk.sales.markReceived,
   mk.sales.unmarkReceived,
+  mk.sales.adjust,
+  mk.sales.unadjust,
   mk.venue.create,
   mk.venue.update,
 ];

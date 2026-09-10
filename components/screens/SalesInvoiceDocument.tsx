@@ -9,6 +9,11 @@ import { useSalesInvoice } from '@/lib/queries/sales';
 import { useBusinesses } from '@/lib/queries/reference';
 import { useAllCustomers } from '@/lib/queries/customers';
 import { formatCents } from '@/lib/money';
+import {
+  describeAdjustment,
+  liveAdjustments,
+  netCents,
+} from '@/lib/derive/adjustments';
 import { formatQuantity } from '@/lib/quantity';
 import { formatDayWithYear } from '@/lib/date';
 import { invoiceFileName, renderInvoicePdf } from '@/lib/pdf/invoice';
@@ -78,6 +83,10 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
   }
 
   const { invoice, lines } = data;
+  /* Live only: a voided adjustment is kept for ever and must never reach the
+     paper, or a customer receives an invoice quoting a discount that was
+     taken back. §53. */
+  const adjustments = liveAdjustments(invoice);
   const business = businesses.find((entry) => entry.id === invoice.business_id);
   const customer = customers.find((entry) => entry.id === invoice.customer_id);
 
@@ -383,14 +392,77 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
               )}
             </tbody>
             <tfoot>
-              <tr>
-                <td className="pt-3 text-xs uppercase tracking-widest text-muted" colSpan={3}>
-                  Total
-                </td>
-                <td className="money pt-3 text-right text-h2 text-ink">
-                  {formatCents(invoice.amount_cents)}
-                </td>
-              </tr>
+              {/*
+                What was invoiced, then what came off it, then what is left.
+                §53, J5.
+
+                ---------------------------------------------------------------
+                The issued figure stays on the paper, and that is the point.
+
+                Rule 5: the original is what the customer's copy says, and a
+                document that quietly reprinted $460 where $500 was handed over
+                would make the two disagree with no way to tell which was
+                right. So the invoice keeps saying $500, the discount is a line
+                under it, and the net is the last figure.
+
+                Each adjustment prints WITH ITS REASON. §44.6 asked for that
+                explicitly and §28.3 is why: "why is this bill $40 less than
+                the docket" is the question this whole design exists to answer,
+                and an unexplained $40 on a customer's invoice is that question
+                arriving by phone instead.
+
+                None of this appears at all when nothing has been adjusted —
+                a "less $0.00" row on every invoice Deli has ever issued would
+                be a feature announcing itself on documents that do not use it.
+                ---------------------------------------------------------------
+              */}
+              {adjustments.length === 0 ? (
+                <tr>
+                  <td className="pt-3 text-xs uppercase tracking-widest text-muted" colSpan={3}>
+                    Total
+                  </td>
+                  <td className="money pt-3 text-right text-h2 text-ink">
+                    {formatCents(invoice.amount_cents)}
+                  </td>
+                </tr>
+              ) : (
+                <>
+                  <tr>
+                    <td className="pt-3 text-xs uppercase tracking-widest text-muted" colSpan={3}>
+                      Invoiced
+                    </td>
+                    <td className="money pt-3 text-right text-ink">
+                      {formatCents(invoice.amount_cents)}
+                    </td>
+                  </tr>
+
+                  {adjustments.map((adjustment) => (
+                    <tr key={adjustment.id}>
+                      <td className="py-1 text-sm text-muted" colSpan={3}>
+                        {describeAdjustment(adjustment)} — {adjustment.reason}
+                      </td>
+                      {/* Written as a subtraction rather than as a negative
+                          number: "−$40.00" and "-40.00" are the same fact, and
+                          only one of them reads as an instruction on paper. */}
+                      <td className="money py-1 text-right text-ink">
+                        −{formatCents(adjustment.amount_cents)}
+                      </td>
+                    </tr>
+                  ))}
+
+                  <tr>
+                    <td
+                      className="border-t border-hairline pt-2 text-xs uppercase tracking-widest text-muted"
+                      colSpan={3}
+                    >
+                      Total due
+                    </td>
+                    <td className="money border-t border-hairline pt-2 text-right text-h2 text-ink">
+                      {formatCents(netCents(invoice))}
+                    </td>
+                  </tr>
+                </>
+              )}
             </tfoot>
           </table>
         </div>

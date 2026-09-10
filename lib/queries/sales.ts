@@ -6,7 +6,7 @@ import { mk } from '@/lib/offline/keys';
 import { supabase } from '@/lib/supabase/browser';
 import { UNPAID_STALE_MS } from '@/lib/constants';
 import { qk } from './keys';
-import type { SalesInvoice, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
+import type { SalesInvoice, SalesInvoiceLine, SalesInvoiceRow, SalesInvoiceAdjustment } from '@/lib/types';
 
 /**
  * Invoices Deli Delights has sent, and what has come back.
@@ -188,6 +188,65 @@ export function registerSalesMutations(queryClient: QueryClient) {
     },
   });
 
+  /**
+   * Applying a discount or a refund. §53, J5.
+   *
+   * ---------------------------------------------------------------------------
+   * Manager level, and the refusal is the database's.
+   *
+   * `add_sales_adjustment` checks `is_manager_or_above()` and refuses with
+   * 42501. The screen hides the control from anybody else, which is notes §6 —
+   * but the function is what makes the boundary real, and its sentences are
+   * written to be read by a person, so they are shown verbatim rather than
+   * replaced with a house message.
+   *
+   * It also refuses an amount that would take the invoice below nothing, and
+   * that refusal names what is left. That is the one somebody will actually
+   * hit, by typing 400 for 40.
+   * ---------------------------------------------------------------------------
+   */
+  queryClient.setMutationDefaults(mk.sales.adjust, {
+    mutationFn: async (input: AddAdjustmentInput): Promise<SalesInvoiceAdjustment> => {
+      const { data, error } = await supabase().rpc('add_sales_adjustment', {
+        p_id: input.id,
+        p_invoice_id: input.salesInvoiceId,
+        p_kind: input.kind,
+        p_amount_cents: input.amountCents,
+        p_reason: input.reason,
+      });
+
+      if (error) {
+        /*
+         * A replay off the queue landing twice. The id was generated on the
+         * client, so the second arrival collides on the primary key and ONLY
+         * on the primary key -- which means the first one worked. Anything
+         * else is a real failure. CATCH_UP_015 §3 established the pattern.
+         */
+        if (error.code === '23505') return { id: input.id } as SalesInvoiceAdjustment;
+        throw new Error(error.message);
+      }
+      return data as SalesInvoiceAdjustment;
+    },
+    onSettled: (_data: unknown, _error: unknown, input: AddAdjustmentInput) => {
+      queryClient.invalidateQueries({ queryKey: qk.sales.all });
+      queryClient.invalidateQueries({ queryKey: qk.sales.detail(input.salesInvoiceId) });
+    },
+  });
+
+  queryClient.setMutationDefaults(mk.sales.unadjust, {
+    mutationFn: async (input: VoidAdjustmentInput): Promise<void> => {
+      const { error } = await supabase().rpc('void_sales_adjustment', {
+        p_id: input.id,
+        p_reason: input.reason ?? null,
+      });
+      if (error) throw new Error(error.message);
+    },
+    onSettled: (_data: unknown, _error: unknown, input: VoidAdjustmentInput) => {
+      queryClient.invalidateQueries({ queryKey: qk.sales.all });
+      queryClient.invalidateQueries({ queryKey: qk.sales.detail(input.salesInvoiceId) });
+    },
+  });
+
   queryClient.setMutationDefaults(mk.sales.unmarkReceived, {
     mutationFn: async (id: string): Promise<void> => {
       const { error } = await supabase().rpc('unmark_sales_received', { p_id: id });
@@ -231,6 +290,38 @@ export function useMarkReceived() {
 
 export function useUnmarkReceived() {
   return useMutation<void, Error, string>({ mutationKey: mk.sales.unmarkReceived });
+}
+
+/**
+ * Everything a queued adjustment needs, in its variables and nowhere else.
+ *
+ * HANDOFF §2 rule 4: a write is resumed by key from a cold start, so nothing
+ * may be captured in a closure. `salesInvoiceId` is here rather than looked up
+ * from the screen for exactly that reason — `onSettled` needs it to invalidate
+ * the right detail query, and by then the screen is long gone.
+ */
+export interface AddAdjustmentInput {
+  id: string;
+  salesInvoiceId: string;
+  kind: 'discount' | 'refund';
+  amountCents: number;
+  reason: string;
+}
+
+export interface VoidAdjustmentInput {
+  id: string;
+  salesInvoiceId: string;
+  reason: string | null;
+}
+
+export function useAddSalesAdjustment() {
+  return useMutation<SalesInvoiceAdjustment, Error, AddAdjustmentInput>({
+    mutationKey: mk.sales.adjust,
+  });
+}
+
+export function useVoidSalesAdjustment() {
+  return useMutation<void, Error, VoidAdjustmentInput>({ mutationKey: mk.sales.unadjust });
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useMemo, useState } from 'react';
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
@@ -360,12 +361,16 @@ export function InvoiceDetail({ id }: { id: string }) {
         <ConfirmDialog
           open
           title="Void this invoice?"
+          /* Keys, because this is an array of elements rather than children.
+             React cannot tell the two entries apart without them, and the
+             second holds an <input> with state — an unkeyed sibling list is
+             how a focused field ends up remounted mid-typing. */
           points={[
-            <>
+            <React.Fragment key="what-voiding-does">
               It drops out of every total but stays in the history, struck through. Nothing is ever
               deleted.
-            </>,
-            <label className="block">
+            </React.Fragment>,
+            <label key="reason" className="block">
               <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
                 Reason (required)
               </span>

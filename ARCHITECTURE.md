@@ -6424,3 +6424,34 @@ render without breaking hydration" pattern.
 
 Lint is a second opinion here, not the gate. The gate is `tsc --noEmit` and 987
 tests under three timezones.
+
+### 55.6 The two findings that were real
+
+Fixed in their own commit, because the upgrade should not also be a cleanup —
+and because one of them is a crash.
+
+**`SettingsScreen` called `useState` after an early return.** The sign-out
+state was declared two hundred lines below `if (!profile) return ...`, so a
+render where the profile had not arrived called one fewer hook than the render
+after it. React counts hooks; going from fewer to more is *"Rendered more
+hooks than during the previous render"*, and it throws.
+
+It never fired because `useCurrentProfile` is almost always already cached by
+the time Settings mounts — the drawer and the header both read it. **Landing
+on `/settings` cold, or refreshing while on it, is the path that would have
+crashed.** The fix is to declare it above the return.
+
+**`InvoiceDetail`'s void dialog passed an array of elements without keys.**
+`points` is an array rather than children, so React cannot tell the two entries
+apart — and the second holds an `<input>` with state. An unkeyed sibling list
+is how a focused field ends up remounted mid-typing.
+
+**The other fifteen are left alone, deliberately.** They are patterns this
+codebase documents and chose: a ref read during render in `AppChrome` (the
+comment says why), `window.location.href` on sign-out (§32 — a full navigation
+is the point), and nine `set-state-in-effect` findings that are all the
+"storage cannot be read during render without breaking hydration" shape.
+
+A linter meeting a codebase for the first time will always have opinions about
+decisions it was not present for. The two that were bugs are fixed; the rest
+are not bugs.

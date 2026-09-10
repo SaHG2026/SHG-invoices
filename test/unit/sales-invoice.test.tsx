@@ -696,6 +696,7 @@ describe('the printed document', () => {
     created_at: '2026-09-05T00:00:00Z',
     updated_at: '2026-09-05T00:00:00Z',
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
+    adjustments: [],
   };
 
   beforeEach(() => {

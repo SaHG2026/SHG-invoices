@@ -31,6 +31,7 @@ import { centsToInputValue } from '@/lib/money';
 import { formatQuantity } from '@/lib/quantity';
 import { sydneyDateOf, type Timestamp } from '@/lib/date';
 import { csvFile, numeric, type Cell } from '@/lib/csv';
+import { adjustedCents, netCents } from '@/lib/derive/adjustments';
 import { isAwaitingReview } from '@/lib/derive/select';
 import type { InvoiceRow, Profile, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
 
@@ -188,6 +189,20 @@ const SALES_HEADER = [
   'Invoice date',
   'Due date',
   'Amount',
+  /*
+   * Three money columns since J5, not one. §53.
+   *
+   * `Amount` stays what the invoice was issued for — it is what the
+   * customer's copy says, and rewriting it would be the edit rule 5 refuses.
+   * `Adjustments` is what has been taken off, and `Net` is what that leaves.
+   *
+   * All three, rather than replacing Amount with Net: somebody reconciling a
+   * spreadsheet against a piece of paper needs the figure that is ON the
+   * paper, and somebody totalling what is owed needs the other one. A single
+   * column would silently be the wrong one for one of them.
+   */
+  'Adjustments',
+  'Net',
   'Status',
   'Received on',
   'Received by',
@@ -216,6 +231,8 @@ export function salesTable(rows: readonly SalesInvoiceRow[], names: NameLookup):
       invoice.invoice_date,
       invoice.due_date,
       money(invoice.amount_cents),
+      money(adjustedCents(invoice)),
+      money(netCents(invoice)),
       invoice.status,
       day(invoice.received_at),
       who(invoice.received_by, names),

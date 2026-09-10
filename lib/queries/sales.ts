@@ -21,7 +21,29 @@ import type { SalesInvoice, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/type
  * issued, and a shared word is how two directions end up sharing a code path.
  */
 
-const ROW_SELECT = '*, customer:customers!inner(id, name)';
+/**
+ * Every sales invoice, with its customer AND its adjustments. §53, J5.
+ *
+ * ---------------------------------------------------------------------------
+ * The embed is not optional, and the type cannot enforce it here.
+ *
+ * `SalesInvoiceRow.adjustments` is required precisely so a forgotten embed is
+ * a compile error — but every read in this file casts the PostgREST result
+ * through `as unknown as`, and a double cast defeats exactly that check. So
+ * `tsc` found the fixtures and could not find these.
+ *
+ * What makes it safe instead is that this constant is the ONLY way this file
+ * reads a sales invoice. All three queries share it, so the embed is in one
+ * place and cannot be half-applied — which is the same argument `onlyOwed`
+ * makes for living in one function.
+ *
+ * A query that dropped it would not fail. It would report a net equal to the
+ * full amount: too high, entirely ordinary-looking, and visible in
+ * Receivables as money nobody owes.
+ * ---------------------------------------------------------------------------
+ */
+const ROW_SELECT =
+  '*, customer:customers!inner(id, name), adjustments:sales_invoice_adjustments(*)';
 
 /** Everything still owed to us. The one query the receivable figures derive from. */
 export function useOutstandingSales() {

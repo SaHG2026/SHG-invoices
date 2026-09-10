@@ -237,6 +237,7 @@ function sale(overrides: Partial<SalesInvoiceRow> = {}): SalesInvoiceRow {
     created_at: '2026-08-28T02:00:00.000Z',
     updated_at: '2026-08-28T02:00:00.000Z',
     customer: { id: 'c-1', name: 'The Corner Cafe' },
+    adjustments: [],
     ...overrides,
   };
 }
@@ -269,7 +270,11 @@ describe('salesTable', () => {
     // An ordinary state, not a gap — CATCH_UP_017. An invented date would go
     // overdue on a day nobody agreed to.
     const csv = renderTable(salesTable([sale()], names));
-    expect(csv.split('\r\n')[1]).toBe('DDL-0001,The Corner Cafe,2026-08-28,,120.00,outstanding,,,,,Mani,2026-08-28,');
+    /* Amount, Adjustments and Net since J5 — the issued figure stays what
+       the customer's copy says, and the net is what is owed. §53. */
+    expect(csv.split('\r\n')[1]).toBe(
+      'DDL-0001,The Corner Cafe,2026-08-28,,120.00,0.00,120.00,outstanding,,,,,Mani,2026-08-28,',
+    );
   });
 });
 

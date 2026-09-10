@@ -356,9 +356,62 @@ export interface SalesInvoice {
   updated_at: Timestamp;
 }
 
-/** A sales invoice with its customer resolved, as the lists render it. */
+/**
+ * A discount or a refund against one of Deli's invoices. ARCHITECTURE §53, J5.
+ *
+ * ---------------------------------------------------------------------------
+ * A row, not an edited amount, and §44.6 gives three reasons.
+ *
+ * Rule 5: an overwritten `amount_cents` destroys what the invoice originally
+ * said, and the original is what the customer's copy says. Rule 4: totals stay
+ * derived rather than kept in step by hand. And §28.3: *"why is this bill $40
+ * less than the docket"* is a question a column cannot answer and a row can.
+ *
+ * `kind` is two genuinely different events rather than a sign on a number. A
+ * DISCOUNT reduces what is owed before it is settled; a REFUND gives money
+ * back after it has been. Both reduce the net, and next year somebody needs to
+ * know which one happened.
+ *
+ * `amount_cents` is always positive and always a reduction. Something that
+ * INCREASES an invoice is not a discount — it is a second invoice, and it
+ * should be one.
+ *
+ * `reason` is not nullable and the database refuses a blank one. It is the
+ * entire argument for this table existing, so an adjustment without one would
+ * be the column this was built instead of.
+ *
+ * Voided, never deleted, and no policy can write this table at all — the two
+ * SECURITY DEFINER functions are its only writers (CATCH_UP_023 §2). That is
+ * what makes append-only a property of the database rather than a habit of
+ * the app: a reason attached to a figure cannot be quietly rewritten later.
+ * ---------------------------------------------------------------------------
+ */
+export interface SalesInvoiceAdjustment {
+  id: string;
+  sales_invoice_id: string;
+  kind: 'discount' | 'refund';
+  amount_cents: number;
+  reason: string;
+  created_by: string;
+  created_at: Timestamp;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  void_reason: string | null;
+}
+
+/**
+ * A sales invoice with its customer resolved, as the lists render it.
+ *
+ * `adjustments` is REQUIRED, and deliberately so. Every query has to embed
+ * them, and one that forgot would compute a net equal to the full amount — a
+ * figure that is too high, looks entirely ordinary, and turns up in
+ * Receivables as money nobody owes. Optional would make that a runtime
+ * accident; required makes it a compile error at every call site that has not
+ * been visited. The same device CATCH_UP_017 used for the nullable due date.
+ */
 export interface SalesInvoiceRow extends SalesInvoice {
   customer: Pick<Customer, 'id' | 'name'>;
+  adjustments: SalesInvoiceAdjustment[];
 }
 
 /**

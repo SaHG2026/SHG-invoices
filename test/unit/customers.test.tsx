@@ -71,6 +71,7 @@ const SALES: SalesInvoiceRow[] = [
     updated_at: '2026-08-01T00:00:00Z',
     note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
+    adjustments: [],
   },
   {
     id: 'sv-2',
@@ -90,6 +91,7 @@ const SALES: SalesInvoiceRow[] = [
     updated_at: '2026-08-20T00:00:00Z',
     note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
+    adjustments: [],
   },
   {
     /* One already received, so "who ticked it off" has something to show.
@@ -113,6 +115,7 @@ const SALES: SalesInvoiceRow[] = [
     updated_at: '2026-07-20T03:00:00Z',
     note: null,
     customer: { id: 'c-1', name: 'Harris Farm Markets' },
+    adjustments: [],
   },
 ];
 

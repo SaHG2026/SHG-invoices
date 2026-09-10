@@ -182,6 +182,7 @@ const INVOICE: SalesInvoiceRow = {
   payment_ref: null, void_reason: null, note: 'Delivered to the back dock.',
   created_by: PROFILES[0]!.id, created_at: '2026-09-05T00:00:00Z', updated_at: '2026-09-05T00:00:00Z',
   customer: { id: 'c-1', name: 'Harris Farm Markets' },
+    adjustments: [],
 };
 
 mocks.detail.current = { invoice: INVOICE, lines: LINES };

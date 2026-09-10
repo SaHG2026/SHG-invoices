@@ -1,5 +1,5 @@
 import { compareDates, type DateStr } from '../date';
-import { sumCents } from '../money';
+import { sumNetCents } from './adjustments';
 import type { SalesInvoiceRow } from '../types';
 
 /**
@@ -12,6 +12,19 @@ import type { SalesInvoiceRow } from '../types';
  * These functions deliberately take `SalesInvoiceRow`, not a shared invoice
  * type. Nothing in this file can be handed a supplier invoice by accident,
  * which is the whole point of §17's two ledgers.
+ *
+ * ---------------------------------------------------------------------------
+ * Every figure here is a NET since J5 (§53).
+ *
+ * An invoice for $500 with a $40 discount is $460 owed, and nobody is going
+ * to be chased for the other $40. The gross is still on the row and still on
+ * the paper the customer holds — it is simply not what is outstanding.
+ *
+ * `sumNetCents` rather than `sumCents` throughout, and that is the whole
+ * change: the adjustments ride on each row, so this stays derived from the
+ * one array the list renders and a total still cannot disagree with the rows
+ * above it.
+ * ---------------------------------------------------------------------------
  */
 
 export interface Receivable {
@@ -70,9 +83,9 @@ export function summariseReceivable(
         );
 
   return {
-    total_cents: sumCents(owed),
+    total_cents: sumNetCents(owed),
     invoice_count: owed.length,
-    overdue_cents: sumCents(overdue),
+    overdue_cents: sumNetCents(overdue),
     overdue_count: overdue.length,
     oldest_due: oldest,
   };

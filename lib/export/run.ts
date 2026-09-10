@@ -162,7 +162,11 @@ export function rangeIsUsable(range: ExportRange): boolean {
 
 const INVOICE_SELECT =
   '*, supplier:suppliers!inner(id, name), business:businesses!inner(id, code, name)';
-const SALES_SELECT = '*, customer:customers!inner(id, name)';
+/* Adjustments embedded for the same reason as `lib/queries/sales.ts`: the
+   export must report what an invoice is actually worth, not what it said
+   before a discount was applied. §53. */
+const SALES_SELECT =
+  '*, customer:customers!inner(id, name), adjustments:sales_invoice_adjustments(*)';
 
 /**
  * Everyone who has ever touched a row, active or not.

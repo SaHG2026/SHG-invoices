@@ -6139,3 +6139,81 @@ that could fail.
 edit, and it is part of how the accents were still wrong three phases later.
 024 matches on `id` first and falls back to a deterministic assignment
 ordered by `id`, because a name can drift and an id cannot.
+
+---
+
+### 53.2 Where the net had to reach
+
+The change J5 makes is not a feature on a screen. It is that **one number in
+the app means something different**, and every place that number appears had
+to be visited.
+
+| | |
+|---|---|
+| `summariseReceivable` | totals and overdue, both at the net |
+| `receivableByCustomer` | per customer, through the same summary |
+| `ReceivablesList` sort | "largest" means largest **owed**, or the first row is not the biggest number in the heading above it |
+| `SalesInvoiceRowItem` | the net collapsed; **both** figures expanded |
+| the document | invoiced, each adjustment with its reason, total due |
+| the PDF | the same block, and it must match the screen exactly |
+| the export | three columns — Amount, Adjustments, Net |
+
+**The row item shows both, and only when opened.** Collapsed, it sits under a
+total that is a net, so it has to be a net too. Opened, it is where somebody
+checks a row against a piece of paper in their hand — and the paper says the
+issued amount. Showing only one figure would be wrong in one of those two
+places whichever one was chosen.
+
+#### The PDF and the screen are the same block, deliberately
+
+A customer can be holding the PDF while somebody reads the screen. That is
+§17's argument for a frozen line price applied to the figure at the bottom of
+the page, and it is why `renderInvoicePdf` was widened from `SalesInvoice` to
+`SalesInvoiceRow` rather than given an optional list: a PDF built without the
+adjustments would print the gross where the screen shows the net, silently.
+
+Two differences, both forced by the format:
+
+- **A hyphen-minus, not U+2212.** §48.1 — the standard-14 fonts are drawn
+  through WinAnsiEncoding, and the typographic minus is not in it. It would
+  come out as `?` on the one line where a wrong character changes what the
+  number means.
+- **The page break is checked before the block, not inside it.** Splitting
+  "invoiced" from "total due" across two sheets would leave a number on page
+  one that is not what is owed — the one figure on the document somebody acts
+  on.
+
+Verified by opening it: `$88.49` less `$40.00` and `$12.50`, `TOTAL DUE
+$35.99`. §48.3's rule holds — the assertions check the program's own
+arithmetic, and only a reader opening the file proves it is a file.
+
+#### What is not shown, and why
+
+**Voided adjustments never reach the paper.** An invoice quoting a discount
+that was taken back is worse than one that never mentioned it. They stay in
+the record for ever (rule 5) and are filtered in one place, `liveAdjustments`.
+
+**Nothing appears at all on an invoice with no adjustments.** A "less $0.00"
+row on every invoice Deli has ever issued is a feature announcing itself on
+documents that do not use it.
+
+---
+
+### 53.3 The compile error that only found half of what it was for
+
+`SalesInvoiceRow.adjustments` was made **required** so that a query which
+forgot to embed them would fail to compile rather than silently report a net
+equal to the full amount.
+
+It found every test fixture. **It found none of the queries**, because each of
+them casts the PostgREST result through `as unknown as` — and a double cast is
+exactly the thing that defeats a required field. The reads were found by hand.
+
+The device still earned its place: it caught seven fixtures and the PDF's
+input type, and it will catch the next screen that builds a row. But it is
+worth being clear that **`tsc` is only the review where nothing has cast the
+type away**, and this codebase casts at every database boundary by necessity.
+
+What actually makes the embed safe is smaller and duller: both files that read
+sales invoices do it through a single shared select constant, so there is one
+place to be wrong rather than four.

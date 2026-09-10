@@ -2,9 +2,14 @@ import { buildPdf, Page, PAGE_HEIGHT, PAGE_WIDTH, type PdfImage, type PdfResult 
 import { readJpeg } from './jpeg';
 import { wrapText } from './text';
 import { formatCents } from '@/lib/money';
+import {
+  describeAdjustment,
+  liveAdjustments,
+  netCents,
+} from '@/lib/derive/adjustments';
 import { formatQuantity } from '@/lib/quantity';
 import { formatDayWithYear } from '@/lib/date';
-import type { Business, Customer, SalesInvoice, SalesInvoiceLine } from '@/lib/types';
+import type { Business, Customer, SalesInvoice, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
 
 /**
  * The invoice, as a piece of paper. ARCHITECTURE §48.
@@ -49,7 +54,15 @@ const GREY = 0.42;
 const CONTACT_SIZE = 8.5;
 
 export interface InvoicePdfInput {
-  invoice: SalesInvoice;
+  /*
+   * `SalesInvoiceRow`, not `SalesInvoice`, since J5 — the PDF needs the
+   * adjustments to print the same total block the screen does (§53).
+   *
+   * Widened rather than made optional: a PDF built from a row without them
+   * would print the gross where the screen shows the net, and a customer can
+   * be holding the paper while somebody reads the screen.
+   */
+  invoice: SalesInvoiceRow;
   lines: SalesInvoiceLine[];
   business: Business | null;
   customer: Pick<Customer, 'name' | 'contact_name' | 'contact_phone' | 'contact_email'> | null;
@@ -293,14 +306,75 @@ export function renderInvoicePdf({
     page.rule(MARGIN, RIGHT, y - 6, { width: 0.4, grey: 0.8 });
   }
 
-  // ---- Total -------------------------------------------------------------
-  y += 12;
-  page.text('TOTAL', MARGIN, y, { size: 7.5, grey: GREY });
-  page.textRight(formatCents(invoice.amount_cents), AMOUNT_RIGHT, y + 2, {
-    font: 'Helvetica-Bold',
-    size: 15,
-  });
-  y += 26;
+  /* ---- Total, and what came off it before it ------------------------------
+   *
+   * The same block the screen draws (§53), in the same order and for the same
+   * reasons: the issued figure stays, each adjustment is a line with its
+   * reason, and the net is last.
+   *
+   * **These two must not disagree.** A customer can be holding the PDF while
+   * somebody reads the screen, and a document is a claim about a moment — the
+   * whole argument §17 makes about a frozen line price applies with more force
+   * to the figure at the bottom of the page.
+   *
+   * A page break is checked before the block rather than inside it. Splitting
+   * "invoiced" from "total due" across two sheets would put a number on page
+   * one that is not what is owed, which is the one thing on this document
+   * somebody acts on.
+   * ------------------------------------------------------------------------ */
+  const adjustments = liveAdjustments(invoice);
+
+  if (adjustments.length === 0) {
+    y += 12;
+    page.text('TOTAL', MARGIN, y, { size: 7.5, grey: GREY });
+    page.textRight(formatCents(invoice.amount_cents), AMOUNT_RIGHT, y + 2, {
+      font: 'Helvetica-Bold',
+      size: 15,
+    });
+    y += 26;
+  } else {
+    const blockHeight = 12 + 14 + adjustments.length * 12 + 30;
+    if (y + blockHeight > PAGE_FLOOR) {
+      page = new Page();
+      pages.push(page);
+      y = MARGIN + 8;
+    }
+
+    y += 12;
+    page.text('INVOICED', MARGIN, y, { size: 7.5, grey: GREY });
+    page.textRight(formatCents(invoice.amount_cents), AMOUNT_RIGHT, y, { size: 9.5 });
+    y += 14;
+
+    for (const adjustment of adjustments) {
+      /*
+       * The reason is wrapped to the width left of the amount column rather
+       * than to the page. Running it under the figure would be a line of text
+       * with a dollar amount sitting in the middle of it, and §48.1's
+       * WinAnsi problem means a long reason cannot be trusted to be short.
+       */
+      const label = `${describeAdjustment(adjustment)} - ${adjustment.reason}`;
+      const [first = label] = wrapText(label, 'Helvetica', 9, PRICE_RIGHT - MARGIN);
+      page.text(first, MARGIN, y, { size: 9, grey: GREY });
+      /*
+       * A hyphen-minus, not the typographic minus the screen uses. §48.1: the
+       * standard-14 fonts are drawn through WinAnsiEncoding, and U+2212 is not
+       * in it -- it would come out as `?` on the one line where a wrong
+       * character changes what the number means.
+       */
+      page.textRight(`-${formatCents(adjustment.amount_cents)}`, AMOUNT_RIGHT, y, { size: 9 });
+      y += 12;
+    }
+
+    y += 2;
+    page.rule(MARGIN, RIGHT, y, { width: 0.4, grey: 0.8 });
+    y += 12;
+    page.text('TOTAL DUE', MARGIN, y, { size: 7.5, grey: GREY });
+    page.textRight(formatCents(netCents(invoice)), AMOUNT_RIGHT, y + 2, {
+      font: 'Helvetica-Bold',
+      size: 15,
+    });
+    y += 26;
+  }
 
   if (invoice.note) {
     page.rule(MARGIN, RIGHT, y, { width: 0.4, grey: 0.8 });

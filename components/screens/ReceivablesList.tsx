@@ -8,6 +8,7 @@ import { SalesInvoiceRowItem } from '@/components/invoice/SalesInvoiceRowItem';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
 import { useOutstandingSales } from '@/lib/queries/sales';
 import { summariseReceivable } from '@/lib/derive/receivables';
+import { netCents } from '@/lib/derive/adjustments';
 import { formatCents } from '@/lib/money';
 import { compareDates, formatDayWithYear } from '@/lib/date';
 import type { SalesInvoiceRow } from '@/lib/types';
@@ -54,7 +55,11 @@ export function ReceivablesList() {
 
   const ordered = useMemo(() => {
     const rows = [...sales];
-    if (sort === 'largest') return rows.sort((a, b) => b.amount_cents - a.amount_cents);
+    /* By what is still OWED, not by what was invoiced. §53.
+       "Largest" on a screen headed with a net total has to mean the same
+       thing that total means, or the first row is not the biggest number in
+       the figure above it. */
+    if (sort === 'largest') return rows.sort((a, b) => netCents(b) - netCents(a));
     if (sort === 'customer') {
       return rows.sort((a, b) => a.customer.name.localeCompare(b.customer.name));
     }

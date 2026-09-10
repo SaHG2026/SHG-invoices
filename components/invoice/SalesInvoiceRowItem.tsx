@@ -9,6 +9,7 @@ import { useProfiles, useCurrentProfile } from '@/lib/queries/session';
 import { isOwner } from '@/lib/staff';
 import { useMarkReceived, useSalesInvoice, useUnmarkReceived } from '@/lib/queries/sales';
 import { formatCents } from '@/lib/money';
+import { hasAdjustments, netCents } from '@/lib/derive/adjustments';
 import { formatQuantity } from '@/lib/quantity';
 import { formatDay, formatDateTime, type DateStr } from '@/lib/date';
 import { formatDueLabel, URGENCY_COLOUR, URGENCY_TINT, urgencyOf } from '@/lib/derive/urgency';
@@ -130,7 +131,10 @@ export function SalesInvoiceRowItem({
         ) : null}
 
         <span className={`money shrink-0 text-sm ${settled ? 'text-muted' : 'text-ink'}`}>
-          {formatCents(row.amount_cents)}
+          {/* The net, because this row sits under a total that is also net
+              (§53) and a list whose figures do not add up to the heading
+              above them is the failure rule 4 exists to prevent. */}
+          {formatCents(netCents(row))}
         </span>
 
         <span
@@ -175,7 +179,15 @@ export function SalesInvoiceRowItem({
           )}
 
           <dl className="mb-3">
-            <Fact label="Total">{formatCents(row.amount_cents)}</Fact>
+            {/*
+              Opened up, both figures — because this is where somebody checks
+              a row against the paper in their hand, and the paper says the
+              issued amount. Collapsed, only the net; expanded, the working.
+            */}
+            <Fact label="Invoiced">{formatCents(row.amount_cents)}</Fact>
+            {hasAdjustments(row) ? (
+              <Fact label="Still owed">{formatCents(netCents(row))}</Fact>
+            ) : null}
             <Fact label="Sent">{formatDay(row.invoice_date)}</Fact>
             {/* Absent, and said so. A blank line labelled Due reads as
                 something that failed to load. */}

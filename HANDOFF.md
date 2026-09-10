@@ -110,7 +110,7 @@ all eight, and the answer will not be the same at every one.**
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 954 tests
+npx vitest run       # 971 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -302,6 +302,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §50.6 | One button that says Change — the demote label nobody could reach |
 | §51 | The notification badge, and the test that had to decode a PNG |
 | §52 | The assistant tier — a person who logs a bill and cannot act on one |
+| §53 | J5 — discounts and refunds, and everywhere the net had to reach |
 
 ### The two lessons worth more than the features
 

@@ -8,7 +8,7 @@ import { BASELINE_JPEG, GREYSCALE_JPEG, PROGRESSIVE_JPEG } from '../fixtures/jpe
 import { BUSINESSES } from '../fixtures/invoices';
 import { formatCents } from '@/lib/money';
 import { formatDayInSentence } from '@/lib/date';
-import type { SalesInvoice, SalesInvoiceLine } from '@/lib/types';
+import type { SalesInvoice, SalesInvoiceLine, SalesInvoiceRow, SalesInvoiceAdjustment } from '@/lib/types';
 
 /**
  * The PDF writer. ARCHITECTURE §48.
@@ -35,7 +35,7 @@ import type { SalesInvoice, SalesInvoiceLine } from '@/lib/types';
 
 const DELI = BUSINESSES[3]!;
 
-const INVOICE: SalesInvoice = {
+const INVOICE: SalesInvoiceRow = {
   id: 'si-1',
   business_id: DELI.id,
   customer_id: 'c-1',
@@ -52,6 +52,10 @@ const INVOICE: SalesInvoice = {
   created_by: 'p-mani',
   created_at: '2026-09-05T00:00:00Z',
   updated_at: '2026-09-05T00:00:00Z',
+  customer: { id: 'c-1', name: 'Harris Farm Markets' },
+  /* J5. Empty on the base fixture so every existing assertion still
+     describes an ordinary invoice; the adjustment cases add their own. */
+  adjustments: [],
 };
 
 const LINES: SalesInvoiceLine[] = [
@@ -73,6 +77,23 @@ const CUSTOMER = {
   contact_phone: '02 9000 0000',
   contact_email: 'jo@example.com',
 };
+
+/** A discount or a refund, for the total-block cases. §53. */
+function adj(over: Partial<SalesInvoiceAdjustment> = {}): SalesInvoiceAdjustment {
+  return {
+    id: 'adj-1',
+    sales_invoice_id: 'si-1',
+    kind: 'discount',
+    amount_cents: 4_000,
+    reason: 'short delivery',
+    created_by: 'p-milan',
+    created_at: '2026-09-01T02:00:00.000Z',
+    voided_at: null,
+    voided_by: null,
+    void_reason: null,
+    ...over,
+  };
+}
 
 function render(over: Partial<Parameters<typeof renderInvoicePdf>[0]> = {}) {
   const result = renderInvoicePdf({
@@ -718,6 +739,62 @@ describe('the writer itself', () => {
      PDF_OUT=/tmp/shg/invoice.pdf npx vitest run test/unit/pdf.test.ts
  * ------------------------------------------------------------------------ */
 
+
+describe('discounts and refunds on the paper', () => {
+  /*
+   * The PDF and the screen must not disagree. A customer can be holding this
+   * while somebody reads the app, and a document is a claim about a moment —
+   * §17's argument for a frozen line price, applied to the figure at the
+   * bottom of the page.
+   */
+
+  it('says TOTAL and nothing else when nothing came off', () => {
+    const { text } = render();
+    expect(text).toContain('TOTAL');
+    expect(text).not.toContain('TOTAL DUE');
+    expect(text).not.toContain('INVOICED');
+  });
+
+  it('shows what was invoiced, what came off, and what is left', () => {
+    const { text } = render({ invoice: { ...INVOICE, adjustments: [adj()] } });
+    expect(text).toContain('INVOICED');
+    expect(text).toContain('TOTAL DUE');
+    expect(text).toContain('short delivery');
+  });
+
+  it('names the kind, so next year somebody knows which happened', () => {
+    const { text } = render({
+      invoice: { ...INVOICE, adjustments: [adj({ kind: 'refund', reason: 'two jars broken' })] },
+    });
+    expect(text).toContain('Refund');
+    expect(text).toContain('two jars broken');
+  });
+
+  it('writes the minus as a hyphen, not the typographic one', () => {
+    /*
+     * §48.1: the standard-14 fonts are drawn through WinAnsiEncoding and
+     * U+2212 is not in it. It would come out as `?` on the one line where a
+     * wrong character changes what the number means.
+     */
+    const { text } = render({ invoice: { ...INVOICE, adjustments: [adj()] } });
+    expect(text).toContain('-$40.00');
+    expect(text).not.toContain('\u2212');
+  });
+
+  it('leaves a voided adjustment off the paper entirely', () => {
+    // An invoice quoting a discount that was taken back is worse than one
+    // that never mentioned it.
+    const { text } = render({
+      invoice: {
+        ...INVOICE,
+        adjustments: [adj({ voided_at: '2026-09-02T00:00:00.000Z', voided_by: 'p-mani' })],
+      },
+    });
+    expect(text).not.toContain('short delivery');
+    expect(text).not.toContain('TOTAL DUE');
+  });
+});
+
 const PDF_OUT = process.env.PDF_OUT ?? '';
 
 describe('preview', () => {
@@ -763,6 +840,23 @@ describe('preview', () => {
     writeFileSync(
       PDF_OUT.replace(/\.pdf$/, '-no-bank.pdf'),
       render({ logo, business: { ...DELI, bank_details: null } }).bytes,
+    );
+
+    /* J5's total block. The one thing bytes cannot answer is whether three
+       figures stacked above a rule read as an argument rather than as a
+       list — §53, and §48.3's rule that only a reader opening it proves it. */
+    writeFileSync(
+      PDF_OUT.replace(/\.pdf$/, '-adjusted.pdf'),
+      render({
+        logo,
+        invoice: {
+          ...INVOICE,
+          adjustments: [
+            adj(),
+            adj({ id: 'adj-2', kind: 'refund', amount_cents: 1_250, reason: 'two jars broken in transit' }),
+          ],
+        },
+      }).bytes,
     );
   });
 });

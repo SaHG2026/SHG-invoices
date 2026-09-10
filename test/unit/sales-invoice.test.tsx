@@ -6,7 +6,7 @@ import { formatCents } from '@/lib/money';
 import { addDays } from '@/lib/date';
 import { DEFAULT_TERMS_DAYS } from '@/lib/constants';
 import { lineTotalCents, parseQuantityToMilli } from '@/lib/quantity';
-import type { Business, Customer, Product, SalesInvoiceLine, SalesInvoiceRow } from '@/lib/types';
+import type { Business, Customer, Product, SalesInvoiceLine, SalesInvoiceRow, SalesInvoiceAdjustment } from '@/lib/types';
 
 /**
  * Deli composes an invoice, and prints it.
@@ -707,6 +707,101 @@ describe('the printed document', () => {
 
   beforeEach(() => {
     mocks.detail.current = { invoice: INVOICE, lines: LINES };
+  });
+
+  function adjustment(over: Partial<SalesInvoiceAdjustment> = {}): SalesInvoiceAdjustment {
+    return {
+      id: 'adj-1',
+      sales_invoice_id: 'si-1',
+      kind: 'discount',
+      amount_cents: 4_000,
+      reason: 'short delivery',
+      created_by: PROFILES[1]!.id,
+      created_at: '2026-09-01T02:00:00.000Z',
+      voided_at: null,
+      voided_by: null,
+      void_reason: null,
+      ...over,
+    };
+  }
+
+  it('offers no + on a screen that is one document', () => {
+    /*
+     * Reported from a phone: it sat on top of the TOTAL DUE figure.
+     *
+     * Covering the total was the visible half. The other half is worse --
+     * `/sales/[id]` does not match `sellsAsWell`, so the button opened the
+     * SUPPLIER invoice sheet. A `+` on one of Deli's own issued invoices was
+     * offering to log a bill from a supplier: §17's two ledgers crossed.
+     *
+     * jsdom does no layout so it can never see the overlap; the absent
+     * control is the structural fact underneath it, and that it CAN see.
+     */
+    document_();
+    expect(screen.queryByRole('button', { name: 'Add invoice' })).not.toBeInTheDocument();
+  });
+
+  it('prints more than one adjustment, each with its own reason', () => {
+    /*
+     * Asked directly: "could we add more than one discount or refund". There
+     * is no limit but the invoice total -- `add_sales_adjustment` refuses only
+     * what would take it below nothing -- and each is its own row, so each
+     * carries its own reason onto the paper.
+     */
+    mocks.detail.current = {
+      invoice: {
+        ...INVOICE,
+        adjustments: [
+          adjustment(),
+          adjustment({
+            id: 'adj-2',
+            kind: 'refund',
+            amount_cents: 1_250,
+            reason: 'two jars broken in transit',
+          }),
+        ],
+      },
+      lines: LINES,
+    };
+    document_();
+
+    /* Scoped to the <article>, which is the printable document. Each reason
+       also appears in the panel beneath it -- that panel is the machinery for
+       changing them and is deliberately outside the paper (§53). */
+    const paper = within(globalThis.document.querySelector('article')!);
+    expect(paper.getByText(/short delivery/)).toBeInTheDocument();
+    expect(paper.getByText(/two jars broken in transit/)).toBeInTheDocument();
+    expect(paper.getByText('−$40.00')).toBeInTheDocument();
+    expect(paper.getByText('−$12.50')).toBeInTheDocument();
+    expect(paper.getByText('Total due')).toBeInTheDocument();
+  });
+
+  it('says only Total when nothing has come off', () => {
+    // A "less $0.00" row on every invoice Deli has ever issued would be a
+    // feature announcing itself on documents that do not use it.
+    document_();
+    expect(screen.getByText('Total')).toBeInTheDocument();
+    expect(screen.queryByText('Total due')).not.toBeInTheDocument();
+    expect(screen.queryByText('Invoiced')).not.toBeInTheDocument();
+  });
+
+  it('keeps a voided adjustment off the paper', () => {
+    // An invoice quoting a discount that was taken back is worse than one
+    // that never mentioned it.
+    mocks.detail.current = {
+      invoice: {
+        ...INVOICE,
+        adjustments: [
+          adjustment({ voided_at: '2026-09-02T00:00:00.000Z', voided_by: PROFILES[0]!.id }),
+        ],
+      },
+      lines: LINES,
+    };
+    document_();
+
+    const paper = within(globalThis.document.querySelector('article')!);
+    expect(paper.queryByText(/short delivery/)).not.toBeInTheDocument();
+    expect(paper.queryByText('Total due')).not.toBeInTheDocument();
   });
 
   it('shows every line, in the order the database stored them', () => {

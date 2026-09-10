@@ -75,7 +75,7 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
 
   if (isLoading || isError || !data) {
     return (
-      <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
+      <AppChrome add="none" back={{ href: '/customers' as Route, label: 'Customers' }}>
         <h1 className="text-h2 text-ink">
           {isError ? 'Couldn’t load that invoice' : isLoading ? 'Loading…' : 'No such invoice'}
         </h1>
@@ -166,8 +166,21 @@ export function SalesInvoiceDocument({ id }: { id: string }) {
     }
   }
 
+  /*
+   * No `+` on this screen. Reported from a phone: it was sitting on top of
+   * the TOTAL DUE figure.
+   *
+   * Covering the total was the visible half. The other half is worse — this
+   * route is `/sales/[id]`, which does not match `sellsAsWell` in AppChrome,
+   * so the button opened the SUPPLIER invoice sheet. A `+` on one of Deli's
+   * own issued invoices was offering to log a bill from a supplier: §17's two
+   * ledgers crossed, on the screen that is most clearly one of them.
+   *
+   * `add="none"` rather than moving it, because there is nothing to add from
+   * here. This screen is one document. The `+` belongs on lists.
+   */
   return (
-    <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
+    <AppChrome add="none" back={{ href: '/customers' as Route, label: 'Customers' }}>
       <div className="no-print mb-3 flex items-center justify-between gap-3">
         <h1 className="text-h2 text-ink">Invoice {invoice.invoice_number}</h1>
       </div>

@@ -110,7 +110,7 @@ all eight, and the answer will not be the same at every one.**
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 971 tests
+npx vitest run       # 975 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -499,12 +499,30 @@ arrived.
 
 ### Known, and not urgent
 
-9. **An intermittent test failure under `TZ=America/Los_Angeles`.** Seen twice
-   in roughly nine full runs and **never captured** — seven instrumented runs
-   afterwards were all clean, so there is no test name to work from. The
-   failing runs were the slow ones (`mark-paid` took 47s in one), which points
-   at `waitFor` timeouts under load rather than a date bug. **Not proven
-   either way.** If it reappears:
+9. **An intermittent test failure. It is NOT timezone-specific — that was
+   wrong.** This was recorded for a year as happening under
+   `TZ=America/Los_Angeles`.
+
+   **On 2026-09-10 it failed under `UTC` (1 test) and `Australia/Sydney` (2
+   tests) in the same sweep, and passed under `America/Los_Angeles`.** So the
+   timezone in the original note was a coincidence of when it was seen, and
+   the date-bug hypothesis it implied is dead. What is left is timing: the
+   failing runs have always been the slow ones, which points at `waitFor`
+   timeouts under load.
+
+   **Still never captured.** Seven instrumented runs on the same day — four
+   across all three timezones, three more under UTC — were all clean, which is
+   the same shape as the seven clean runs recorded the first time. The
+   instrumented runs may simply be slower and therefore safer, and if so the
+   JSON reporter is the worst possible way to catch it.
+
+   Two things worth trying instead of another sweep: run the suite **while
+   something else is loading the machine**, since load is the only surviving
+   hypothesis; and note that `--reporter=json` writes UTF-8 that Windows
+   Python will not read with the default codepage — open it with
+   `encoding='utf-8'` or the report reads as zero failures whatever happened.
+
+   If it reappears:
 
    ```bash
    TZ=America/Los_Angeles npx vitest run --reporter=json --outputFile=fail.json

@@ -6072,3 +6072,42 @@ it was not written for.
 
 **Use a file copy to stash a scratch edit**, never `git checkout`, on any file
 the working tree has real changes in.
+
+---
+
+### 53.1 The migration a cosmetic fix rolled back
+
+`CATCH_UP_023` was run and **nothing landed** — no table, neither function.
+Caught by `verify_catchups.mjs`, which is the second time in two days that
+extending a verifier paid for itself immediately.
+
+The file carried a fourth, unrelated thing: four `UPDATE`s converting
+`profiles.accent` from hex to slot names, folded in because each of these
+files costs a round trip through a person. Those updates matched on ids taken
+from `db/seed/002_profiles.sql`. They matched nothing — so the verification
+block's
+
+```sql
+if v_hex <> 0 then raise exception '% profiles still hold a hex accent', v_hex;
+```
+
+fired, and **the SQL editor runs a script as one transaction**, so the table
+and both functions rolled back with it.
+
+**A cosmetic change must never be able to roll back a schema change**, and
+"it is only four UPDATEs" is exactly how one ends up able to. The accents are
+now `CATCH_UP_024`, alone, with no `raise exception` anywhere in it: the worst
+case is that it reports what it could not work out and changes nothing.
+
+Two smaller things worth keeping:
+
+**A verification block should check what the file itself just did**, and
+nothing else. Every other assertion in 023 was self-fulfilling — it created
+the table, then checked the table was there. The hex count was the only one
+that depended on data the file could not guarantee, and it was the only one
+that could fail.
+
+**`CATCH_UP_003` matched on `display_name`**, which is a string somebody can
+edit, and it is part of how the accents were still wrong three phases later.
+024 matches on `id` first and falls back to a deterministic assignment
+ordered by `id`, because a name can drift and an id cannot.

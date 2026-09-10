@@ -258,6 +258,35 @@ console.log('  ?      profiles_role_valid allows assistant     — see §8 of CA
 console.log('  ?      8 assistant policies, none that write    — see §8 of CATCH_UP_022');
 console.log('  ?      is_manager_or_above() excludes assistant — see §8 of CATCH_UP_022');
 
+console.log('\nCATCH_UP_023 — J5: discounts and refunds\n');
+await relation('sales_invoice_adjustments', 'sales_invoice_adjustments');
+/*
+ * Both probes are no-ops twice over. `is_manager_or_above()` is checked before
+ * anything else in each function, and the anon key makes `auth.uid()` null, so
+ * they refuse with 42501 before reading a row -- and the ids passed cannot
+ * match anything anyway.
+ */
+await fn('add_sales_adjustment', 'add_sales_adjustment', {
+  p_id: NO_SUCH_ID,
+  p_invoice_id: NO_SUCH_ID,
+  p_kind: 'discount',
+  p_amount_cents: 1,
+  p_reason: 'probe',
+});
+await fn('void_sales_adjustment', 'void_sales_adjustment', {
+  p_id: NO_SUCH_ID,
+  p_reason: 'probe',
+});
+/*
+ * Not probable from out here, and the first is the whole guarantee:
+ *   - the table has NO insert, update or delete policy, so the two functions
+ *     above are its only writers and an adjustment cannot be rewritten later
+ *   - profiles.accent no longer holds hex (§5 of the file)
+ * §6 of the SQL file raises on both.
+ */
+console.log('  ?      no write policy on the adjustments  — see §5 of CATCH_UP_023');
+console.log('  ?      no profile still holds a hex accent — see §3 of CATCH_UP_024');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

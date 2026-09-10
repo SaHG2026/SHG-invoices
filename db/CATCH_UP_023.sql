@@ -5,6 +5,25 @@
 --
 -- RUN THIS **BEFORE** THE DEPLOY, and this one is not a preference.
 --
+-- ---------------------------------------------------------------------------
+-- THIS FILE FAILED THE FIRST TIME IT WAS RUN, AND THE REASON IS WORTH KEEPING
+--
+-- It used to carry a fourth thing: four UPDATEs converting `profiles.accent`
+-- from hex to slot names, which CATCH_UP_003 was meant to do and never did.
+-- Unrelated work, folded in because each of these files costs a round trip
+-- through a person.
+--
+-- Those updates matched on ids taken from `db/seed/002_profiles.sql`. When
+-- they matched nothing, the verification block's `raise exception` fired --
+-- and because the SQL editor runs a script as one transaction, **the table
+-- and both functions rolled back with it.** The schema change was destroyed
+-- by a cosmetic one that failed beside it.
+--
+-- The accents are now CATCH_UP_024, on their own, written so they cannot
+-- fail. **A cosmetic change must never be able to roll back a schema change**,
+-- and "it is only four UPDATEs" is exactly how one ends up able to.
+-- ---------------------------------------------------------------------------
+--
 -- The new app version asks every sales invoice for its adjustments by name.
 -- PostgREST answers a missing relationship with a 400 and fails the whole
 -- request — so Receivables, the customer screens and every issued invoice
@@ -328,38 +347,7 @@ grant  execute on function void_sales_adjustment(uuid, text) to   authenticated;
 
 
 -- ===========================================================================
---  5. WHILE WE ARE HERE — the accents CATCH_UP_003 never converted
---
---  Unrelated to J5, and folded in because each of these files is a round trip
---  through a person.
---
---  `db/verify_schema.sql` showed `profiles.accent` still holding hex on the
---  live database: '#C9A227' rather than 'person-2'. CATCH_UP_003 was written
---  to convert them and its update evidently never ran.
---
---  Rule 3 is that hex colours exist only in `app/globals.css`. Four of them
---  sitting in a table is that rule broken, and it is why `PersonChip.slotOf`
---  carries a fallback whose own comment says "until the catch-up SQL is run".
---  Nothing looks broken today because that fallback derives a stable slot
---  from the id -- but the colours are not the ones anybody chose, and the
---  fallback was never meant to be permanent.
---
---  Matched on the id rather than the display name. CATCH_UP_003 matched on
---  the name, which is a string somebody can edit; these ids are the ones in
---  `db/seed/002_profiles.sql` and cannot drift.
--- ===========================================================================
-
-update profiles set accent = 'person-1' where id = '2da43dcf-8b0f-4229-bf5c-e5af68210045';
-update profiles set accent = 'person-2' where id = 'b3153037-4bf5-4baa-8c11-b94e690c92bd';
-update profiles set accent = 'person-3' where id = 'a207c7b2-5389-445a-a46e-bb3dd7b2caad';
-update profiles set accent = 'person-4' where id = 'f57715ab-a468-4d2a-9796-0c639a2d259b';
-
--- The shops keep 'venue', which is a slot name already and is what
--- `PersonChip` looks for to render them without a face.
-
-
--- ===========================================================================
---  6. CHECK IT WORKED
+--  5. CHECK IT WORKED
 --
 --  Raises rather than returning rows, so a failure cannot be scrolled past.
 -- ===========================================================================
@@ -369,7 +357,6 @@ declare
   v_cols int;
   v_fn   int;
   v_pol  int;
-  v_hex  int;
 begin
   select count(*) into v_cols
     from information_schema.columns
@@ -408,21 +395,13 @@ begin
     raise exception 'row level security is off on sales_invoice_adjustments';
   end if;
 
-  -- §5, and it is checked because it is the part of this file that touches
-  -- rows people are already using.
-  select count(*) into v_hex from profiles where accent like '#%';
-  if v_hex <> 0 then
-    raise exception '% profiles still hold a hex accent', v_hex;
-  end if;
-
   raise notice 'ok — adjustments exist, nothing can write them but the two functions';
 end $$;
 
 -- ---------------------------------------------------------------------------
--- What you should SEE afterwards. An empty table, and four slot names:
+-- What you should SEE afterwards. An empty table:
 --
 --   select count(*) from sales_invoice_adjustments;
---   select display_name, accent from profiles order by accent;
 --
 -- And signed in as a shop login, this must be REFUSED with 42501:
 --

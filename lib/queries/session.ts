@@ -47,7 +47,36 @@ export function useCurrentProfile() {
   });
 }
 
-/** Everyone, for the attribution chips and the unlock screen. */
+/**
+ * Everyone who has ever touched a row — **including deactivated accounts**.
+ *
+ * ===========================================================================
+ * This filtered on `active` for a year, and its own comment said it must not.
+ *
+ * The line above used to read "Everyone, for the attribution chips", directly
+ * over `.eq('active', true)`. The code and the comment disagreed, and the
+ * comment was right: this is a LOOKUP, and a lookup that hides rows cannot
+ * name the actor on the rows it hides.
+ *
+ * The effect was invisible only because nobody had been deactivated who had
+ * done anything. `Test Shop` is inactive in the live database today and has
+ * entered nothing. **The moment somebody real is suspended, their name would
+ * have vanished from every invoice they ever entered or paid** — the record
+ * intact in the database, unnameable on screen.
+ *
+ * Found while working out what suspending an account would cost. §54.
+ * ===========================================================================
+ *
+ * Every one of the nine screens that reads this does `people.find(byId)`. Not
+ * one of them renders the array as choices, which is why widening it needed no
+ * call-site changes at all: the two lists that DO offer people to pick from
+ * are `useTeam` and `useChangeableRoles` below, and they filter for
+ * themselves.
+ *
+ * It now matches `readProfiles()` in `lib/export/run.ts`, which never filtered
+ * — §49.2 reasoned its way to the same answer for the same reason and did not
+ * notice that the screens disagreed.
+ */
 export function useProfiles() {
   return useQuery({
     queryKey: qk.profiles.all,
@@ -55,7 +84,6 @@ export function useProfiles() {
       const { data, error } = await supabase()
         .from('profiles')
         .select(PROFILE_COLUMNS)
-        .eq('active', true)
         .order('display_name');
 
       if (error) throw error;
@@ -93,7 +121,15 @@ export function useTeam() {
   const query = useProfiles();
   return {
     ...query,
-    data: (query.data ?? []).filter(runsTheBusinesses),
+    /*
+     * `active` is filtered HERE now, not in the query.
+     *
+     * This is a list of people to CHOOSE from — the paid-by pills on History,
+     * the builder's photo screen — and offering a suspended account as a
+     * filter that can never match anything is a control that lies. The lookup
+     * underneath has to keep them; this is the layer that should not.
+     */
+    data: (query.data ?? []).filter((person) => person.active && runsTheBusinesses(person)),
   };
 }
 
@@ -112,6 +148,14 @@ export function useChangeableRoles() {
   const query = useProfiles();
   return {
     ...query,
+    /*
+     * Deliberately NOT filtered on `active`, unlike `useTeam` directly above.
+     *
+     * This is the only screen that can lift a suspension, so a suspended
+     * person who dropped off it would be suspended for ever — the same
+     * one-way trap that made this list stop using `useTeam` when the assistant
+     * tier arrived (§52.5), arriving a second time by a different route.
+     */
     data: (query.data ?? []).filter(roleMayBeChanged),
   };
 }

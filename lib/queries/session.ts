@@ -144,6 +144,52 @@ export function useTeam() {
  * they leave `useTeam` immediately — so a screen built on that list would
  * lose the row it had just changed, and with it the only way back.
  */
+/**
+ * Shut somebody out of the app, or let them back in. §54.
+ *
+ * ---------------------------------------------------------------------------
+ * Its own mutation, not a flag on `useSetUserRole`.
+ *
+ * They are two different sentences — "what may this person do" and "may this
+ * person get in at all" — and one call that could do either is one
+ * confirmation standing in front of two different consequences.
+ *
+ * Not queueable, and this is the one place that decision matches the wipe
+ * rather than the adjustments (§53): a suspension is about access RIGHT NOW.
+ * One that left a phone on Tuesday and arrived on Thursday would shut somebody
+ * out two days after the reason for it had passed, and one lifting a
+ * suspension would leave them locked out while everybody assumed it was done.
+ * ---------------------------------------------------------------------------
+ */
+export function useSetUserActive() {
+  const queryClient = useQueryClient();
+
+  return useMutation<Profile, Error, { id: string; active: boolean }>({
+    mutationFn: async ({ id, active }): Promise<Profile> => {
+      const { data, error } = await supabase().rpc('set_user_active', {
+        p_profile_id: id,
+        p_active: active,
+      });
+
+      /* The database's own sentence. All four refusals in `set_user_active`
+         are written to be read by a person — "You cannot suspend yourself." */
+      if (error) throw new Error(error.message);
+      return data as Profile;
+    },
+    onSuccess: (profile) => {
+      /*
+       * The lookup holds everybody now (§54.1), so a suspended person stays in
+       * this cache and keeps naming the rows they touched. Only their `active`
+       * has moved, and the two lists over this query re-filter themselves.
+       */
+      queryClient.setQueryData<Profile[]>(qk.profiles.all, (current) =>
+        (current ?? []).map((existing) => (existing.id === profile.id ? profile : existing)),
+      );
+      queryClient.invalidateQueries({ queryKey: qk.profiles.all });
+    },
+  });
+}
+
 export function useChangeableRoles() {
   const query = useProfiles();
   return {

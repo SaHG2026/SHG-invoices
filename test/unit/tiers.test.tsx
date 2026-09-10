@@ -98,6 +98,7 @@ const paidInvoice = makeInvoice({
 });
 
 const mocks = vi.hoisted(() => ({
+  setActive: vi.fn(),
   who: { current: null as unknown },
   /* Who is on the list. Switchable, so the SECOND owner can exist for
      one test -- the demote path is unreachable while there is only one. */
@@ -116,6 +117,9 @@ vi.mock('@/lib/queries/session', () => ({
   useUpdateNotifyPreference: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetUserRole: () => ({ mutateAsync: mocks.setRole, isPending: false }),
+  /* §54. The role list carries suspension now, so anything that renders
+     it reaches this too. */
+  useSetUserActive: () => ({ mutateAsync: mocks.setActive, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({
@@ -442,6 +446,85 @@ describe('who can do what', () => {
 
     return waitFor(() => {
       expect(mocks.setRole).toHaveBeenCalledWith({ id: MILAN.id, role: 'manager' });
+    });
+  });
+
+  it('suspends somebody, after asking, and says what survives', () => {
+    /*
+     * §54. `profiles.active` has existed since migration 005 and every
+     * permission function already tests it, so this one flag shuts somebody
+     * out of everything at once.
+     */
+    mocks.setActive.mockResolvedValue({ ...MILAN, active: false });
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend this account' }));
+
+    const dialog = within(screen.getByRole('alertdialog'));
+    /* Rule 5 said out loud, because "suspend" sounds like it might remove
+       things and the whole point is that it does not. */
+    expect(dialog.getByText(/Everything they entered stays/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Suspend' }));
+
+    return waitFor(() => {
+      expect(mocks.setActive).toHaveBeenCalledWith({ id: MILAN.id, active: false });
+    });
+  });
+
+  it('lets somebody back in without a dialog', () => {
+    /*
+     * Deliberately not symmetrical. One direction takes access away, the
+     * other restores what somebody already had — and a dialog in front of the
+     * harmless direction is one people learn to tap through, which is what
+     * stops the other one working.
+     */
+    mocks.team.current = [MANI, { ...MILAN, active: false }];
+    mocks.setActive.mockResolvedValue({ ...MILAN, active: true });
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Let them back in' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    return waitFor(() => {
+      expect(mocks.setActive).toHaveBeenCalledWith({ id: MILAN.id, active: true });
+    });
+  });
+
+  it('says on the row that somebody is suspended', () => {
+    // Said rather than greyed out: a dimmed row reads as "loading" or "you
+    // cannot touch this", and this row is the one place it can be lifted.
+    mocks.team.current = [MANI, { ...MILAN, active: false }];
+    settings();
+    expect(within(roleList()).getByText(/suspended/)).toBeInTheDocument();
+  });
+
+  it('offers nothing to suspend on your own row', () => {
+    /*
+     * `set_user_active` refuses it, so offering it is notes §6 at its
+     * plainest: a control whose only effect is locking yourself out of the app
+     * you are holding, recoverable only by somebody else.
+     */
+    mocks.team.current = [MANI, { ...MILAN, role: 'owner' as const }];
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Mani/ }));
+    expect(screen.queryByRole('button', { name: 'Suspend this account' })).not.toBeInTheDocument();
+  });
+
+  it('shows the database\u2019s sentence when it refuses', () => {
+    // "That is the only owner." Every refusal in `set_user_active` is written
+    // to be read by a person.
+    mocks.setActive.mockRejectedValue(
+      new Error('That is the only owner. Make somebody else the owner first.'),
+    );
+    settings();
+    fireEvent.click(within(roleList()).getByRole('button', { name: /Change Milan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend this account' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Suspend' }),
+    );
+
+    return screen.findByText(/only owner/).then((node) => {
+      expect(node).toBeInTheDocument();
     });
   });
 

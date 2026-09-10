@@ -6217,3 +6217,106 @@ type away**, and this codebase casts at every database boundary by necessity.
 What actually makes the embed safe is smaller and duller: both files that read
 sales invoices do it through a single shared select constant, so there is one
 place to be wrong rather than four.
+
+---
+
+## 54. Suspending an account
+
+> Asked for as absolute control over the users, including creating them.
+
+**Creating is still not possible, and still for rule 1.** Supabase makes
+accounts only through the Auth Admin API, which needs the service-role key —
+the one thing this architecture is built to not have, because with it present
+`auth.uid()` returns null and every invoice silently loses its author.
+
+Suspension is the half that is possible, and it turns out to be most of what
+was wanted: somebody can be shut out in one tap and let back in the same way,
+and nothing they did is lost. `db/CATCH_UP_025.sql`.
+
+### 54.1 The bug found while costing it
+
+**`useProfiles` — the lookup that names the actor on every row — filtered
+`active = true`.** Directly beneath a comment reading *"it must keep returning
+everybody or a chip somewhere cannot name its actor."* The code and the
+comment had disagreed for a year and the comment was right.
+
+It was invisible because **nobody who had done anything had ever been
+deactivated**. `Test Shop` is inactive in the live database and has entered
+nothing. The first real suspension would have blanked that person's name on
+every invoice they ever entered or paid — the record intact in the database,
+unnameable on screen — and it would have looked like the suspension had
+deleted something.
+
+The fix is a split, and its shape is the point:
+
+| | |
+|---|---|
+| `useProfiles` | **everyone.** A lookup that hides rows cannot name the rows it hides |
+| `useTeam` | active **and** `runsTheBusinesses`. A suspended account offered as a paid-by filter can never match anything — a control that lies |
+| `useChangeableRoles` | `roleMayBeChanged`, **including suspended**. This is the only screen that can lift a suspension |
+
+That last line is §52.5's one-way trap arriving a second time by a different
+route: a demoted assistant fell off `useTeam` and could never be promoted back;
+a suspended person falling off this list could never be let back in.
+
+**Nine screens read the lookup and every one does `people.find(byId)`.** Not
+one renders it as choices — which is why widening it needed no call-site
+changes at all, and why the filtering belongs on the two lists that do.
+
+It now agrees with `readProfiles()` in `lib/export/run.ts`, which never
+filtered: §49.2 reasoned to the same conclusion for the same reason and did
+not notice the screens disagreed with it.
+
+### 54.2 Why suspension needed almost nothing new
+
+`profiles.active` has existed since migration 005, and **every permission
+function already tests it** — `is_manager_or_above()`, `is_owner()`,
+`is_staff()`, `is_assistant()`. One flag shuts somebody out of everything at
+once, with no new check anywhere and no policy to keep in step.
+
+The column was unreachable from a browser only because the grant does not
+include it, which is exactly where `role` sat until CATCH_UP_019 — and the way
+through is the same: a SECURITY DEFINER function that can ask who is calling,
+rather than a widened grant that cannot. **The tempting one-liner,
+`grant update (active) on profiles`, would let anybody suspend anybody
+including themselves and the builder, with none of the refusals and no log
+line.** That shortcut has now been available and refused three times
+(CATCH_UP_019 §6, CATCH_UP_020 §2, and here).
+
+Its own function rather than an argument on `set_user_role`: *"what may this
+person do"* and *"may this person get in at all"* are two sentences, and one
+call that could do either is one confirmation standing in front of two
+different consequences.
+
+**Three refusals**, two of them borrowed:
+
+1. **Not the builder** — §44.2. An owner able to suspend the builder can lock
+   the builder out of the app the builder maintains.
+2. **Not yourself** — new here. A control whose only effect is locking you out
+   of the app you are holding, recoverable only by somebody else.
+3. **Not the last owner** — `set_user_role`'s rule one step further on:
+   suspending the last owner leaves nobody who can promote, demote, **or lift
+   a suspension.**
+
+### 54.3 The two directions are not symmetrical
+
+**Suspending asks. Letting somebody back in does not.**
+
+One takes access away; the other restores what somebody already had. A dialog
+in front of the harmless direction is one people learn to tap through, and
+that is precisely what stops the one in front of the other direction working.
+
+The confirmation says **what survives**, not what happens: *"Everything they
+entered stays exactly as it is, with their name on it. Nothing is deleted."*
+The word "suspend" sounds like it might remove things, and rule 5 is the whole
+answer — which is only reassuring if somebody is told.
+
+**Suspended is said on the row, not shown by dimming it.** A greyed row reads
+as "loading" or "you cannot touch this", and this row is the one place a
+suspension can be lifted: it has to look reachable.
+
+**And the write is not queueable**, which puts it with the wipe rather than
+with the adjustments (§53). A suspension is about access *right now*. One that
+left a phone on Tuesday and arrived on Thursday would shut somebody out two
+days after the reason had passed, and one lifting a suspension would leave
+somebody locked out while everybody assumed it was done.

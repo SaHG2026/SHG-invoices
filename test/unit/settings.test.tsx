@@ -23,6 +23,7 @@ import { WIPE_PHRASE } from '@/lib/queries/wipe';
 const profile = { ...PROFILES[0]!, notify_on_new_invoice: true } as Profile;
 
 const mocks = vi.hoisted(() => ({
+  setActive: vi.fn(),
   updateReminder: vi.fn(),
   /* Who is signed in. Switched per test, so the venue branch can be reached. */
   who: null as unknown,
@@ -69,6 +70,9 @@ vi.mock('@/lib/queries/session', () => ({
   useUpdateNotifyPreference: () => ({ mutateAsync: mocks.updateNotify, isPending: false }),
   useUpdateReminderTime: () => ({ mutateAsync: mocks.updateReminder, isPending: false }),
   useSetUserRole: () => ({ mutateAsync: mocks.setRole, isPending: false }),
+  /* §54. The role list carries suspension now, so anything that renders
+     it reaches this too. */
+  useSetUserActive: () => ({ mutateAsync: mocks.setActive, isPending: false }),
 }));
 
 vi.mock('@/lib/queries/reference', () => ({

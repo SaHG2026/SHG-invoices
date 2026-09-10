@@ -19,6 +19,7 @@ import {
   useSetUserRole,
   useSignOut,
   useChangeableRoles,
+  useSetUserActive,
   useUpdateNotifyPreference,
   useUpdateReminderTime,
 } from '@/lib/queries/session';
@@ -546,8 +547,28 @@ function RoleSection({ me }: { me: Profile }) {
      at once is a list nobody can read. */
   const [open, setOpen] = useState<string | null>(null);
   const [changing, setChanging] = useState<{ person: Profile; to: Tier } | null>(null);
+  const [suspending, setSuspending] = useState<Profile | null>(null);
+  const setActive = useSetUserActive();
 
   const owners = team.filter((person) => person.role === 'owner');
+
+  /**
+   * Letting somebody back in needs no confirmation, and suspending does.
+   *
+   * The two are not symmetrical: one takes access away and the other restores
+   * what somebody already had. A dialog in front of the harmless direction is
+   * a dialog people learn to tap through, which is what makes the one in front
+   * of the other direction stop working.
+   */
+  async function reinstate(person: Profile) {
+    try {
+      await setActive.mutateAsync({ id: person.id, active: true });
+      setOpen(null);
+      toast.show(`${person.display_name} can sign in again.`);
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Couldn’t do that.', 'problem');
+    }
+  }
 
   async function apply() {
     if (!changing) return;
@@ -598,7 +619,16 @@ function RoleSection({ me }: { me: Profile }) {
                     {person.display_name}
                     {person.id === me.id ? ' \u00b7 you' : ''}
                   </span>
-                  <span className="block text-xs text-muted">{TIER_LABEL[tier]}</span>
+                  <span className="block text-xs text-muted">
+                    {TIER_LABEL[tier]}
+                    {/*
+                      Said on the row rather than by greying it out. A dimmed
+                      row reads as "loading" or "you cannot touch this", and
+                      this row is the ONE place a suspension can be lifted —
+                      it has to look reachable.
+                    */}
+                    {person.active ? '' : ' · suspended'}
+                  </span>
                 </span>
 
                 {lastOwner ? (
@@ -637,6 +667,7 @@ function RoleSection({ me }: { me: Profile }) {
                 choice and the confirmation states the consequence.
               */}
               {showing ? (
+                <>
                 <div
                   className="mt-2 flex flex-wrap gap-2 pl-11"
                   role="group"
@@ -666,11 +697,73 @@ function RoleSection({ me }: { me: Profile }) {
                     );
                   })}
                 </div>
+
+                {/*
+                  Suspension, under the tiers and separated from them.
+
+                  A different question from the ones above it — those are
+                  "what may this person do", this is "may they get in at all"
+                  — and §54's function keeps them apart for the same reason.
+                  Sharing the row of pills would make it look like a fourth
+                  tier, which is exactly what it is not.
+
+                  Absent on your own row, because `set_user_active` refuses it:
+                  a control whose only effect is locking yourself out of the
+                  app you are holding is notes §6 at its plainest.
+                */}
+                {person.id === me.id ? null : (
+                  <div className="mt-2 pl-11">
+                    <button
+                      type="button"
+                      disabled={setActive.isPending}
+                      onClick={() => {
+                        if (person.active) setSuspending(person);
+                        else void reinstate(person);
+                      }}
+                      className="touch text-sm text-action disabled:opacity-40"
+                    >
+                      {person.active ? 'Suspend this account' : 'Let them back in'}
+                    </button>
+                  </div>
+                )}
+                </>
               ) : null}
             </li>
           );
         })}
       </ul>
+
+      <ConfirmDialog
+        open={suspending !== null}
+        title={suspending ? `Suspend ${suspending.display_name}?` : ''}
+        points={
+          suspending
+            ? [
+                <>They will be signed out and cannot get back in until you let them.</>,
+                <>
+                  Everything they entered stays exactly as it is, with their name on it. Nothing
+                  is deleted.
+                </>,
+              ]
+            : []
+        }
+        question="Shut them out for now?"
+        confirmLabel="Suspend"
+        onConfirm={async () => {
+          const person = suspending;
+          setSuspending(null);
+          if (!person) return;
+          try {
+            await setActive.mutateAsync({ id: person.id, active: false });
+            setOpen(null);
+            toast.show(`${person.display_name} is suspended.`);
+          } catch (error) {
+            /* The database's own sentence — "That is the only owner." */
+            toast.show(error instanceof Error ? error.message : 'Couldn’t do that.', 'problem');
+          }
+        }}
+        onCancel={() => setSuspending(null)}
+      />
 
       <ConfirmDialog
         open={changing !== null}

@@ -110,7 +110,7 @@ all eight, and the answer will not be the same at every one.**
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 975 tests
+npx vitest run       # 987 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -190,8 +190,9 @@ SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
 - `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**.
-  **021 and 022 are written and NOT yet applied** — the wipe and the
-  assistant tier. Both must be run before the deploy that carries them
+  **001 to 024 are applied and verified. 025 is written and NOT yet
+  applied** — suspension, and it must be run before the deploy that
+  carries it
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -303,6 +304,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §51 | The notification badge, and the test that had to decode a PNG |
 | §52 | The assistant tier — a person who logs a bill and cannot act on one |
 | §53 | J5 — discounts and refunds, and everywhere the net had to reach |
+| §54 | Suspending an account, and the lookup that was hiding half of them |
 
 ### The two lessons worth more than the features
 

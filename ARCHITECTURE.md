@@ -6081,23 +6081,51 @@ the working tree has real changes in.
 Caught by `verify_catchups.mjs`, which is the second time in two days that
 extending a verifier paid for itself immediately.
 
+**The cause is not known, and the first explanation written here was wrong.**
+
 The file carried a fourth, unrelated thing: four `UPDATE`s converting
 `profiles.accent` from hex to slot names, folded in because each of these
-files costs a round trip through a person. Those updates matched on ids taken
-from `db/seed/002_profiles.sql`. They matched nothing — so the verification
-block's
+files costs a round trip through a person. The theory was that those updates
+matched nothing — the ids came from `db/seed/002_profiles.sql` — so the
+verification block's
 
 ```sql
 if v_hex <> 0 then raise exception '% profiles still hold a hex accent', v_hex;
 ```
 
-fired, and **the SQL editor runs a script as one transaction**, so the table
-and both functions rolled back with it.
+fired, and since **the SQL editor runs a script as one transaction**, the
+table and both functions rolled back with it.
+
+**CATCH_UP_024 then disproved it.** Its §1 does the same id-based updates, and
+the result was exactly the intended mapping — Rabindra 1, Mani 2, Milan 3,
+Sujan 4. §2's fallback orders by id and would have produced Rabindra, Milan,
+Mani, Sujan, which is not what happened. So §1 matched, which means the ids
+were right all along, which means `v_hex` would have been 0 and that exception
+never fired.
+
+What is actually known:
+
+- the original 023 was run and left nothing behind
+- the split 023 was run and left everything
+- the ids in the accent updates were correct
+
+Why the first run left nothing is unexplained. It may not have been an error
+at all — a partial paste or a selection-only run in the SQL editor would look
+the same from here, and neither leaves a trace.
+
+**The split was still right, for a reason that does not depend on the cause.**
+A file that mixes a schema change with an unrelated cosmetic one can have the
+cosmetic half take the schema half down with it, and that risk is real whether
+or not it is what happened. The rest of this section stands on that.
 
 **A cosmetic change must never be able to roll back a schema change**, and
 "it is only four UPDATEs" is exactly how one ends up able to. The accents are
 now `CATCH_UP_024`, alone, with no `raise exception` anywhere in it: the worst
 case is that it reports what it could not work out and changes nothing.
+
+And the smaller lesson, which is the one that was actually paid for: **a
+diagnosis that fits the evidence is not the same as the cause.** This one fit
+perfectly, was written up with confidence, and was wrong.
 
 Two smaller things worth keeping:
 

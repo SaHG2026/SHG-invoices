@@ -13,11 +13,14 @@
 -- Unrelated work, folded in because each of these files costs a round trip
 -- through a person.
 --
--- Those updates matched on ids taken from `db/seed/002_profiles.sql`. When
--- they matched nothing, the verification block's `raise exception` fired --
--- and because the SQL editor runs a script as one transaction, **the table
--- and both functions rolled back with it.** The schema change was destroyed
--- by a cosmetic one that failed beside it.
+-- The cause was never established. CATCH_UP_024 later showed the ids in those
+-- updates were correct, which rules out the first explanation (that they
+-- matched nothing and the verification block's `raise exception` fired). The
+-- first run may not have errored at all -- a partial paste looks the same from
+-- outside.
+--
+-- What stands regardless: the SQL editor runs a script as one transaction, so
+-- a cosmetic change that fails can take a schema change down with it.
 --
 -- The accents are now CATCH_UP_024, on their own, written so they cannot
 -- fail. **A cosmetic change must never be able to roll back a schema change**,

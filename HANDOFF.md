@@ -102,7 +102,7 @@ SQL, two in `lib/staff.ts`. Adding a seventh tier means the same walk.
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 945 tests
+npx vitest run       # 950 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -292,6 +292,7 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §49 | **J4** — the ledger as three CSVs, and the wipe behind four acts |
 | §50 | **J4b** — Excel workbooks with sheets, a zip of them, and a status column that was lying |
 | §50.6 | One button that says Change — the demote label nobody could reach |
+| §51 | The notification badge, and the test that had to decode a PNG |
 
 ### The two lessons worth more than the features
 

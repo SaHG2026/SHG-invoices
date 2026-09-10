@@ -5791,3 +5791,91 @@ a condition on a row that IS on the list — unlike the other four in
 `test/unit/tiers.test.tsx` now renders a **second owner** so the demote path is
 reachable at all. It was not before, which is the same shape as §39.8: a mock
 that cannot produce a real state guarantees nobody looks at it.
+
+---
+
+## 51. The notification icon that was a white blob
+
+> *"the notification icon is a white blob. so that needs tidying up too."*
+
+`public/sw.js` passed the same file as both `icon` and `badge`. Those are two
+different jobs:
+
+- **`icon`** is the large artwork inside the notification. Drawn as supplied,
+  so the full-colour app icon is right for it.
+- **`badge`** is the SMALL icon — status bar, and beside the text in the shade.
+  **Android throws away its colours and draws only its alpha channel, tinted.**
+
+`icon-192.png` is **0% transparent**. Its alpha is a filled square. A filled
+square, tinted white, is a white blob. Nothing was broken; the wrong file was
+being asked to do a job it cannot do.
+
+**The mark that was needed had been sitting in the repo unused since the icons
+were made.** `public/icons/mark-mono-512.png` — the Sagarmatha mountain,
+monochrome, 76% transparent, referenced by nothing. §48.5's lesson again: ask
+what is in the store before designing around what you assume.
+
+### 51.1 The badge
+
+`public/icons/badge-96.png`. Generated from the mono mark, cropped to its alpha
+bounding box, scaled to 88 of 96 and centred, painted white and carrying the
+mark's alpha. 96×96, ~90% transparent.
+
+Three things decided while looking at it at real size:
+
+**Cropped to the bounding box first.** The source has whitespace around the
+mountain, and scaling the whitespace rather than the mark is how a badge ends
+up a third of the size it should be.
+
+**88 of 96, not 76.** Rendered at 24dp — the size Android actually draws — the
+first attempt read as a smudge. Looking at both at that size, side by side,
+settled it in one comparison. The mark is 2.3:1, so a square badge is always
+going to have air above and below it; filling the width is what buys legibility
+back.
+
+**White pixels carrying the mark's alpha.** The colour is irrelevant on Android
+because it tints, but a browser that shows the badge untinted then gets white
+on transparent, which works on a light and a dark shade.
+
+The recipe is deliberately recorded rather than automated — it is one asset,
+generated once. Regenerating means cropping the mono mark to its alpha bbox,
+fitting it into 88 of a 96 square, and keeping only its alpha.
+
+### 51.2 The test that had to decode a PNG
+
+`test/unit/notification-badge.test.ts`.
+
+**The obvious guard would have passed on the file that caused the bug.**
+"The badge is a PNG with an alpha channel" is true of `icon-192.png` — it is
+RGBA; it simply has nothing transparent in it. That is HANDOFF's *"a check that
+is never extended stops being a check and becomes a claim"*, except it would
+have been born that way.
+
+So the test reads the actual pixels: Node ships `zlib`, and PNG un-filtering
+(None/Sub/Up/Average/Paeth) is twenty lines. It asserts the badge is more than
+half transparent, **and less than 98%** — the opposite failure is just as
+silent, because a badge with nothing in it shows no status-bar icon at all, and
+a missing icon looks like a notification that never arrived.
+
+And it asserts that **`icon-192.png` is under 1% transparent** — the check
+checking itself. If that ever starts failing, the app icon has gained
+transparency and the two assertions above have stopped being able to tell the
+two files apart.
+
+The decoder refuses anything but 8-bit non-interlaced RGBA rather than growing
+support for formats nothing here produces: one that silently mishandled a
+palette image would report 0% transparent and fail for the wrong reason.
+
+**What none of it proves** is what the phone draws, which is §48.3's rule about
+the PDF again. That was checked by compositing the alpha over the header green
+and viewing it at 24dp.
+
+### 51.3 The cache version is deliberately not bumped
+
+`CACHE` in `sw.js` says to bump it when something under a **stable url** has to
+be evicted — an icon, the offline page, the manifest. Nothing existing changed
+here: `badge-96.png` is a new url, so there is nothing stale to evict, and the
+`/icons/` handler simply misses and fetches it.
+
+Bumping would throw away the precached offline page and manifest on every phone
+to deliver a file that was never cached in the first place.

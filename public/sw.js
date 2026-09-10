@@ -165,8 +165,25 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body: payload.body || '',
+      /*
+       * Two different jobs, and they were the same file, which is the bug.
+       *
+       * `icon` is the large artwork inside the notification. It is drawn as
+       * supplied, so the full-colour app icon is right for it.
+       *
+       * `badge` is the SMALL icon — the one in the status bar and beside the
+       * text in the shade. **Android throws away its colours and draws only
+       * its ALPHA CHANNEL, tinted.** `icon-192.png` is 0% transparent, so its
+       * alpha is a filled square, and what appeared on the phone was a solid
+       * white blob. Nothing was broken; the wrong file was being asked to do a
+       * job it cannot do.
+       *
+       * `badge-96.png` is the app's own monochrome mark on transparency —
+       * generated from `mark-mono-512.png`, which had been sitting unused
+       * since the icons were made. ARCHITECTURE §51.
+       */
       icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      badge: '/icons/badge-96.png',
       // Same tag replaces rather than stacks: four invoices logged in a minute
       // should leave one notification on the lock screen, not four.
       tag: payload.tag || 'shg',

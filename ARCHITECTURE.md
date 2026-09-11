@@ -7156,3 +7156,67 @@ so it is not tried again.
 
 > When every failure is a timeout and never an assertion, the suite is
 > reporting on the machine, not on the code.
+
+
+---
+
+## 61. The wipe refused itself
+
+The wipe had never been run. J4 shipped it behind four acts and a typed
+phrase, its refusals were tested, and its deletion deliberately was not —
+HANDOFF §7 item 2 said so, and said not to test it on real data.
+
+Run for the first time, it came back saying a WHERE clause was missing.
+
+`wipe_everything` clears ten tables with bare statements: `delete from
+invoices;` and nine more. Supabase can run with the **safeupdate** library
+preloaded — `ALTER ROLE authenticator SET session_preload_libraries =
+'safeupdate'` — and that library exists to refuse precisely that shape. It is
+a good guard, aimed at a mistyped ad-hoc statement emptying a table. It cannot
+tell that apart from a function whose entire purpose is to empty ten tables.
+
+**`SECURITY DEFINER` does not exempt it**, and that is the part worth
+remembering: the library is loaded per SESSION, by the role the app connects
+as, not per function. Every previous reasoning about this function turned on
+what it runs AS; this turns on what the session was started WITH.
+
+The remedy is `where true` on each delete — the same rows, with the intent
+stated, which is all the guard asks for.
+
+### 61.1 Nothing was lost, and the counts said so rather than the argument
+
+The report was *"I think it only wiped some part"*, which should be
+impossible: a plpgsql function is one transaction and CATCH_UP_021's own
+comment says "either all of this happens or none of it does, and there is no
+half-wiped state."
+
+Rather than assert that, CATCH_UP_030 ended in a `select` counting every
+table. All twelve came back non-zero, internally consistent — 7 profiles
+matching the 7 logins the accounts row lists, 4 businesses, 21 sales lines
+across 8 sales invoices. **The rollback worked exactly as designed.**
+
+What looked like a partial wipe was the app: `useWipeEverything` clears the
+query cache and the offline queue, and a screen emptied on the phone is very
+convincing. That clearing only runs on success, so a refresh or a screen whose
+query returned nothing is the likelier explanation — and either way the
+database was never touched.
+
+> When somebody reports a partial failure of something that cannot partially
+> fail, do not explain why it cannot. Count the rows and show them.
+
+### 61.2 The check that would have refused its own file
+
+The first verification block counted occurrences of `where true` and required
+exactly ten. It would have raised on a correct file: `pg_get_functiondef`
+returns the **comments** as well as the code, and the comment above the
+deletes explains `where true` in prose — eleven, not ten.
+
+Counting a string that appears in both code and commentary is counting the
+wrong thing. It asks instead whether any `delete from <table>;` survives with
+nothing between the table and the semicolon, which is the property the guard
+actually refuses. `verify_catchups.sql` row 27 asks the same question on every
+run.
+
+That is the second time this round a check nearly shipped broken, and both
+were caught by simulating what the database would actually see rather than by
+reading the file.

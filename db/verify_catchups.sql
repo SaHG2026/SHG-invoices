@@ -341,5 +341,23 @@ select * from (
                and role not in ('manager', 'owner', 'builder')),
            'everyone with a reminder time is in the audience')
 
+
+  -- ---------------------------------------------------------------- 030 ----
+  -- The wipe refused itself the first time it was ever run: ten bare
+  -- `delete from x;` statements against Supabase's safeupdate guard, which
+  -- exists to refuse exactly that shape.
+  --
+  -- Asked as "is there a delete with no WHERE" rather than by counting
+  -- `where true`, because `pg_get_functiondef` returns the comments too and
+  -- the prose in that function says `where true` as well.
+  union all
+  select 27, 'CATCH_UP_030', 'the wipe has no bare delete left',
+         case when (select pg_get_functiondef(p.oid) from pg_proc p
+                      join pg_namespace ns on ns.oid = p.pronamespace
+                     where ns.nspname = 'public' and p.proname = 'wipe_everything')
+                   ~* 'delete\s+from\s+[a-z_][a-z0-9_]*\s*;'
+              then 'MISSING' else 'ok' end,
+         'a bare delete is refused by the safeupdate guard and the wipe cannot run'
+
 ) checks
 order by n;

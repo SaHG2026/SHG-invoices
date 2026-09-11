@@ -202,7 +202,7 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 029,
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 030,
   all applied.** 028 repaired the missing "Supplier not listed" row and 029
   made it an invariant a wipe cannot lose. Its diagnosis of WHY it was missing
   was printed with `raise notice` and is therefore lost — §59
@@ -548,8 +548,20 @@ the feature works on a phone.
    independent readers (§50.3). The three *reads* behind them have never run
    with a real session. §49.4.
 
-2. **The wipe has never been run**, deliberately, and should not be tested on
-   real data. Its four steps and its refusals are tested; the deletion is not.
+2. **The wipe has been ATTEMPTED and refused itself, 2026-09-11 — and the
+   deletion is still untested.** It came back "DELETE requires a WHERE
+   clause": ten bare `delete from x;` statements meeting Supabase's
+   **safeupdate** guard, which is preloaded per SESSION by the role the app
+   connects as, so `SECURITY DEFINER` does not exempt it. CATCH_UP_030 adds
+   `where true` to all ten. §61.
+
+   **Nothing was lost.** A plpgsql function is one transaction, so every
+   delete rolled back with the one that raised — confirmed by counting every
+   table afterwards, all non-zero. "It only wiped some part" was the app
+   clearing its own cache and screens reading empty.
+
+   The deletion itself has STILL never run. Do not test it on real data: there
+   is no backup at all (§33.1), and the ledger currently holds real invoices.
 
 3. ~~Suspension has never been used.~~ **Used** — Test Shop is suspended
    (verified 2026-09-11, row 24). §54's mechanism works on a real account.

@@ -6999,3 +6999,47 @@ Each time, something reported success while the thing it described did not
 exist, and each time the check that would have caught it existed but could not
 be felt. **Verify by the route the person will actually use**, not by the one
 the code believes in.
+
+
+### 59.4 And the verifier itself was crying wolf
+
+The first full run of the extended `verify_catchups.sql` came back 21 `ok` and
+one `MISSING`:
+
+```
+7 | CATCH_UP_003 | accents stored as person-1..4, not hex | MISSING
+                 | Hurstville=venue, Parramatta=venue, Test Shop=venue
+```
+
+Nothing is wrong. `'venue'` is a real accent slot, added by CATCH_UP_010 with
+its own `--venue` / `--venue-bg` pair in `globals.css` and its own branch in
+`PersonChip`. The check asked `accent not like 'person-%'` because it was
+written for CATCH_UP_003, which converted hex colours into person slots —
+before venue accounts existed. It was never extended, so it has been reporting
+a permanent false failure ever since.
+
+This is §43.2 again, in the direction that is arguably worse than a false
+pass. **A verifier with a standing false MISSING in it teaches everybody to
+skim past MISSING**, which is the only word in the output that is supposed to
+stop somebody.
+
+Rephrased to what CATCH_UP_003 actually guaranteed — *no accent is still a hex
+colour* — it cannot go stale when a fifth slot is invented, because a hex
+colour is the only thing it was ever meant to catch. An unrecognised slot is
+now its own row saying `CHECK` rather than `MISSING`: something to look at,
+not a migration that failed to run.
+
+> When extending a check, ask what it was protecting rather than what it
+> currently tests. The two drift apart, and the test is the one that ages.
+
+### 59.5 An account nobody wrote down
+
+Row 7's detail also named a **"Test Shop"**, and HANDOFF documents two shop
+logins — GMP and GMH. A third staff account is not necessarily wrong; an
+account nobody recorded is worth knowing about either way, and §54 gave the
+owner a way to suspend one.
+
+So the verifier now ends with a plain listing of who can sign in, with role
+and suspension state. `info`, never `MISSING` — a fact to read, not a
+migration to run. It is the question a security review opens with (§7b), and
+until now the only way to answer it was to go and look.

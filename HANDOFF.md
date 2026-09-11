@@ -333,6 +333,14 @@ the script as Parramatta; the gate by that venue having entered a real invoice
 and a real note, which the script reads back. The lesson stands — it was true
 for weeks — but the gap it describes is closed.
 
+**A check that was never extended can cry wolf as easily as it can go
+blind.** `verify_catchups.sql` reported the three venue accounts as a failed
+migration for as long as venue accounts have existed, because it asked "is
+every accent `person-N`" when what CATCH_UP_003 guaranteed was "is any accent
+still a hex colour". A standing false MISSING teaches everybody to skim past
+MISSING. **Ask what a check was protecting, not what it currently tests.**
+§59.4.
+
 **A conditional INSERT that finds nothing is indistinguishable from
 success.** CATCH_UP_013 §5 seeded the placeholder supplier by selecting a
 `created_by` from a role that did not exist yet, matched nothing, inserted
@@ -480,7 +488,16 @@ need, and the client agreed.
 **Confirm the database with `db/verify_catchups.sql`, not with the notices.**
 Paste it into the Supabase SQL editor; it returns a table, which is the only
 thing that editor actually shows. It now covers 026 to 029, names the
-placeholder supplier, and counts what is filed against it. §59.
+placeholder supplier, counts what is filed against it, and ends with a listing
+of who can sign in. §59.
+
+Last full run, 2026-09-11: **every row ok**, one `info` (nothing filed against
+the placeholder). Row 7 reported MISSING against the three venue accounts and
+was the CHECK being wrong, not the database — fixed in §59.4.
+
+**There is a third venue account, "Test Shop".** §2 names two, GMP and GMH.
+Not necessarily wrong; nobody wrote it down. Row 24 lists every login, and
+`set_user_active` (§54) suspends one if it is not wanted.
 
 The list is in the order it is worth picking things up.
 

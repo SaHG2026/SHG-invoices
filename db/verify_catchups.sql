@@ -15,6 +15,9 @@
 --  a permanent "ok" in a column called result is a small lie. Read its
 --  `detail`. Row 19 is pass/fail and also names the placeholder supplier.
 --
+--  Row 23 says `CHECK` rather than `MISSING` when it trips: an unrecognised
+--  accent is something to look at, not a migration that failed to run.
+--
 --  THIS FILE EXISTS BECAUSE `RAISE NOTICE` IS INVISIBLE HERE. The Supabase
 --  SQL editor shows result grids and errors, and swallows notices — so every
 --  `raise notice 'ok'` in a CATCH_UP file has never been read by anybody. A
@@ -94,13 +97,39 @@ select * from (
   -- Accents became slot names so that hex lives only in app/globals.css. The
   -- app tolerates the old hex values, so a MISSING here is not urgent — it
   -- means the attribution chips fall back to a slot derived from the id.
-  select 7, 'CATCH_UP_003', 'accents stored as person-1..4, not hex',
+  -- Asked as "is any accent still a hex colour", which is what CATCH_UP_003
+  -- actually converted away from.
+  --
+  -- It used to ask `accent not like 'person-%'`, and reported MISSING against
+  -- the three venue accounts — whose accent is the string 'venue', a real slot
+  -- added by CATCH_UP_010 with its own `--venue` pair in globals.css and its
+  -- own branch in `PersonChip`. The check was written before venues existed
+  -- and was never extended, so it had started crying wolf: §43.2's lesson in
+  -- the direction that is arguably worse, because a verifier with a permanent
+  -- false MISSING in it teaches everybody to skim past MISSING.
+  --
+  -- Phrased this way it cannot go stale when a fifth slot is added, because a
+  -- hex colour is the only thing it was ever meant to catch.
+  union all
+  select 7, 'CATCH_UP_003', 'no accent is still a hex colour',
          case when (
-           select count(*) from profiles where accent not like 'person-%'
+           select count(*) from profiles where accent like '#%'
          ) = 0 then 'ok' else 'MISSING' end,
          (select coalesce(string_agg(display_name || '=' || accent, ', '
-                                     order by display_name), 'all four converted')
-            from profiles where accent not like 'person-%')
+                                     order by display_name), 'all converted')
+            from profiles where accent like '#%')
+
+  union all
+  select 23, 'accents', 'every accent is a slot the app knows',
+         case when (
+           select count(*) from profiles
+            where accent not like 'person-%' and accent <> 'venue'
+         ) = 0 then 'ok' else 'CHECK' end,
+         coalesce(
+           (select string_agg(display_name || '=' || accent, ', ' order by display_name)
+              from profiles
+             where accent not like 'person-%' and accent <> 'venue'),
+           'person-1..4 and venue, all recognised')
 
   -- ---------------------------------------------------------------- 004 ----
   union all
@@ -244,6 +273,25 @@ select * from (
                               and p.prosecdef)
               then 'ok' else 'MISSING' end,
          'as invoker it could not insert during a wipe'
+
+
+  -- ------------------------------------------------------------ accounts ----
+  -- Who can sign in, listed rather than judged.
+  --
+  -- Added after row 7's detail mentioned a "Test Shop" that HANDOFF does not
+  -- document — it names two shop logins, GMP and GMH. A third staff account
+  -- is not necessarily wrong, but "there is an account nobody wrote down" is
+  -- exactly the thing a list like this exists to surface, and §54 gave the
+  -- owner a way to suspend one from Settings.
+  --
+  -- `info`, never MISSING: this is a fact to read, not a migration to run.
+  union all
+  select 24, 'accounts', 'who has a login',
+         'info',
+         (select string_agg(display_name || ' (' || role ||
+                            case when active then '' else ', SUSPENDED' end || ')',
+                            ', ' order by role, display_name)
+            from profiles)
 
 ) checks
 order by n;

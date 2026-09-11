@@ -64,7 +64,12 @@ notification audiences, access untouched). Plus shop logins GMP and GMH, role
 **Sujan is an assistant now, and that is a bigger change than a label.** §7
 item 7 records that Sujan is one of only three accounts that has ever signed
 in, so the tier §52 built for a hypothetical person is now held by the app's
-most active real user. What it costs him is in §7 item 12.
+most active real user — every screen §52 hides and every permission it
+withholds is live for somebody who uses this app daily.
+
+What that did NOT cost him is §7 item 12: the notification exclusions looked
+like a silent loss and were checked rather than assumed, and he had never set
+a reminder.
 
 ### The one thing that everything else assumes
 
@@ -584,24 +589,28 @@ the feature works on a phone.
 
 ### Known, and not urgent
 
-12. **Sujan's daily reminder stopped when he became an assistant, and
-    nothing said so.** All three notification audiences are allowlists that
-    exclude the tier — `push_targets` and `push_targets_payment` are
-    `role in ('manager','owner')`, and the reminder job is
-    `role in ('manager','owner','builder') and reminder_time is not null`
-    (CATCH_UP_019 §4). §52 recorded that exclusion as deliberate and correct,
-    and it was — reasoned when the tier was hypothetical.
+12. **The daily reminder has no real users.** Round C (§37) built *"a daily
+    reminder at a time each person chooses"* and, measured 2026-09-11 with
+    `verify_catchups.sql` row 25, exactly one reminder exists: **Rabindra, at
+    00:01** — the builder's account, at one minute past midnight, which reads
+    as a leftover test value rather than a time anybody chose.
 
-    **The setting survives the role change.** His `reminder_time` is still
-    set, Settings still shows the switch, and nothing arrives. `verify_catchups.sql`
-    row 26 now names anybody in that state, and row 25 lists who the reminder
-    actually reaches.
+    Mani, Milan and Sujan have none set. Alongside §7 item 7 — Mani and Milan
+    have never signed in at all — the feature is built, tested, deployed and
+    unused. Nothing to fix; worth knowing before anybody spends time on it.
 
-    Not a bug — the allowlists are doing what they were written to do. It is a
-    consequence of the demotion that is invisible from inside the app, and a
-    decision for the owner: leave it, or add `assistant` to the reminder
-    audience alone (one view, not the push ones — §52.2 explains why widening
-    is the tempting wrong move).
+    **The near-miss that was checked and was not real.** An assistant is
+    excluded from all three audiences — `push_targets` and
+    `push_targets_payment` are `role in ('manager','owner')`, the reminder job
+    is `role in ('manager','owner','builder') and reminder_time is not null`
+    (CATCH_UP_019 §4) — and a `reminder_time` SURVIVES a role change, so
+    somebody demoted to assistant would keep the setting, keep seeing the
+    switch in Settings, and receive nothing.
+
+    Sujan's demotion looked like exactly that case. **It was not: he had never
+    set one**, so nothing was lost. Row 26 asks the question on every run and
+    currently answers `ok`. If a fifth tier arrives, or anybody is demoted
+    after setting a time, it is the row that will say so.
 
 8. **An intermittent test failure, and it is NOT timezone-specific.** See the
    long note in this section's history — recorded for a year as a

@@ -6926,3 +6926,76 @@ say what to do instead, and get out of the way.
 ### 58.4 Counts
 
 1058 tests under three timezones, up from 1051.
+
+
+---
+
+## 59. Every "ok" a migration has ever printed, nobody has read
+
+`CATCH_UP_028` was written to diagnose as much as to repair: three BEFORE
+counts and a DIAGNOSIS line naming which of two ways the placeholder row had
+gone missing. That answer was the point of the file, because "it works now"
+without knowing why is how the same thing returns.
+
+The client ran it and reported: *"both ran, both just say success no rows
+returned."*
+
+**The Supabase SQL editor does not show `RAISE NOTICE`.** It shows result
+grids and it shows errors, and it swallows notices in between. So the
+diagnosis was printed into nothing, and it is not recoverable — the row has
+been repaired, and the evidence of which case it was went with it.
+
+### 59.1 This is not new, and that is the worrying part
+
+Every CATCH_UP file from 001 onward ends with a `do $$ ... raise notice 'ok —
+…' end $$;` block, and each one is followed in the file by a comment saying
+*"What you should SEE afterwards"* listing those notices. **None of them has
+ever been seen.** The instruction has been wrong in every migration this
+project has shipped, and it was never noticed because the files also `raise
+exception` on real failures — and an exception IS shown.
+
+So the arrangement has been accidentally sound and completely uninformative:
+
+| | |
+|---|---|
+| `raise exception` | shown, stops the file — **this is what has been doing the work** |
+| `raise notice` | swallowed — every reassurance, every count, every diagnosis |
+| a `select` | shown as a grid |
+
+The verification blocks were never decorative; they were load-bearing and
+invisible at the same time. A file that ran without error genuinely did pass
+its checks. What was lost is everything the files tried to *say*.
+
+### 59.2 What changes
+
+**A check must `raise exception`, or it is not a check.** That was already
+true and is now the only mechanism. `CATCH_UP_028` §4 and `029` §2 both raise,
+which is why "success, no rows returned" is in fact a pass — including 029's
+self-test, which deletes the placeholder and confirms the trigger restores it.
+
+**Anything a migration wants to REPORT has to end in a `select`.** Not a
+notice. `db/verify_catchups.sql` was always the right shape — it returns a
+table — and it covered 001 to 005 of twenty-nine files. It now covers 026 to
+029 as well, including the two questions the notices were meant to answer:
+which supplier the placeholder is, and how many invoices are filed against it.
+
+**"What you should SEE afterwards" must describe a grid or an error.** Every
+such comment written before this section describes something invisible.
+
+> A diagnostic nobody can read is not a diagnostic. Before writing one, find
+> out what the person running it will actually be shown.
+
+### 59.3 The shape this keeps taking
+
+Three rounds, three versions of the same fault, each one layer further out:
+
+| | |
+|---|---|
+| §57.1 | a column the query never asked for — the type said it was there |
+| §58.1 | a row the seed never inserted — the file said it succeeded |
+| §59 | a message the editor never displayed — the file said what to look for |
+
+Each time, something reported success while the thing it described did not
+exist, and each time the check that would have caught it existed but could not
+be felt. **Verify by the route the person will actually use**, not by the one
+the code believes in.

@@ -189,11 +189,15 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 027
-  applied and verified. 028 is written and NOT yet applied** — it repairs the
-  missing "Supplier not listed" row, and its notices say WHICH of the two ways
-  it went missing, which is the only record of why. §58
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 029,
+  all applied.** 028 repaired the missing "Supplier not listed" row and 029
+  made it an invariant a wipe cannot lose. Its diagnosis of WHY it was missing
+  was printed with `raise notice` and is therefore lost — §59
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
+- **`RAISE NOTICE` IS INVISIBLE in the Supabase SQL editor.** It shows result
+  grids and errors and swallows notices, so every `raise notice 'ok'` in every
+  file here has been printed into nothing. A check must `raise exception` to
+  be felt; anything you want the client to READ has to be a `select`. §59
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
   has mattered twice: `CATCH_UP_013` deployed early empties every total,
@@ -470,15 +474,13 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**One thing is blocking a live feature.** `CATCH_UP_028` is written and NOT
-applied: the "Supplier not listed" row does not exist in the database, so a
-shop and an assistant still have no way to file a delivery from somebody new.
-Two rounds of app work behind that row are correct and inert until it runs.
-§58.
+**Nothing is blocking.** Everything through `CATCH_UP_029` is applied,
+`npm audit` is clean, and 1058 tests pass under three timezones.
 
-Everything through `CATCH_UP_027` is applied and confirmed by
-`verify_catchups.mjs`, `npm audit` is clean, and 1058 tests pass under three
-timezones.
+**Confirm the database with `db/verify_catchups.sql`, not with the notices.**
+Paste it into the Supabase SQL editor; it returns a table, which is the only
+thing that editor actually shows. It now covers 026 to 029, names the
+placeholder supplier, and counts what is filed against it. §59.
 
 The list is in the order it is worth picking things up.
 

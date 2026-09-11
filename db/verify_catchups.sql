@@ -11,6 +11,16 @@
 --  Expected result: every row says "ok". Anything saying MISSING names the
 --  file that has not been run.
 --
+--  Row 20 says `info`, not `ok`, because it is a COUNT and not a pass/fail —
+--  a permanent "ok" in a column called result is a small lie. Read its
+--  `detail`. Row 19 is pass/fail and also names the placeholder supplier.
+--
+--  THIS FILE EXISTS BECAUSE `RAISE NOTICE` IS INVISIBLE HERE. The Supabase
+--  SQL editor shows result grids and errors, and swallows notices — so every
+--  `raise notice 'ok'` in a CATCH_UP file has never been read by anybody. A
+--  migration that wants to REPORT something has to end in a select, and its
+--  checks have to `raise exception` to be felt at all.
+--
 --  Why this file exists at all: the migrations go in by hand, so nothing on my
 --  side knows what the database has got. `node db/verify_catchups.mjs` can see
 --  which TABLES exist from outside, but not indexes, grants or row contents —
@@ -131,6 +141,109 @@ select * from (
               and p.proname in ('mark_sales_received', 'unmark_sales_received')
          ) = 2 then 'ok' else 'MISSING' end,
          'recording that a customer has paid'
+
+
+  -- ---------------------------------------------------------------- 026 ----
+  -- `stamp_approval` is a function BODY, so nothing outside the database can
+  -- read it — `verify_catchups.mjs` says so and points here. These three are
+  -- that half, and each failure is a different wrong behaviour rather than a
+  -- missing feature, which is why they are separate rows.
+  union all
+  select 13, 'CATCH_UP_026', 'stamp_approval asks is_assistant()',
+         case when (select pg_get_functiondef(p.oid) from pg_proc p
+                      join pg_namespace ns on ns.oid = p.pronamespace
+                     where ns.nspname = 'public' and p.proname = 'stamp_approval')
+                   like '%is_assistant()%'
+              then 'ok' else 'MISSING' end,
+         'without it an assistant entry never waits for review'
+
+  union all
+  select 14, 'CATCH_UP_026', 'and narrows it with is_placeholder',
+         case when (select pg_get_functiondef(p.oid) from pg_proc p
+                      join pg_namespace ns on ns.oid = p.pronamespace
+                     where ns.nspname = 'public' and p.proname = 'stamp_approval')
+                   like '%is_placeholder%'
+              then 'ok' else 'MISSING' end,
+         'without it EVERY assistant entry queues — CATCH_UP_022 section 5 reversed by accident'
+
+  union all
+  select 15, 'CATCH_UP_026', 'and a shop still waits, as before',
+         case when (select pg_get_functiondef(p.oid) from pg_proc p
+                      join pg_namespace ns on ns.oid = p.pronamespace
+                     where ns.nspname = 'public' and p.proname = 'stamp_approval')
+                   like '%is_staff()%'
+              then 'ok' else 'MISSING' end,
+         'CATCH_UP_013 undone if this is missing'
+
+  -- ---------------------------------------------------------------- 027 ----
+  union all
+  select 16, 'CATCH_UP_027', 'assistant_read on invoices excludes paid',
+         case when (select qual from pg_policies
+                     where tablename = 'invoices' and policyname = 'assistant_read')
+                   like '%paid%'
+              then 'ok' else 'MISSING' end,
+         'settled money still readable by an assistant if this is missing'
+
+  union all
+  select 17, 'CATCH_UP_027', 'the log policy excludes payment_ref',
+         case when (select qual from pg_policies
+                     where tablename = 'activity_log' and policyname = 'assistant_read')
+                   like '%payment_ref%'
+              then 'ok' else 'MISSING' end,
+         'a corrected payment reference logs as edited and would leak through'
+
+  union all
+  select 18, 'CATCH_UP_027', 'find_duplicate_invoices_assistant guarded',
+         case when (select pg_get_functiondef(p.oid) from pg_proc p
+                      join pg_namespace ns on ns.oid = p.pronamespace
+                     where ns.nspname = 'public'
+                       and p.proname = 'find_duplicate_invoices_assistant')
+                   like '%is_assistant()%'
+              then 'ok' else 'MISSING' end,
+         'security definer with no guard would read the whole ledger'
+
+  -- ---------------------------------------------------------------- 028 ----
+  -- The row itself, and the answer to the question the NOTICEs were supposed
+  -- to give and never did: a notice is invisible in the Supabase editor.
+  union all
+  select 19, 'CATCH_UP_028', 'exactly one active placeholder supplier',
+         case (select count(*) from suppliers where is_placeholder and active)
+           when 1 then 'ok'
+           when 0 then 'MISSING'
+           else 'TOO MANY'
+         end,
+         coalesce(
+           'named: ' || (select name from suppliers
+                          where is_placeholder and active
+                          order by name limit 1),
+           'no active placeholder row exists — a shop and an assistant have no way to file an unknown delivery')
+
+  union all
+  select 20, 'CATCH_UP_028', 'invoices filed against the placeholder',
+         'info',
+         'count: ' || (select count(*)::text from invoices i
+                        join suppliers s on s.id = i.supplier_id
+                       where s.is_placeholder and i.status <> 'void')
+         || ' — any that are approved need a real supplier chosen on the invoice screen'
+
+  -- ---------------------------------------------------------------- 029 ----
+  union all
+  select 21, 'CATCH_UP_029', 'suppliers_keep_placeholder trigger',
+         case when exists (select 1 from pg_trigger
+                            where tgname = 'suppliers_keep_placeholder'
+                              and not tgisinternal)
+              then 'ok' else 'MISSING' end,
+         'without it the first wipe loses the row again'
+
+  union all
+  select 22, 'CATCH_UP_029', 'ensure_placeholder_supplier is security definer',
+         case when exists (select 1 from pg_proc p
+                             join pg_namespace ns on ns.oid = p.pronamespace
+                            where ns.nspname = 'public'
+                              and p.proname = 'ensure_placeholder_supplier'
+                              and p.prosecdef)
+              then 'ok' else 'MISSING' end,
+         'as invoker it could not insert during a wipe'
 
 ) checks
 order by n;

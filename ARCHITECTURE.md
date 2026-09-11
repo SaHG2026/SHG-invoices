@@ -7072,3 +7072,87 @@ error in a hand-applied migration costs a full round trip through a person.
 > has been read. Every proxy for correctness — balanced brackets, a tidy diff,
 > a structural pass — agrees with the author right up until the grammar does
 > not.
+
+
+---
+
+## 60. The control whose comment said it existed
+
+A shop filed a real invoice on the placeholder — $300, Parramatta, note
+*"Sokko Pastry"* — and it arrived in Review exactly as §56.2 and §58 intended:
+held out of every total, Approve disabled, the note shown in full. Every part
+of two rounds of work behaved.
+
+Then the manager typed "Sokko" into the picker on the card and got **No
+supplier matches that**, with no way forward.
+
+```tsx
+// Creating from here is on purpose and is the point of the note:
+// if it is genuinely a new supplier, this is where it gets made.
+onCreate={() => {}}
+allowCreate={false}
+```
+
+The comment and the code are in the same expression and say opposite things.
+`lib/queries/review.ts` says the same thing the comment does, at length —
+*"one of the four reads the note, creates the supplier if it is genuinely new,
+and points the invoice at it — all from the review screen, because a
+correction that requires going somewhere else is a correction that does not
+get made."*
+
+So the intent was written down twice and the negation was wired once, and the
+negation won for every round that has touched this screen — including two that
+were specifically about this flow. Approve stays disabled on a placeholder by
+design, so the invoice could be neither accepted nor corrected without leaving
+the screen: the exact outcome the comment exists to prevent.
+
+> A comment describing behaviour is not behaviour. When a comment says a
+> control exists, check that it does — the two drift, and the prose is the
+> half that never fails a test.
+
+It now creates the supplier and reassigns the invoice in one action, in that
+order because `invoices.supplier_id` is a foreign key, and through
+`submitWrite` for both rather than `mutateAsync` — an offline `mutateAsync`
+never resolves, and a dock with no signal is exactly where a shop's invoice
+gets reviewed.
+
+### 60.1 The intermittent failure, captured at last
+
+HANDOFF §7 item 8 has carried this for a year: recorded as a Los_Angeles
+problem, disproved as one, left as *"timing under load is the only surviving
+hypothesis. Still never captured."*
+
+Captured. **Every failure is `Test timed out in 5000ms`, and not once an
+assertion.**
+
+| | |
+|---|---|
+| the failing tests | 5–11 seconds in the suite, milliseconds alone |
+| which files | `mark-paid`, `week-view`, `pending`, `dashboard` — the four that render 40–60 invoice rows |
+| which tests | different ones each run, on the same commit |
+| the machine | idle, 16 cores |
+
+Nothing external was loading it. **The suite saturates itself**: one jsdom per
+file, sixty files, every worker at once — and a test's five seconds is spent
+on environment setup happening around it rather than on the test.
+
+5000ms was never a budget anybody chose here. It is Vitest's generic default
+for a unit test, and these are full React trees with a `QueryClient` and sixty
+rows, sixteen at a time. `testTimeout` is now 30s, and the config carries the
+whole diagnosis so the next person does not re-derive it.
+
+**It hides nothing**, and that distinction is the point: a timeout is not an
+assertion, every one of these passes alone, and no expectation was relaxed. If
+the code breaks, the assertion still fails and no timeout saves it. What
+changed is that losing a scheduling race is no longer reported as a broken
+payment run. Six consecutive full runs, three of them under the three
+timezones, all green.
+
+`pool: 'vmThreads'` was tried first — Vitest's own hint suggests it, and it
+creates one environment per worker instead of per file. It broke
+`pin-storage.test.ts` outright: a `node:vm` context does not carry the real
+`localStorage` and `crypto` those tests exist to check. Rejected, and recorded
+so it is not tried again.
+
+> When every failure is a timeout and never an assertion, the suite is
+> reporting on the machine, not on the code.

@@ -9,8 +9,9 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from '@/components/invoice/SupplierField';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { BusinessMark } from '@/components/ui/BusinessMark';
-import { useProfiles } from '@/lib/queries/session';
-import { useSuppliers } from '@/lib/queries/reference';
+import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
+import { optimisticSupplier, useCreateSupplier, useSuppliers } from '@/lib/queries/reference';
+import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
 import { useVoidInvoice } from '@/lib/queries/payments';
 import {
   useApproveInvoices,
@@ -79,6 +80,8 @@ export function ReviewList() {
   const approve = useApproveInvoices();
   const reassign = useReassignSupplier();
   const voidInvoice = useVoidInvoice();
+  const createSupplier = useCreateSupplier();
+  const { data: profile } = useCurrentProfile();
 
   const ids = useMemo(() => rows.map((row) => row.id), [rows]);
   const { data: notes = {} } = useReviewNotes(ids);
@@ -133,6 +136,59 @@ export function ReviewList() {
     } catch {
       toast.show('Couldn’t approve that. Nothing changed.', 'problem');
     }
+  }
+
+  /*
+   * Make the supplier the note names, and move the invoice onto it.
+   *
+   * ---------------------------------------------------------------------------
+   * Two writes, in this order, and the order is a foreign key.
+   *
+   * `invoices.supplier_id` references `suppliers(id)`, so the supplier has to
+   * exist before anything can point at it. Offline they queue in the order
+   * they were made, which is the same guarantee the add-invoice sheet has
+   * relied on since Phase 7 — supplier first, then the row that references it.
+   *
+   * `submitWrite` for BOTH, not `mutateAsync`. An offline `mutateAsync` never
+   * resolves — the write is paused, not refused — so awaiting one would hang
+   * this handler at a dock with no signal, which is exactly where a shop's
+   * invoice gets reviewed on a phone.
+   *
+   * The id is generated here so a replayed write conflicts on the primary key
+   * instead of creating a second supplier (notes §1.5).
+   * ---------------------------------------------------------------------------
+   */
+  async function createAndAssign(row: ReviewRow, name: string) {
+    if (!profile) return;
+
+    const id = optimisticSupplier(crypto.randomUUID(), name).id;
+
+    const made = await submitWrite(createSupplier, { id, name, actorId: profile.id });
+    if (made.kind === 'failed') {
+      toast.show(writeFailureMessage(made.error, `Couldn’t add ${name}.`), 'problem');
+      return;
+    }
+
+    const moved = await submitWrite(reassign, {
+      id: row.id,
+      supplierId: id,
+      supplierName: name,
+    });
+    if (moved.kind === 'failed') {
+      // The supplier exists now, so say so: the half that landed is not lost,
+      // and the picker will offer it on the next attempt.
+      toast.show(
+        writeFailureMessage(moved.error, `Added ${name}, but couldn’t move this invoice onto it.`),
+        'problem',
+      );
+      return;
+    }
+
+    toast.show(
+      made.kind === 'queued' || moved.kind === 'queued'
+        ? `Added ${name} — will send when you’re back online.`
+        : `Added ${name} and moved this invoice onto it.`,
+    );
   }
 
   const total = sumCents(rows);
@@ -207,6 +263,8 @@ export function ReviewList() {
                 busy={approve.isPending || reassign.isPending}
                 onApprove={() => void approveMany([row], row.supplier.name)}
                 onReject={() => setRejecting(row)}
+                onCreateSupplier={(name) => void createAndAssign(row, name)}
+                creating={createSupplier.isPending}
                 onPickSupplier={async (supplier) => {
                   try {
                     await reassign.mutateAsync({
@@ -275,6 +333,8 @@ function ReviewCard({
   onApprove,
   onReject,
   onPickSupplier,
+  onCreateSupplier,
+  creating,
 }: {
   row: ReviewRow;
   notes: string[];
@@ -284,6 +344,9 @@ function ReviewCard({
   onApprove: () => void;
   onReject: () => void;
   onPickSupplier: (supplier: Supplier) => void;
+  /** Make the supplier the note names, and move this invoice onto it. */
+  onCreateSupplier: (name: string) => void;
+  creating: boolean;
 }) {
   const author = people.find((person) => person.id === row.created_by);
   const unlisted = row.supplier.is_placeholder;
@@ -363,10 +426,32 @@ function ReviewCard({
                 setPicking(false);
                 onPickSupplier(supplier);
               }}
-              // Creating from here is on purpose and is the point of the note:
-              // if it is genuinely a new supplier, this is where it gets made.
-              onCreate={() => {}}
-              allowCreate={false}
+              /*
+               * Creating from here is on purpose and is the point of the note:
+               * if it is genuinely a new supplier, this is where it gets made.
+               *
+               * -----------------------------------------------------------------
+               * That comment was here, above `allowCreate={false}` and an empty
+               * `onCreate`. The intent was written down and the negation was
+               * wired, and it stayed that way through every round that touched
+               * this screen — including two that were specifically about this
+               * flow.
+               *
+               * Reported from a real review: a shop filed against the
+               * placeholder with the note "Sokko Pastry", and the manager typing
+               * "Sokko" got *No supplier matches that.* and no way forward.
+               * Approve stays disabled on a placeholder, so the invoice could
+               * not be accepted OR corrected without leaving the screen — and
+               * `lib/queries/review.ts` says why that matters: "a correction
+               * that requires going somewhere else is a correction that does not
+               * get made."
+               *
+               * A comment describing behaviour is not behaviour. When one says
+               * a control exists, check that it does.
+               * -----------------------------------------------------------------
+               */
+              onCreate={onCreateSupplier}
+              creating={creating}
             />
           ) : (
             <button

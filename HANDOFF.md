@@ -123,7 +123,7 @@ all eight, and the answer will not be the same at every one.**
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 1051 tests
+npx vitest run       # 1062 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -368,6 +368,14 @@ every accent `person-N`" when what CATCH_UP_003 guaranteed was "is any accent
 still a hex colour". A standing false MISSING teaches everybody to skim past
 MISSING. **Ask what a check was protecting, not what it currently tests.**
 §59.4.
+
+**A comment describing behaviour is not behaviour.** The Review screen's
+supplier picker carried `allowCreate={false}` and an empty `onCreate`,
+directly beneath a comment saying "creating from here is on purpose and is the
+point of the note" — and `lib/queries/review.ts` said the same at length. The
+intent was written down twice and the negation wired once, and it survived
+every round that touched the screen. **When a comment says a control exists,
+check that it does.** §60.
 
 **A conditional INSERT that finds nothing is indistinguishable from
 success.** CATCH_UP_013 §5 seeded the placeholder supplier by selecting a
@@ -615,11 +623,18 @@ the feature works on a phone.
     currently answers `ok`. If a fifth tier arrives, or anybody is demoted
     after setting a time, it is the row that will say so.
 
-8. **An intermittent test failure, and it is NOT timezone-specific.** See the
-   long note in this section's history — recorded for a year as a
-   Los_Angeles problem, disproved on 2026-09-11 when it failed under UTC and
-   Sydney and passed under Los_Angeles. Timing under load is the only
-   surviving hypothesis. Still never captured.
+8. ~~An intermittent test failure, never captured.~~ **Captured and fixed,
+   2026-09-11.** Every failure was `Test timed out in 5000ms` and never an
+   assertion; the tests took 5-11 seconds in the suite and milliseconds
+   alone; the four hardest-hit files are the four that render 40-60 rows; the
+   machine was idle with 16 cores. **The suite saturates itself** — one jsdom
+   per file, sixty files, every worker at once.
+
+   `testTimeout` is 30s now, and `vitest.config.ts` carries the whole
+   diagnosis. It hides nothing: a timeout is not an assertion and no
+   expectation was relaxed. `pool: 'vmThreads'` was tried first and breaks
+   `pin-storage.test.ts`, because a `node:vm` context has no real
+   `localStorage`. §60.1.
 
 9. **`npm run lint` reports 15 problems**, all of them deliberate documented
    patterns — a ref read during render, `window.location.href` on sign-out,

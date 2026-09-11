@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => ({
   approve: vi.fn(),
   reassign: vi.fn(),
   voidInvoice: vi.fn(),
+  createSupplier: vi.fn(),
   rows: { current: [] as unknown[] },
   notes: { current: {} as Record<string, string[]> },
 }));
@@ -73,7 +74,21 @@ vi.mock('@/lib/queries/session', () => ({
 vi.mock('@/lib/queries/reference', () => ({
   useBusinesses: () => ({ data: BUSINESSES }),
   useSuppliers: () => ({ data: [...SUPPLIERS, placeholder] }),
-  useCreateSupplier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateSupplier: () => ({
+    mutateAsync: mocks.createSupplier,
+    mutate: mocks.createSupplier,
+    isPending: false,
+  }),
+  optimisticSupplier: (id: string, name: string) => ({
+    id,
+    name: name.trim(),
+    default_terms_days: null,
+    contact_name: null,
+    contact_phone: null,
+    notes: null,
+    active: true,
+    is_placeholder: false,
+  }),
 }));
 
 vi.mock('@/lib/queries/invoices', () => ({
@@ -304,6 +319,99 @@ describe('an invoice on “Supplier not listed”', () => {
         supplierName: SUPPLIERS[0]!.name,
       }),
     );
+  });
+
+  /*
+   * Making the supplier the note names, from the card.
+   *
+   * =========================================================================
+   * This is the case the whole placeholder design exists for, and it did not
+   * work. `allowCreate={false}` sat directly under a comment saying "creating
+   * from here is on purpose and is the point of the note".
+   *
+   * Reported from a real review: Parramatta filed $300 on the placeholder with
+   * the note "Sokko Pastry"; the manager typed "Sokko" and got *No supplier
+   * matches that.* Approve stays disabled on a placeholder, so the invoice
+   * could be neither accepted nor corrected without leaving the screen — and
+   * `lib/queries/review.ts` says exactly why that is fatal: "a correction that
+   * requires going somewhere else is a correction that does not get made."
+   * =========================================================================
+   */
+  it('creates the supplier the note names, and moves the invoice onto it', async () => {
+    const row = unlisted({ business_id: BUSINESSES[0]!.id, business: BUSINESSES[0] });
+    mocks.rows.current = [row];
+    mocks.notes.current = { [row.id]: ['Sokko Pastry'] };
+    open();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose the real supplier' }));
+    fireEvent.change(screen.getByLabelText('Supplier'), { target: { value: 'Sokko Pastry' } });
+
+    fireEvent.mouseDown(
+      await screen.findByRole('button', { name: /Add “Sokko Pastry” as a new supplier/ }),
+    );
+
+    await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalled());
+    expect(mocks.createSupplier.mock.calls[0]![0]).toMatchObject({ name: 'Sokko Pastry' });
+  });
+
+  it('points the invoice at the supplier it just made, not at nothing', async () => {
+    const row = unlisted({ business_id: BUSINESSES[0]!.id, business: BUSINESSES[0] });
+    mocks.rows.current = [row];
+    open();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose the real supplier' }));
+    fireEvent.change(screen.getByLabelText('Supplier'), { target: { value: 'Sokko Pastry' } });
+    fireEvent.mouseDown(
+      await screen.findByRole('button', { name: /Add “Sokko Pastry” as a new supplier/ }),
+    );
+
+    await waitFor(() => expect(mocks.reassign).toHaveBeenCalled());
+
+    // The id it reassigns to must be the id it created — the foreign key has
+    // nothing else to point at, and an invented one fails at the database.
+    const created = mocks.createSupplier.mock.calls[0]![0] as { id: string };
+    expect(mocks.reassign.mock.calls[0]![0]).toMatchObject({
+      id: row.id,
+      supplierId: created.id,
+      supplierName: 'Sokko Pastry',
+    });
+  });
+
+  it('makes the supplier BEFORE pointing anything at it', async () => {
+    const order: string[] = [];
+    mocks.createSupplier.mockImplementation(async () => {
+      order.push('supplier');
+    });
+    mocks.reassign.mockImplementation(async () => {
+      order.push('reassign');
+    });
+
+    mocks.rows.current = [unlisted({ business_id: BUSINESSES[0]!.id, business: BUSINESSES[0] })];
+    open();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose the real supplier' }));
+    fireEvent.change(screen.getByLabelText('Supplier'), { target: { value: 'Sokko Pastry' } });
+    fireEvent.mouseDown(
+      await screen.findByRole('button', { name: /Add “Sokko Pastry” as a new supplier/ }),
+    );
+
+    // `invoices.supplier_id` is a foreign key. Offline the two queue in the
+    // order they were made, so this order is the one that reaches the database.
+    await waitFor(() => expect(order).toEqual(['supplier', 'reassign']));
+  });
+
+  it('does not offer to create a supplier that already exists', async () => {
+    mocks.rows.current = [unlisted({ business_id: BUSINESSES[0]!.id, business: BUSINESSES[0] })];
+    open();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose the real supplier' }));
+    fireEvent.change(screen.getByLabelText('Supplier'), {
+      target: { value: SUPPLIERS[0]!.name },
+    });
+
+    expect(
+      screen.queryByRole('button', { name: /as a new supplier/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('never offers the placeholder as something to move onto', async () => {

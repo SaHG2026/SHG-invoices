@@ -110,7 +110,6 @@ select * from (
   --
   -- Phrased this way it cannot go stale when a fifth slot is added, because a
   -- hex colour is the only thing it was ever meant to catch.
-  union all
   select 7, 'CATCH_UP_003', 'no accent is still a hex colour',
          case when (
            select count(*) from profiles where accent like '#%'

@@ -7043,3 +7043,32 @@ So the verifier now ends with a plain listing of who can sign in, with role
 and suspension state. `info`, never `MISSING` — a fact to read, not a
 migration to run. It is the question a security review opens with (§7b), and
 until now the only way to answer it was to go and look.
+
+
+### 59.6 And then it was sent without being parsed
+
+`verify_catchups.sql` went out with two `union all` in a row and came straight
+back:
+
+```
+ERROR: 42601: syntax error at or near "union"
+LINE 113:   union all
+```
+
+The comment block added above row 7 carried its own `union all`, and the chain
+already had one — so the edit produced `union all / union all` with prose in
+between, which reads perfectly well to a human and not at all to Postgres.
+
+Two checks had been run on that file and both passed: parentheses balanced,
+and row numbers unique with no duplicates. **Neither of them is a parse**, and
+the failure was in a dimension neither looked at.
+
+It is now checked with `pglast`, which wraps libpg_query — the actual
+PostgreSQL parser, not an approximation of it. All 46 `.sql` files in the repo
+parse clean, and HANDOFF §5 carries the one-line command, because a syntax
+error in a hand-applied migration costs a full round trip through a person.
+
+> A file that has not been parsed has not been checked, however carefully it
+> has been read. Every proxy for correctness — balanced brackets, a tidy diff,
+> a structural pass — agrees with the author right up until the grammar does
+> not.

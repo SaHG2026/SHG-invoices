@@ -237,6 +237,21 @@ Not preferences. Each one is load-bearing and several were paid for.
 
 ## 5. Things that will waste your time
 
+**PARSE EVERY `.sql` FILE BEFORE SENDING IT.** A file goes to the client by
+hand and a syntax error costs a full round trip through a person — which is
+the most expensive unit of time in this project. One command, and it uses the
+REAL PostgreSQL grammar rather than a guess at it:
+
+```bash
+pip install pglast   # once
+python -c "import pglast,glob; [pglast.parse_sql(open(f,encoding='utf-8').read()) for f in glob.glob('db/**/*.sql',recursive=True)]" && echo PARSE OK
+```
+
+`verify_catchups.sql` was sent with two `union all` in a row and came back
+`ERROR: 42601: syntax error at or near "union"`. Balanced parentheses and a
+sensible-looking diff both said it was fine. **A structural eyeball is not a
+parse.** All 46 files parse clean as of 2026-09-11.
+
 **Bash heredocs break here, and backslashes are the worst of it.** Writing a
 `.tsx`, `.sql` or `.md` file with `cat <<'EOF'` fails on apostrophes, `$$` and
 em dashes — and a `python - <<'PY'` heredoc silently collapses `\\n` to a real

@@ -48,9 +48,39 @@ interface AppChromeProps {
    * covering the button that finishes the first. Reported with a photograph.
    */
   add?: 'floating' | 'bar' | 'none';
+  /**
+   * What this screen is a list OF, offered first when the `+` is pressed.
+   *
+   * ---------------------------------------------------------------------------
+   * The `+` used to mean "invoice" everywhere, including on Suppliers.
+   *
+   * Reported: *"the + on supplier interface is creating invoice still"*. It is
+   * the right complaint. §16 made the `+` global because writing to the ledger
+   * is not hierarchical — you should be able to log an invoice from anywhere
+   * without walking into a business first — and that reasoning is sound and is
+   * why the button is still there on every screen. But "global" was
+   * implemented as "means one thing", and those are not the same claim.
+   *
+   * On a screen that is a list of suppliers, the thing under your thumb should
+   * be able to add a supplier. Every one of these screens already HAS an add
+   * panel, at the top, above a search box and above a list that on a real
+   * Monday is thirty rows long — so the panel is a scroll away and the `+` is
+   * not, and the `+` was pointing at the wrong ledger entirely.
+   *
+   * This does not replace the invoice path, it precedes it. Pressing `+` on
+   * Suppliers now asks, with "New supplier" first and "From a supplier" under
+   * it, exactly as Deli's screens have asked "which ledger" since Receivables
+   * was added. Nothing is taken away; one thing is added above it.
+   *
+   * The dashboard passes nothing here, deliberately. It is the fifteen-second
+   * path, it is what the app opens to, and a question there would cost a tap
+   * on the one screen where taps are counted.
+   * ---------------------------------------------------------------------------
+   */
+  addHere?: { label: string; onPress: () => void };
 }
 
-export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) {
+export function AppChrome({ children, back, add = 'floating', addHere }: AppChromeProps) {
   /*
    * Keyed on the path so the animation replays on every navigation.
    *
@@ -88,8 +118,13 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
   const [salesOpen, setSalesOpen] = useState(false);
   const [asking, setAsking] = useState(false);
 
+  /*
+   * The `+` asks a question only when there is more than one true answer.
+   * A question with one right answer is not a question — §17, and it is what
+   * keeps the dashboard at one tap.
+   */
   function pressedAdd() {
-    if (sellsAsWell) setAsking(true);
+    if (addHere || sellsAsWell) setAsking(true);
     else setSheetOpen(true);
   }
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -239,11 +274,18 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
         {children}
       </main>
 
+      {/*
+        The name follows what the button does. On a list screen it opens a
+        choice, and a screen reader announcing "Add invoice" for a control
+        whose first option is "New supplier" is the same broken promise §39.1
+        caught in a link label — a label is a promise, and an unkept one reads
+        as broken.
+      */}
       {add === 'none' ? null : add === 'floating' ? (
         <button
           type="button"
           onClick={pressedAdd}
-          aria-label="Add invoice"
+          aria-label={addHere ? 'Add' : 'Add invoice'}
           className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-action text-h1 text-action-text shadow-(--shadow-lift)"
           style={{ bottom: `calc(1rem + env(safe-area-inset-bottom, 0px))` }}
         >
@@ -275,17 +317,18 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
       {menuOpen ? <NavDrawer onClose={() => setMenuOpen(false)} /> : null}
 
       {/*
-        Which direction? Only asked inside Deli Delights and on the customer
-        screens. Two large targets rather than a dropdown: this is the first
-        thing between a person and entering an invoice, and it should cost one
-        tap and no reading.
+        Which one? Asked inside Deli Delights and on the customer screens
+        (which ledger), and on any screen that is a list of something (that
+        thing, or an invoice). Large targets rather than a dropdown: this is
+        the first thing between a person and entering an invoice, and it should
+        cost one tap and no reading.
       */}
       {asking ? (
         <div
           className="fixed inset-0 z-50 flex items-end"
           role="dialog"
           aria-modal="true"
-          aria-label="What kind of invoice?"
+          aria-label={addHere ? 'What would you like to add?' : 'What kind of invoice?'}
         >
           <div
             aria-hidden
@@ -300,7 +343,28 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
               paddingBottom: `calc(1rem + env(safe-area-inset-bottom, 0px))`,
             }}
           >
-            <p className="mb-3 text-xs uppercase tracking-widest text-muted">New invoice</p>
+            <p className="mb-3 text-xs uppercase tracking-widest text-muted">
+              {addHere ? 'Add' : 'New invoice'}
+            </p>
+
+            {/*
+              First, because it is what this screen is about. Somebody who
+              pressed `+` on Suppliers meant a supplier far more often than
+              they meant an invoice — and if they did mean the invoice it is
+              still one tap, directly underneath.
+            */}
+            {addHere ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAsking(false);
+                  addHere.onPress();
+                }}
+                className="touch mb-2 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
+              >
+                <span className="text-base font-medium text-ink">{addHere.label}</span>
+              </button>
+            ) : null}
 
             <button
               type="button"
@@ -308,21 +372,32 @@ export function AppChrome({ children, back, add = 'floating' }: AppChromeProps) 
                 setAsking(false);
                 setSheetOpen(true);
               }}
-              className="touch mb-2 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
+              className={`touch ${sellsAsWell ? 'mb-2' : 'mb-3'} flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink`}
             >
-              <span className="text-base font-medium text-ink">From a supplier</span>
+              <span className="text-base font-medium text-ink">
+                {addHere ? 'Invoice from a supplier' : 'From a supplier'}
+              </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setAsking(false);
-                setSalesOpen(true);
-              }}
-              className="touch mb-3 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
-            >
-              <span className="text-base font-medium text-ink">To a customer</span>
-            </button>
+            {/*
+              Only where there genuinely is a second ledger. On Suppliers this
+              row would offer to invoice a customer from a screen that has
+              nothing to do with customers.
+            */}
+            {sellsAsWell ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAsking(false);
+                  setSalesOpen(true);
+                }}
+                className="touch mb-3 flex w-full items-center rounded-sm border border-edge px-4 text-left text-base font-medium text-ink"
+              >
+                <span className="text-base font-medium text-ink">
+                  {addHere ? 'Invoice to a customer' : 'To a customer'}
+                </span>
+              </button>
+            ) : null}
 
             <button
               type="button"

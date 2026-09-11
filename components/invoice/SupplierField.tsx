@@ -36,6 +36,24 @@ import type { Supplier } from '@/lib/types';
  * search, one-handed, without typing anything. Two intentions, two gestures,
  * neither of them the default.
  * ---------------------------------------------------------------------------
+ *
+ * ---------------------------------------------------------------------------
+ * Browsing no longer hides the way to add.
+ *
+ * `offerCreate` used to carry `&& !browsing`, which made the Add control
+ * unreachable along the one path somebody takes when they most need it: open
+ * the list, scroll it, find that the supplier genuinely is not there. That is
+ * the moment you want to add one, and it was the moment the control was gone —
+ * so the field looked, correctly, like it had no way to add a supplier.
+ *
+ * §24.7 is the same failure on the customers screen, reported twice: **a
+ * control that is absent along the path somebody actually walks is absent.**
+ * Being present along a different path is not a defence.
+ *
+ * So browsing is no longer part of the question. With something typed, the
+ * ordinary Add row appears under the browse list; with nothing typed there is
+ * nothing to name, so a row says so and puts the cursor back in the field.
+ * ---------------------------------------------------------------------------
  */
 
 interface SupplierFieldProps {
@@ -93,7 +111,14 @@ export function SupplierField({
     [suppliers, query, recentIds, browsing, includePlaceholder],
   );
 
-  const offerCreate = allowCreate && !browsing && canCreateSupplier(suppliers, query);
+  const offerCreate = allowCreate && canCreateSupplier(suppliers, query);
+
+  /*
+   * Browsing with nothing typed: there is no name to offer, so the row says
+   * what to do instead of vanishing. It is not disabled — it puts the cursor
+   * in the field, which is the whole of what it is asking for.
+   */
+  const offerTypeToAdd = allowCreate && browsing && !offerCreate;
 
   function choose(supplier: Supplier) {
     onSelect(supplier);
@@ -183,13 +208,30 @@ export function SupplierField({
             </li>
           ))}
 
-          {matches.length === 0 && !offerCreate ? (
+          {matches.length === 0 && !offerCreate && !offerTypeToAdd ? (
             <li className="px-3 py-3 text-sm text-muted">
               {!allowCreate
                 ? 'No supplier matches that.'
-                : browsing
-                  ? 'No suppliers yet. Type a name to add the first one.'
-                  : 'No supplier matches that. Keep typing to add a new one.'}
+                : 'No supplier matches that. Keep typing to add a new one.'}
+            </li>
+          ) : null}
+
+          {offerTypeToAdd ? (
+            <li className="border-t border-hairline">
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  setBrowsing(false);
+                  setTyping(true);
+                  inputRef.current?.focus();
+                }}
+                className="touch flex w-full items-center px-3 text-left text-base text-action active:bg-pressed"
+              >
+                {matches.length === 0
+                  ? 'No suppliers yet — type a name to add the first one'
+                  : 'Not on the list? Type a name to add it'}
+              </button>
             </li>
           ) : null}
 

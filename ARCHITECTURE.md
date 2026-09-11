@@ -6455,3 +6455,395 @@ is the point), and nine `set-state-in-effect` findings that are all the
 A linter meeting a codebase for the first time will always have opinions about
 decisions it was not present for. The two that were bugs are fixed; the rest
 are not bugs.
+
+
+---
+
+## 56. Round K — the three finds, and the hole one of them opened
+
+Three reports, in the client's words. Two were about controls that existed and
+could not be found, and the third was a question rather than a request. Chasing
+the first one down found something neither of us had asked about.
+
+### 56.1 "No option to create a new supplier when entering invoice"
+
+The option existed and had done for phases. `canCreateSupplier` was written in
+Phase 7 and `SupplierField` has offered `+ Add "X" as a new supplier` ever
+since. So the report and the code were both right, which means the question is
+*along which path*.
+
+`offerCreate` carried three conditions:
+
+```
+allowCreate && !browsing && canCreateSupplier(suppliers, query)
+```
+
+The middle one is the bug. `browsing` is the chevron — "show me everything,
+one-handed, without typing" — and it is **exactly the gesture somebody makes
+when they are not sure the supplier is there**. Open the list, scroll it, find
+it is genuinely missing: that is the moment you want to add one, and it was the
+moment the control was removed. Type-first users never saw the problem, because
+the Add row sits under their search results the whole time.
+
+**§24.7 is the same failure, on the customers screen, reported twice.** Its
+sentence is the one worth keeping: a control absent along the path somebody
+actually walks is absent, and being present along a different path is not a
+defence. That makes this a pattern, not a coincidence — twice now the answer
+to "there is no way to add one" has been "there is, just not where you looked".
+
+Two changes. `!browsing` is gone, so a typed name still offers its Add row
+under the full list. And browsing with nothing typed gets a row of its own —
+*Not on the list? Type a name to add it* — which puts the cursor back in the
+field, because with an empty query there is no name to offer and a control that
+simply vanishes is what caused this.
+
+### 56.2 The hole that opened underneath it
+
+Chasing 56.1 through the tiers turned up something nobody reported, and it is
+worse than the thing that was reported.
+
+**An assistant filing against "Supplier not listed" was landing in the ledger,
+not in Review.**
+
+CATCH_UP_022 gave the assistant tier the venue's placeholder row, correctly:
+neither may create a supplier, and §36.7 had already built the answer. But in
+the venue's design the placeholder is **half a mechanism**. The other half is
+the Review screen, where a manager reads the note, creates the real supplier
+and reassigns the invoice — and the only rows that screen shows are the ones
+`stamp_approval` held back, which it did for `is_staff()` and nobody else.
+
+So an assistant's placeholder invoice was approved on the way in. It went
+straight into Pending, into the owed total, filed against a placeholder, with
+no screen anywhere asking anybody to fix it — and the assistant could not see
+it either, because the ledger query excludes exactly the rows they would need.
+§36.7 names this outcome in the paragraph explaining why `includePlaceholder`
+is default-off everywhere else:
+
+> "a member who files against it loses an invoice in plain sight"
+
+**CATCH_UP_026 adds one case to the trigger**, and the narrowness is the whole
+design:
+
+```
+is_staff()                     → held.  A shop, unchanged since 013.
+is_assistant() AND placeholder → held.  New.
+everything else                → approved.
+```
+
+This is **not** CATCH_UP_022 §5 reversed. That decision — an assistant's
+entries do not wait for review — was argued on three grounds: they are a named
+person rather than a shared counter login, the tier exists to stop somebody
+altering or settling the ledger rather than because what they type is doubted,
+and queueing everything would make a manager the bottleneck for every invoice.
+**All three still hold, and none of them is about this case.** An assistant
+naming a real supplier is approved on the way in exactly as before.
+
+What queues is the case where the record is not finished: *which supplier is
+this?* Nobody can answer it from the row, the assistant is not permitted to
+answer it, and the answer is in a note only Review displays.
+
+> The test is not "do we trust this person". It is "is this record finished".
+
+The note became required on that path too, which the venue sheet has done since
+Round B and this sheet never did — the one blocking check in a screen whose
+every other check is a warning (spec §6), for the reason §36.7 gives: an
+invoice against the placeholder with nothing written down is a record saying
+money arrived from nobody.
+
+**The app-side flag is a rendering hint and nothing more.** `awaitsReview` on
+`CreateInvoiceInput` decides only what `onMutate` draws before the trigger has
+run; the trigger overwrites `approved_at` both ways and does not consult it.
+It exists because the two possible rows go to two different places, and putting
+an unapproved row into the unpaid array means it vanishes on the first refetch
+— which reads as the invoice not having saved.
+
+### 56.3 "The + on supplier interface is creating invoice still"
+
+Correct, and the fix is smaller than the principle it has to leave intact.
+
+§16 made the `+` global because *reading* the ledger is hierarchical and
+*writing* to it is not — you should be able to log an invoice from anywhere
+without walking into a business first, and that is three seconds of the fifteen
+saved. That reasoning is untouched. What was wrong is that "global" had been
+implemented as **"means one thing"**, and those are different claims.
+
+On a screen that is a list of suppliers, the control under your thumb should be
+able to add a supplier. Every one of these screens already had an add panel —
+at the top, above a search box, above a list that on a real Monday is thirty
+rows long. The panel is a scroll away; the `+` is not.
+
+`AppChrome` takes `addHere`, and the mechanism was already there: Deli's
+screens have asked "which ledger?" since Receivables. Now any list screen asks
+"which thing?", with its own first and the invoice directly under it. Nothing
+was taken away; one row was added above it. The dashboard passes nothing and
+still opens the sheet in one tap, because it is the path the fifteen seconds is
+measured on.
+
+The `aria-label` moves with it — `Add` rather than `Add invoice` where the
+button opens a choice. §39.1: a label is a promise.
+
+### 56.4 And the Suppliers screen still had the bare field
+
+The reason the `+` was being reached for at all. Suppliers had an unlabelled
+input whose only wording was placeholder text, directly above a real search
+box — **the exact arrangement §24.7 fixed on Customers a year ago**, with the
+exact consequence §24.7 predicted. Products got the titled-panel treatment;
+Suppliers was missed. It has it now.
+
+### 56.5 Checking for a supplier you already have
+
+Asked for alongside the merge question, and it needed a different answer in two
+places rather than one.
+
+`suppliers_name_ci` and `customers_name_ci` refuse a character-for-character
+repeat and nothing else. The case that actually happens is *Global Foods
+Department* and *GFD*.
+
+**The add-invoice sheet needed nothing.** Its type-ahead already puts the
+closest existing suppliers directly above the Add row, and `rankSuppliers`
+scores a subsequence — so "gfd" surfaces "Global Foods Department" before the
+Add row is even reachable. The picker *is* the duplicate check there.
+
+The plain name field on the Suppliers and Customers screens had nothing looking
+at all, so `lib/derive/near-match.ts` is new: normalise away case, punctuation
+and company noise (`pty`, `ltd`, `group`, …), then test four relations —
+identical after normalising, initials against the compact form, one name a
+whole-word prefix of the other, and a capped Levenshtein for typos, floored so
+that two letters of a five-letter word is not a "typo".
+
+A warning, never a block (spec §6). *Global Foods Group* and *Global Foods Pty
+Ltd* can genuinely be two businesses, and the cost of the two mistakes is not
+symmetrical: a false positive is one dialog, a false negative is a merge by
+hand later. The matched name in the dialog is a **link**, so "is that the same
+one?" is one tap rather than a memory test.
+
+### 56.6 Merging two suppliers — asked, not built
+
+*"How difficult is it to merge it?"* Easier than it sounds, and the reason is
+the schema:
+
+```
+supplier_id uuid not null references suppliers(id)
+```
+
+That is the **only** foreign key to `suppliers` in the database, and nothing
+denormalises the name onto a row — every screen, the PDF, the CSVs and the
+workbook read it through a live join. So a merge is an `update` re-pointing
+`invoices.supplier_id`, then deactivating the absorbed row (rule 5 — never
+delete). Totals re-derive because they are derived; `internal_ref` is built
+from the business code so nothing is renumbered; the audit trigger writes a row
+per invoice moved, so the merge leaves its own trail.
+
+`useReassignSupplier` already does exactly this for one invoice. A merge is
+that, batched and gated — which is the one part needing thought: a
+`SECURITY DEFINER` RPC behind `is_owner()` or `is_manager_or_above()`, one
+transaction, all-or-nothing. Plus a decision about whose terms and contact
+survive, and the knowledge that the absorbed id lingers harmlessly in
+`recents` in localStorage until `rankSuppliers` filters it as inactive.
+
+Not built. It was a question.
+
+### 56.7 What the browser found that the tests could not
+
+Every assertion in 56.2 passed while the refusal it asserts was **invisible on
+a phone**.
+
+The note is the last field in the sheet and its error renders below it. At
+375×812 it sat 6px under the fold; at 360×640, **142px** — so tapping Save did
+nothing, visibly, and the reason was off-screen. jsdom does no layout, so no
+rendering test could ever have seen it. Measured with `getBoundingClientRect`,
+which HANDOFF §5 says to use and which has now found this class of bug three
+times.
+
+Two fixes, and the first was not even about this. The hint under the supplier
+field still read *"Not on the list? Choose Supplier not listed…"* **after** the
+placeholder had been chosen — the interface not keeping up with the person.
+Removing it took the sheet from 685px of content to 648px, which is exactly the
+scroller's height: nothing below the fold at all on that phone. The second is a
+`scrollIntoView` on refusal, which is what saves the 360px case.
+
+A scroll is right *there* and wrong on the Suppliers `+`, and the difference is
+worth keeping: on refusal nothing else is moving — the sheet is open and
+settled, no keyboard is arriving. Focusing the add field from the `+` has a
+keyboard coming and a viewport resizing, and a smooth scroll on top of that is
+the second animation that Rounds B and E spent two rounds removing.
+
+`scrollIntoView` is now stubbed in `test/setup.ts` rather than guarded in the
+components — jsdom not implementing it is not a thing a component should be
+defending against.
+
+**The venue sheet had the identical bug**, has had it since Round B, and got
+the identical fix. It was never reported, which is the point: a shop that taps
+Save and sees nothing does not file a ticket, it taps Save again.
+
+### 56.8 Where the counts landed
+
+1035 tests under three timezones, up from 1010. New: `near-match.test.ts` (23,
+half of them asserting what must **not** be flagged), `assistant-unlisted.test.tsx`
+(11, including three that CATCH_UP_022 §5's decision is still intact), and the
+browse-path cases on the add-invoice sheet. `preview-add.test.tsx` joins the
+five preview harnesses and writes the four states this round added.
+
+`npm run lint` still reports the same 15, and §55.6 still applies to all of
+them.
+
+
+---
+
+## 57. Round K2 — one missing column, and a curtain made into a wall
+
+Two reports after the Round K deploy. The first sounded like the same
+complaint again and was a different bug underneath it; the second was a
+straightforward instruction that turned out to have four doors.
+
+### 57.1 "Still no option to choose Supplier not listed"
+
+Round K had just fixed the Add control on the supplier picker, so a report
+that the placeholder still could not be chosen read at first like the same
+ground. It was not. **No supplier query in the app ever selected
+`is_placeholder`.**
+
+```
+.select('id, name, default_terms_days, contact_name, contact_phone, notes, active')
+```
+
+Three queries, each listing its columns by hand, each missing the same one,
+each ending `as Supplier[]`. **A cast is an assertion, not a check.** `tsc`
+was satisfied, every row arrived with `is_placeholder: undefined`, and one
+absent boolean broke the feature in *both directions at once*:
+
+- `placeholderSupplier()` found nothing, so the hint — *"Not on the list?
+  Choose Supplier not listed and write who it is from in the note"* — never
+  rendered, for a shop or an assistant. The row was in the picker the whole
+  time, filed alphabetically under S, with nothing anywhere saying what it was
+  for. Reported as the option not existing, which is exactly what it was.
+- `onPlaceholder` was `undefined`, so the required note never blocked — on the
+  venue sheet **since Round B** — and Round K's `awaitsReview` was never set.
+- `rankSuppliers` excludes it with `!supplier.is_placeholder`, and
+  `!undefined` is `true`. So the one row that is default-off everywhere had
+  been visible to the four all along, which is §36.7's "loses an invoice in
+  plain sight" pointed at the people it was written to protect.
+
+**The database was right throughout.** `stamp_approval` reads
+`is_placeholder` off the row and has never trusted the client, so nothing was
+ever actually misfiled — CATCH_UP_026 was doing its job while the screen in
+front of it could not see the flag.
+
+**Why nothing caught it, which is the part worth keeping.** Every fixture and
+every mock sets `is_placeholder`, because they are written against the *type*.
+The select string is the only thing that decides which columns actually
+arrive, and nothing compared the two. That is §39.8 in a new costume — a mock
+that cannot produce a real state guarantees bugs in it — and it is why the fix
+is not simply "add the column":
+
+`SUPPLIER_COLUMNS` is now one exported constant used by all three queries, and
+`test/unit/supplier-columns.test.ts` compares it against the keys of
+`optimisticSupplier()`, which is already the single definition of a complete
+`Supplier` in runtime values. Add a column to the type, and the test fails
+until the query asks for it. It was checked by deletion: removing
+`is_placeholder` fails two assertions, restoring it passes.
+
+> A hand-written column list next to a cast is a type that stops being
+> checked. Generate the list from something, or compare it to something.
+
+### 57.2 "For assistants hide payment history" — and the four doors
+
+§52 had argued the other way, and argued it well: an assistant reads every
+business's ledger, paid and unpaid, because the tier exists so somebody cannot
+ALTER or SETTLE the ledger, not because what they see is doubted. That is a
+good answer to a different question. *"Is settled money any of this tier's
+business"* is the owner's question and the owner has answered it. The old
+reasoning is kept in `lib/nav.ts` rather than deleted, so a later round does
+not rediscover it and quietly put the row back.
+
+The work was not the menu row. It was finding that **payment history has four
+doors** and only one of them is a screen you navigate to:
+
+| | |
+|---|---|
+| the drawer row | `navItemsFor` — `history` added to the hidden list |
+| the History link on every business | `WeekView`, which had its own copy |
+| the URL | `HistoryList` refuses, and waits for the profile first |
+| **the activity bell** | announces *"Mani marked paid"* with no screen at all |
+
+The fourth is the one that makes this worth a section. It is not navigation,
+nothing links to it, and it would have sat in the header announcing every
+payment to the one person told not to see them — while the menu made the job
+look finished.
+
+So the rule is written once, `maySeePaymentHistory`, and asked four times.
+Named for what it asks rather than who it is about, so that a fifth tier
+answers it on its own terms instead of inheriting whatever `isAssistant`
+happens to mean by then. **It is the ninth allowlist** — §46.3 named six, §52
+made it eight — and HANDOFF §2's trap applies: written by exclusion, a tier
+added later is *included* by default.
+
+`HistoryList` waits for `isLoading` before deciding. `isAssistant(undefined)`
+is false, so rendering during the frame before the profile arrives would flash
+the entire paid ledger at the one account that must not see it — the same
+"must not flicker in this direction" the owner's controls have.
+
+### 57.3 The protection that would have broken silently
+
+CATCH_UP_027 narrows `assistant_read` on `invoices` to `status <> 'paid'`,
+which is the difference between a curtain and a wall. It also very nearly
+removed a safety feature by accident.
+
+`find_duplicate_invoices` (migration 004) is **security invoker** over `setof
+invoices`. Narrow the SELECT policy and the duplicate check narrows with it:
+an assistant would stop being warned about an invoice that had already been
+paid — the most useful warning it gives — and would have found out by entering
+one twice.
+
+**CATCH_UP_010 §5 hit this exact wall for the shops** and left the answer
+behind: a narrowed `find_duplicate_invoices_staff`, SECURITY DEFINER, bounded
+by `staff_venue()`. §3 of 027 is the same shape one tier along, bounded by
+`is_assistant()` written into the WHERE — the staff version can lean on
+`staff_venue()` returning null for everybody else, and this one has no such
+accident to rely on.
+
+`internal_ref` and `created_by` are in its return list on purpose. They are
+two of the five facts spec §6 asks the warning to print, and neither is
+payment information: a reference is stamped at insert by a trigger, an author
+by `auth.uid()`. What is withheld is the set that only exists once money
+moves — `status`, `paid_at`, `paid_by`, `payment_ref`.
+
+> A permission change is not allowed to weaken a protection as a side effect.
+> Ask what else reads through the policy you are narrowing.
+
+### 57.4 The `detail` half of the log
+
+The activity policy filters on `action`, which is the obvious half — `paid`
+and `unpaid` are named actions. The half that is easy to miss is that
+`payment_ref` is a tracked field on the audit trigger, so a payment reference
+*corrected* on an already-paid invoice changes no status and is logged as
+`edited`. `lib/derive/activity.ts` renders it as "payment reference".
+
+An action-only filter lets that through. Both the policy and the bell exclude
+`detail ? 'payment_ref'` as well.
+
+The bell filters in the component rather than in `useRecentActivity`, because
+that query is one cached list and a query that quietly returns different rows
+per role is right once and wrong the next time it is reused. The unseen badge
+counts the filtered list, so it cannot offer "3 new" that opens onto two
+entries — a small lie, and the kind that survives review because both halves
+look correct alone.
+
+### 57.5 What is deliberately still readable
+
+`invoice_notes` keeps its unconditional assistant read. A note is free text
+and one of them will eventually say "paid this on Friday" — but notes are the
+channel the whole placeholder mechanism depends on (CATCH_UP_026), and
+filtering free text on what it might mention is a guess that fails in both
+directions. Recorded as a known edge rather than left to look like an
+oversight.
+
+### 57.6 Counts
+
+1051 tests under three timezones, up from 1035. New:
+`supplier-columns.test.ts` (4, proven by deletion) and
+`payment-history.test.tsx` (12, covering all four doors and every role in both
+directions; the bell filter and the menu row were both proven by deletion
+too).
+
+`npm run lint` still reports the same 15, and §55.6 still applies.

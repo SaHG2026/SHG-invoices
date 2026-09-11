@@ -321,13 +321,13 @@ describe('an invoice on “Supplier not listed”', () => {
 });
 
 describe('rejecting', () => {
-  it('asks first, and says the shop will not be told', () => {
+  it('asks first, and says whoever entered it will not be told', () => {
     mocks.rows.current = [listed({ business_id: BUSINESSES[0]!.id, business: BUSINESSES[0] })];
     open();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     const dialog = within(screen.getByRole('alertdialog'));
-    expect(dialog.getByText(/The shop is not told/)).toBeInTheDocument();
+    expect(dialog.getByText(/Whoever entered it is not told/)).toBeInTheDocument();
     expect(mocks.voidInvoice).not.toHaveBeenCalled();
   });
 

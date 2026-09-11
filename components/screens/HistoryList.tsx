@@ -5,7 +5,8 @@ import { AppChrome } from '@/components/app/AppChrome';
 import { PersonChip } from '@/components/ui/PersonChip';
 import { InvoiceRow } from '@/components/invoice/InvoiceRow';
 import { useSydneyToday } from '@/hooks/use-sydney-today';
-import { useProfiles, useTeam } from '@/lib/queries/session';
+import { useCurrentProfile, useProfiles, useTeam } from '@/lib/queries/session';
+import { maySeePaymentHistory } from '@/lib/nav';
 import { useBusinesses, useSuppliers } from '@/lib/queries/reference';
 import { useHistory } from '@/lib/queries/history';
 import { formatCents, sumCents } from '@/lib/money';
@@ -25,6 +26,7 @@ import { businessForScope, isAll, scopeHref, scopeLabel, type Scope } from '@/li
  */
 export function HistoryList({ scope }: { scope: Scope }) {
   const today = useSydneyToday();
+  const { data: profile, isLoading: profileLoading } = useCurrentProfile();
   // Everybody, for naming whoever paid a given invoice.
   const { data: people = [] } = useProfiles();
   // The three who pay things, for the filter chips. ARCHITECTURE §28.2.
@@ -50,6 +52,40 @@ export function HistoryList({ scope }: { scope: Scope }) {
 
   const { data: invoices = [], isLoading } = useHistory(filters, suppliers);
   const shownTotal = useMemo(() => sumCents(invoices), [invoices]);
+
+  /*
+   * The third door, and the only one that is not a link: this URL.
+   *
+   * Hiding the menu row and the week view's link would leave a bookmark, a
+   * back button and a typed address all still working — and a screen somebody
+   * can still reach is a screen that is not hidden. The queries above still
+   * run, because RLS is what actually decides (CATCH_UP_027 makes it so);
+   * this is the interface not offering what it has been told not to show.
+   *
+   * `profileLoading` is waited on deliberately. `isAssistant(undefined)` is
+   * false, so rendering before the profile arrives would flash the whole
+   * history at the one person who must not see it -- the same "must not
+   * flicker in this direction" the owner's controls have (tiers.test.tsx).
+   */
+  if (profileLoading) {
+    return (
+      <AppChrome back={{ href: scopeHref(scope), label: scopeLabel(scope, businesses) }}>
+        <p className="text-sm text-muted">Loading…</p>
+      </AppChrome>
+    );
+  }
+
+  if (!maySeePaymentHistory(profile)) {
+    return (
+      <AppChrome back={{ href: scopeHref(scope), label: scopeLabel(scope, businesses) }}>
+        <h1 className="text-h1 mb-3 text-ink">History</h1>
+        <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
+          Paid invoices aren&rsquo;t part of your access. What is still owed is on{' '}
+          <span className="text-ink">Invoices</span>.
+        </p>
+      </AppChrome>
+    );
+  }
 
   return (
     <AppChrome back={{ href: scopeHref(scope), label: scopeLabel(scope, businesses) }}>

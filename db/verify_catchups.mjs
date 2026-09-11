@@ -305,6 +305,70 @@ await fn('set_user_active', 'set_user_active', { p_profile_id: NO_SUCH_ID, p_act
 console.log('  ?      set_user_active is security definer      — see §3 of CATCH_UP_025');
 console.log('  ?      profiles.active is still not grantable   — see §3 of CATCH_UP_025');
 
+console.log('\nCATCH_UP_026 — an assistant on "Supplier not listed" waits for review\n');
+/*
+ * Nothing new to probe, and that is the honest report rather than a gap.
+ *
+ * This file adds no table, no view and no function — it REPLACES the body of
+ * `stamp_approval`, which has existed since CATCH_UP_013. A probe from out
+ * here can only find out that a function exists, and it existed before; it
+ * cannot read a body, and `pg_get_functiondef` is not reachable with the anon
+ * key. So a green line here would be a claim, not a check — which is exactly
+ * what §43.2 caught this file doing across five migrations.
+ *
+ * The three facts that actually matter are all read out of the function's
+ * source by §3 of the SQL file, which raises on each:
+ *   - it asks `is_assistant()` at all, or the file did not apply
+ *   - it looks at `is_placeholder`, or it holds back EVERY assistant entry
+ *     and CATCH_UP_022 §5's decision is silently reversed
+ *   - it still holds a shop back, or CATCH_UP_013 has been undone
+ */
+console.log('  ?      stamp_approval asks is_assistant()       — see §3 of CATCH_UP_026');
+console.log('  ?      ...and narrows it with is_placeholder    — see §3 of CATCH_UP_026');
+console.log('  ?      ...and a shop still waits, as before     — see §3 of CATCH_UP_026');
+console.log('  ?      nothing stranded on the placeholder      — see §5 of CATCH_UP_026');
+
+console.log("\nCATCH_UP_027 — settled money is none of an assistant's business\n");
+/*
+ * Existence only, and this one answers DIFFERENTLY from every other probe in
+ * this file. Read the line before assuming it is wrong.
+ *
+ * `find_duplicate_invoices_staff` comes back "exists, refused (42501)".
+ * This one comes back a plain "exists" — no error, no rows — and the
+ * difference is evaluation order, not permissions:
+ *
+ *   the staff version compares `i.business_id = staff_venue()`, so
+ *   `staff_venue()` MUST be evaluated to make the comparison, and it refuses
+ *
+ *   this one carries `is_assistant()` as its own conjunct, and the probe
+ *   passes an id that matches nothing — so the planner satisfies the WHERE
+ *   on the id alone and never has to evaluate the guard
+ *
+ * **That is not a hole, and the reasoning is the point.** For any row to be
+ * RETURNED every conjunct must be true, so `is_assistant()` is evaluated the
+ * moment it could matter — and it is false for anon, for a venue and for a
+ * manager. The only case it is skipped is the case that returns nothing
+ * anyway. Zero rows either way.
+ *
+ * So this line proves the function is there and nothing else. That the guard
+ * is IN it is read out of the function source by §5 of the SQL file, which is
+ * the half that has to be run in Supabase.
+ *
+ * Why the function exists at all: narrowing the assistant SELECT policy would
+ * otherwise have narrowed the duplicate check with it, because
+ * `find_duplicate_invoices` is security invoker over `setof invoices` — an
+ * assistant would simply stop being warned about an invoice already paid.
+ * CATCH_UP_010 §5 hit the same wall for the shops.
+ */
+await fn('find_duplicate_invoices_assistant', 'find_duplicate_invoices_assistant', {
+  p_supplier_id: NO_SUCH_ID,
+  p_invoice_number: 'probe',
+  p_lookback_days: 1,
+});
+console.log('  ?      assistant_read on invoices excludes paid          — see §5 of CATCH_UP_027');
+console.log('  ?      ...and the log excludes payment_ref too           — see §5 of CATCH_UP_027');
+console.log('  ?      the duplicate function has an is_assistant() guard — see §5 of CATCH_UP_027');
+
 console.log('\nNot checkable from here — run db/verify_catchups.sql in Supabase:\n');
 console.log('  ?     CATCH_UP_002  the unique index on invoices.internal_ref');
 console.log('  ?     CATCH_UP_003  accents stored as person-1..4 rather than hex');

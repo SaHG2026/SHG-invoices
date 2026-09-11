@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { findNearMatches, nearMatchWording } from '@/lib/derive/near-match';
 import { useCurrentProfile } from '@/lib/queries/session';
 import { optimisticSupplier, useCreateSupplier } from '@/lib/queries/reference';
 import { submitWrite, writeFailureMessage } from '@/lib/offline/submit';
@@ -37,6 +39,27 @@ export function SuppliersList() {
   const [query, setQuery] = useState('');
   const [newName, setNewName] = useState('');
 
+  /*
+   * So the `+` can reach the add field. The panel is at the top of the screen
+   * and the list under it is long; the button is under the thumb. Pointing one
+   * at the other is a shortcut to the single place a supplier is added, which
+   * is not the same as a second way of adding one.
+   */
+  const addFieldRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * `focus()` and nothing else — no `scrollIntoView` beside it.
+   *
+   * Focusing already scrolls the field into view, and on a phone it also opens
+   * the keyboard, which resizes the viewport underneath. A smooth scroll added
+   * on top would be a second movement racing the first, which is precisely the
+   * bug the supplier type-ahead spent two rounds on ("springs with so much
+   * force and then bounces a couple times"). One movement.
+   */
+  function focusAddField() {
+    addFieldRef.current?.focus();
+  }
+
   /** Outstanding per supplier, from the one unpaid array already in memory. */
   const owing = useMemo(() => {
     const totals = new Map<string, number>();
@@ -64,10 +87,35 @@ export function SuppliersList() {
     (supplier) => supplier.active && supplier.default_terms_days === null,
   ).length;
 
-  async function add(event: React.FormEvent) {
+  /*
+   * "Is this one you already have?" — asked here and nowhere else on this
+   * path, because nothing else on it was looking. `lib/derive/near-match.ts`
+   * has the reasoning, including why the add-invoice sheet does not need it.
+   *
+   * Deactivated suppliers are included in what is searched: "you deactivated
+   * this one last month" is exactly what somebody needs to hear before making
+   * a second copy of it, and `suppliers` here is already the full list.
+   */
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const nearMatches = useMemo(
+    () => (pendingName === null ? [] : findNearMatches(suppliers, pendingName)),
+    [suppliers, pendingName],
+  );
+
+  function attempt(event: React.FormEvent) {
     event.preventDefault();
-    if (!profile || newName.trim() === '') return;
     const name = newName.trim();
+    if (!profile || name === '') return;
+
+    if (findNearMatches(suppliers, name).length > 0) {
+      setPendingName(name);
+      return;
+    }
+    void add(name);
+  }
+
+  async function add(name: string) {
+    if (!profile) return;
     setNewName('');
     const outcome = await submitWrite(createSupplier, {
       id: optimisticSupplier(crypto.randomUUID(), name).id,
@@ -87,26 +135,47 @@ export function SuppliersList() {
   }
 
   return (
-    <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
+    <AppChrome
+      back={{ href: '/' as Route, label: 'Invoices' }}
+      addHere={{ label: 'New supplier', onPress: focusAddField }}
+    >
       <h1 className="text-h1 mb-3 text-ink">Suppliers</h1>
 
-      <form onSubmit={add} className="mb-3 flex gap-2">
-        <input
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-          placeholder="Add a supplier"
-          aria-label="New supplier name"
-          autoCapitalize="words"
-          className="touch min-w-0 flex-1 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
-        />
-        <button
-          type="submit"
-          disabled={newName.trim() === '' || createSupplier.isPending}
-          className="touch shrink-0 rounded-full bg-action px-4 text-sm text-action-text disabled:opacity-40"
-        >
-          Add
-        </button>
-      </form>
+      {/*
+        A named panel rather than a bare text field with an Add button — the
+        same fix Customers got in §24.7, which this screen never received.
+
+        It was an unlabelled input whose only wording was placeholder text,
+        sitting directly above a real search box. §24.7 wrote down exactly why
+        that fails: "a placeholder is not a label: it disappears the moment you
+        type, and on a screen you have never seen before an empty box reads as
+        search, especially with a real search box directly under it."
+
+        Every word of that was true here too, and it produced the same report
+        — that there was no way to add a supplier from the suppliers screen.
+        Twice now, on two screens, which makes it a pattern and not a quibble.
+      */}
+      <section className="mb-3 rounded-sm border border-edge bg-card p-4">
+        <h2 className="mb-2 text-xs uppercase tracking-widest text-muted">Add a supplier</h2>
+        <form onSubmit={attempt} className="flex gap-2">
+          <input
+            ref={addFieldRef}
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="Their business name"
+            aria-label="New supplier name"
+            autoCapitalize="words"
+            className="touch min-w-0 flex-1 rounded-sm border border-hairline bg-card px-3 text-base text-ink outline-none focus:border-action"
+          />
+          <button
+            type="submit"
+            disabled={newName.trim() === '' || createSupplier.isPending}
+            className="touch shrink-0 rounded-full bg-action px-5 text-sm font-medium text-action-text disabled:opacity-40"
+          >
+            {createSupplier.isPending ? 'Adding…' : '+ Add'}
+          </button>
+        </form>
+      </section>
 
       <div className="mb-3 flex items-center rounded-sm border border-hairline bg-card">
         <span aria-hidden className="pl-3 text-sm text-muted">
@@ -176,6 +245,43 @@ export function SuppliersList() {
           })}
         </ul>
       )}
+
+      {/*
+        Spec §6: a warning, never a block. The way through is the first button,
+        and it is named for what it does rather than "OK".
+
+        The existing name is a link, so the answer to "is that the same one?"
+        is one tap away instead of a memory test — and tapping it abandons the
+        add, which is the right outcome when it turns out to be the same one.
+      */}
+      <ConfirmDialog
+        open={pendingName !== null && nearMatches.length > 0}
+        title="Already have this one?"
+        points={nearMatches.map(({ entry, reason }) => (
+          <span key={entry.id} className="block">
+            <Link
+              href={`/suppliers/${entry.id}` as Route}
+              onClick={() => setPendingName(null)}
+              className="text-action underline"
+            >
+              {entry.name}
+            </Link>
+            <span className="mt-0.5 block text-sm text-muted">
+              {nearMatchWording(reason)}
+              {entry.active ? '' : ' · deactivated'}
+            </span>
+          </span>
+        ))}
+        question={pendingName ? `Add “${pendingName}” as well?` : undefined}
+        confirmLabel="Add it anyway"
+        cancelLabel="Go back"
+        onConfirm={() => {
+          const name = pendingName;
+          setPendingName(null);
+          if (name) void add(name);
+        }}
+        onCancel={() => setPendingName(null)}
+      />
     </AppChrome>
   );
 }

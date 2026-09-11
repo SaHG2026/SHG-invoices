@@ -80,6 +80,32 @@ export interface CreateInvoiceInput {
   /** Carried so the optimistic row can render immediately, before any refetch. */
   supplier: Pick<Supplier, 'id' | 'name'>;
   business: Pick<Business, 'id' | 'code' | 'name'>;
+  /**
+   * Whether `stamp_approval` will hold this one back for review.
+   *
+   * ---------------------------------------------------------------------------
+   * A plain boolean, sent by the caller, mirroring a database trigger.
+   *
+   * The trigger decides — the client cannot, and must not be believed if it
+   * tries (CATCH_UP_013 §4 overwrites `approved_at` both ways). But `onMutate`
+   * has to render something before the trigger has run, and the two possible
+   * rows go to two different places: an approved one belongs in the unpaid
+   * array, and an unapproved one belongs nowhere this account can see.
+   *
+   * Guessing wrong is not cosmetic. The comment on `approved_at` below says
+   * why: a row put in the unpaid array carrying the one value that means "not
+   * in the unpaid array" vanishes on the first refetch — which reads as the
+   * invoice not having saved. So the caller says which case it is, and the
+   * only cost of it being wrong is one flicker, in a direction the refetch
+   * then corrects.
+   *
+   * Set by `AddInvoiceSheet` for an assistant filing against "Supplier not
+   * listed" (CATCH_UP_026). Absent everywhere else, because everywhere else
+   * the answer is "approved" — the venue sheet, whose invoices are never
+   * approved, does not use this mutation at all.
+   * ---------------------------------------------------------------------------
+   */
+  awaitsReview?: boolean;
 }
 
 /**
@@ -130,6 +156,17 @@ export function registerInvoiceMutations(queryClient: QueryClient) {
      * would have added is already gone, because reads are never persisted.
      */
     onMutate: async (input: CreateInvoiceInput): Promise<CreateContext> => {
+      /*
+       * Held back for review: nothing optimistic at all.
+       *
+       * The unpaid array is every owed figure in the app (§2), and this row is
+       * not owed by anybody yet. There is no second list to put it in either —
+       * the only account that files one of these is an assistant, and an
+       * assistant cannot read the review queue. So the honest render is none,
+       * and the toast is what says the write landed.
+       */
+      if (input.awaitsReview) return {};
+
       // Non-negotiable. See above.
       await queryClient.cancelQueries({ queryKey: qk.invoices.unpaid });
 
@@ -183,6 +220,17 @@ export function registerInvoiceMutations(queryClient: QueryClient) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk.invoices.unpaid });
       queryClient.invalidateQueries({ queryKey: qk.activity.recent });
+      /*
+       * The review queue too, unconditionally rather than only when
+       * `awaitsReview` was set.
+       *
+       * `awaitsReview` is the client's belief and the trigger is the fact, and
+       * the failure this guards against is the belief being wrong in the
+       * direction nobody would notice — an invoice held for review while every
+       * screen that could show it was never told to look again. Invalidating a
+       * query no manager has mounted costs one no-op.
+       */
+      queryClient.invalidateQueries({ queryKey: qk.invoices.review });
     },
   });
 }
@@ -199,19 +247,53 @@ export function useCreateInvoice() {
  * "Suppliers restart numbering; a hard unique index will block legitimate
  * entries." So this runs on demand, at save time, and the person decides.
  */
+/**
+ * The five facts the warning prints, and nothing else.
+ *
+ * A narrower shape than `Invoice` on purpose. The dialog has only ever used
+ * these, and naming them is what lets an assistant's answer come from a
+ * different function without the screen knowing or caring.
+ */
+export interface DuplicateMatch {
+  id: string;
+  invoice_number: string | null;
+  invoice_date: string;
+  amount_cents: number;
+  internal_ref: string | null;
+  created_by: string | null;
+}
+
 export async function findDuplicates(
   supplierId: string,
   invoiceNumber: string,
-): Promise<Invoice[]> {
+  { asAssistant = false }: { asAssistant?: boolean } = {},
+): Promise<DuplicateMatch[]> {
   const trimmed = invoiceNumber.trim();
   if (trimmed === '') return [];
 
-  const { data, error } = await supabase().rpc('find_duplicate_invoices', {
-    p_supplier_id: supplierId,
-    p_invoice_number: trimmed,
-    p_lookback_days: DUPE_LOOKBACK_DAYS,
-  });
+  /*
+   * Two functions, one question.
+   *
+   * `find_duplicate_invoices` is `security invoker` and returns whole rows,
+   * so after CATCH_UP_027 narrowed the assistant SELECT policy it would stop
+   * finding anything already PAID — silently, and that is the most useful
+   * warning it gives. `find_duplicate_invoices_assistant` is the same query
+   * behind SECURITY DEFINER, returning only the fields above.
+   *
+   * This is CATCH_UP_010 §5's arrangement for the shops, one tier later:
+   * `findVenueDuplicates` in `lib/queries/venue.ts` is the same idea and the
+   * reason the pattern was already there to copy. A permission change must
+   * not weaken a spec §6 protection as a side effect.
+   */
+  const { data, error } = await supabase().rpc(
+    asAssistant ? 'find_duplicate_invoices_assistant' : 'find_duplicate_invoices',
+    {
+      p_supplier_id: supplierId,
+      p_invoice_number: trimmed,
+      p_lookback_days: DUPE_LOOKBACK_DAYS,
+    },
+  );
 
   if (error) throw error;
-  return (data ?? []) as Invoice[];
+  return (data ?? []) as DuplicateMatch[];
 }

@@ -504,6 +504,67 @@ describe('the supplier list is not in the way', () => {
   });
 });
 
+/**
+ * Reported as "no option to create a new supplier when entering invoice",
+ * against a build where the option demonstrably existed.
+ *
+ * Both were true. `offerCreate` carried `&& !browsing`, so the Add row was
+ * hidden along the one path somebody walks when they most need it: open the
+ * list, scroll it, find the supplier is not there. §24.7 is the same failure
+ * on the customers screen, reported twice, and its lesson is the one being
+ * tested here — a control absent along the path somebody actually walks is
+ * absent, and being present along a different path is not a defence.
+ */
+describe('adding a supplier from the browse list', () => {
+  it('offers to add what is typed, even after the chevron was used', () => {
+    open();
+    typeSupplier('Global Foods Department');
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+
+    expect(
+      screen.getByRole('button', { name: /Add “Global Foods Department” as a new supplier/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('actually creates from there, rather than only offering to', async () => {
+    open();
+    typeSupplier('Global Foods Department');
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: /Add “Global Foods Department” as a new supplier/ }),
+    );
+
+    await waitFor(() => expect(mocks.createSupplierMutate).toHaveBeenCalled());
+    expect(mocks.createSupplierMutate.mock.calls[0]![0]).toMatchObject({
+      name: 'Global Foods Department',
+    });
+  });
+
+  it('says how to add one when the browse list is open with nothing typed', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+
+    // There is no name to offer, so the row asks for one rather than vanishing.
+    const row = screen.getByRole('button', { name: /Not on the list\? Type a name to add it/ });
+    expect(row).toBeInTheDocument();
+
+    fireEvent.mouseDown(row);
+    expect(screen.getByLabelText('Supplier')).toHaveFocus();
+  });
+
+  it('still refuses to offer a name that already exists exactly', () => {
+    open();
+    typeSupplier('Bidfood');
+    fireEvent.click(screen.getByRole('button', { name: 'Show all suppliers' }));
+
+    // The unique index would refuse it; offering it would be a promise the
+    // database breaks.
+    expect(
+      screen.queryByRole('button', { name: /as a new supplier/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('a due date already in the past', () => {
   it('asks before saving, because it will show as overdue immediately', async () => {
     open();

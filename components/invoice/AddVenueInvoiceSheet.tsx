@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Sheet } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { SupplierField } from './SupplierField';
@@ -146,6 +146,17 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
    */
   const dueDate = resolveDueDate({ invoiceDate, termDays, explicitDueDate });
   const [note, setNote] = useState('');
+
+  /*
+   * So a refusal on the note can bring the note onto the screen.
+   *
+   * The note is the last field in the sheet and its error renders below it —
+   * measured six pixels under the fold on a 375x812 phone, which is a refusal
+   * nobody sees. This sheet has had the blocking check since Round B and the
+   * same blind spot with it; it was found on the four's sheet, in a browser,
+   * and it was here too.
+   */
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<Warning[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -279,6 +290,7 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
      */
     if (onPlaceholder && note.trim() === '') {
       setErrors({ note: 'Write who this invoice is from — nothing else will know.' });
+      noteRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
 
@@ -438,8 +450,14 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
           allowCreate={false}
           includePlaceholder
           error={errors.supplier_id}
+          /*
+           * Gone once the placeholder IS chosen. Telling somebody to choose a
+           * thing they have already chosen is the interface not keeping up
+           * with them, and the note field below has taken over the job of
+           * saying what to do next — its label becomes the question.
+           */
           hint={
-            placeholder ? (
+            placeholder && !onPlaceholder ? (
               <>
                 Not on the list? Choose <span className="text-ink">{placeholder.name}</span> and
                 write who it is from in the note.
@@ -552,6 +570,7 @@ function SheetBody({ onClose, editing }: { onClose: () => void; editing: StaffIn
           </label>
           <textarea
             id="venue-note"
+            ref={noteRef}
             rows={2}
             placeholder={
               onPlaceholder

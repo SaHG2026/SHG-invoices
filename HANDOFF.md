@@ -110,7 +110,7 @@ all eight, and the answer will not be the same at every one.**
 
 ```bash
 npm run dev          # localhost:3000
-npx vitest run       # 987 tests
+npx vitest run       # 1051 tests
 npx tsc --noEmit
 npx next build
 ```
@@ -189,10 +189,13 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 020**.
-  **001 to 024 are applied and verified. 025 is written and NOT yet
-  applied** — suspension, and it must be run before the deploy that
-  carries it
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied.
+  **001 to 026 are applied and verified. 027 is written and NOT yet
+  applied** — hiding settled money from an assistant. Unlike 026 it may run
+  before, with or after its deploy: neither order leaves a broken state, and
+  the file's header says why. `verify_catchups.mjs` reports
+  `find_duplicate_invoices_assistant` MISSING until it has been run, which is
+  the check working, not a fault
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -278,10 +281,17 @@ Scope queries with `within()`.
 **Live and in daily use. Every database file through `CATCH_UP_025` applied
 and verified. J1 to J5 complete. Deployed — `7f7b43a`.**
 
-**J4 is built and committed and is NOT deployed, and `CATCH_UP_021` has not
-been run.** Both are waiting on the client, in that order: the SQL first,
-the deploy second. §7 has the exact words to send him. 909 tests under three
-timezones.
+**Round K is deployed and `CATCH_UP_026` is applied.** Round K2 — §57 — is
+built and NOT deployed, and `CATCH_UP_027` has not been run. That pair is
+order-independent, unlike 026's. 1051 tests under three timezones.
+
+**The build stamp is a commit, so uncommitted work deploys anonymously.**
+`next.config.ts` takes it from `VERCEL_GIT_COMMIT_SHA` or `git rev-parse
+--short HEAD`. Round K was deployed before it was committed, so Settings
+showed the *previous* commit while carrying the new code — §6's trap running
+backwards, and the five-second "did my deploy land?" check answered a
+question nobody had asked. **Commit before deploying, always**, or the stamp
+is worse than useless.
 
 Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 
@@ -306,6 +316,8 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §53 | J5 — discounts and refunds, and everywhere the net had to reach |
 | §54 | Suspending an account, and the lookup that was hiding half of them |
 | §55 | Next 16, vitest 5, and a linter's first run over this codebase |
+| §56 | **Round K** — the Add control the chevron hid, a `+` that means the screen it is on, near-duplicate names, and an assistant's placeholder entry that was never reviewed |
+| §57 | **Round K2** — one column missing from three selects, and payment history's four doors |
 
 ### The two lessons worth more than the features
 
@@ -320,6 +332,36 @@ to the staff policies.
 the script as Parramatta; the gate by that venue having entered a real invoice
 and a real note, which the script reads back. The lesson stands — it was true
 for weeks — but the gap it describes is closed.
+
+**A hand-written column list beside a cast is a type that has stopped being
+checked.** Three supplier queries each listed their columns and each omitted
+the same one, then cast the result `as Supplier[]`. `tsc` agreed, every row
+arrived with `is_placeholder: undefined`, and the placeholder feature broke
+in both directions at once — invisible to the tiers that needed it, visible to
+the four who must never see it, because `!undefined` is `true`. Every test
+passed and none of them could have failed: fixtures are written against the
+TYPE, and only the select string decides what actually arrives. **Compare the
+list to something, in a test.** §57.1.
+
+**Ask what else reads through a policy before you narrow it.** Restricting an
+assistant to unpaid rows would also have silenced their duplicate warning,
+because `find_duplicate_invoices` is `security invoker` over `setof invoices`
+— a spec §6 protection removed as a side effect of a permission change, and
+it would have failed silently. CATCH_UP_010 §5 had already hit this for the
+shops and left the answer. §57.3.
+
+**A control is absent along the path somebody actually walks, or it is
+absent.** Twice now — §24.7 on Customers, §56.1 on the supplier picker — the
+answer to "there is no way to add one" has been "there is, just not where you
+looked". Both times the code was right and the report was right. When a report
+says a control is missing, do not go looking for the control; go looking for
+the **path**, and walk it the way the person described. §56.1, §56.4.
+
+**Half a mechanism copied is a mechanism that does not work.** The placeholder
+supplier was given to a new tier without the Review screen that completes it,
+so invoices filed on it were approved into the ledger with nobody asked to
+fix them — for a whole tier, silently. **When a pattern is reused for a new
+role, list what the pattern DEPENDS on, not just what it is.** §56.2.
 
 **A change made for appearance can silently disable behaviour elsewhere.**
 `overflow-hidden`, added to the header to contain the mountain ridge, clipped
@@ -419,9 +461,11 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**Nothing is blocking.** Everything through `CATCH_UP_025` is applied and
-confirmed by `verify_catchups.mjs`, `npm audit` is clean, and 987 tests pass
-under three timezones.
+**One thing is waiting on a person, and it is not urgent.**
+`CATCH_UP_027` is written and NOT applied — settled money hidden from an
+assistant. It may run before, with or after its deploy. Everything through
+`CATCH_UP_026` is applied and confirmed by `verify_catchups.mjs`, `npm audit`
+is clean, and 1051 tests pass under three timezones.
 
 The list is in the order it is worth picking things up.
 
@@ -444,6 +488,21 @@ the feature works on a phone.
 4. **No discount or refund exists yet.** J5's arithmetic, document, PDF and
    panel are all tested against fixtures. Nothing has been applied to a real
    invoice. §53.
+
+4b. **No assistant has ever filed against "Supplier not listed."** The path is
+   tested end to end against fixtures and the trigger is verified by the SQL
+   file, but nothing has gone through it with a real session — and neither
+   Mani nor Milan has signed in at all (item 7). The one real test is worth
+   doing right after the deploy: file one on the placeholder, confirm it
+   appears in **Review** and not in Pending; then file one naming a real
+   supplier and confirm it does the opposite. §56.2.
+
+4c. **Anything already sitting on the placeholder is NOT moved by
+   `CATCH_UP_026`**, deliberately — un-approving a row somebody may have acted
+   on would take money out of a total with no notice, and would assert these
+   were never approved, which is false. §5 of the file counts them and prints
+   the query to list them. If it reports a number, each one needs a real
+   supplier chosen from its invoice screen.
 
 ### Waiting on the client, not on code
 

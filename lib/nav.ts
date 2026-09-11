@@ -90,9 +90,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
  * interface should not offer what it cannot do — and four blank screens is
  * that failure four times.
  *
- * **Invoices and Paid history stay**, and that is the tier working as
- * intended: an assistant reads every business's ledger, paid and unpaid. They
- * simply cannot change any of it.
+ * **Paid history used to stay, and the client has overruled that.**
+ *
+ * §52 argued it belonged: an assistant reads every business's ledger, paid
+ * and unpaid, and simply cannot change any of it. The instruction is *"for
+ * assistants hide payment history"*, which is a different question from the
+ * one §52 answered — not "can they be trusted to look" but "is settled money
+ * any of this tier's business". It is the owner's call, and the answer is no.
+ *
+ * The old reasoning is kept rather than deleted so that a future round does
+ * not rediscover it and quietly put the row back.
+ *
+ * **Invoices stays**, which is the tier working as intended: an assistant
+ * sees what is owed, enters against it, and cannot settle any of it.
  *
  * Settings stays too. It is where their own notification switch lives, and
  * where the build stamp is.
@@ -110,11 +120,38 @@ const HIDDEN_FROM_ASSISTANT: readonly NavSection[] = [
   'customers',
   'products',
   'receivables',
+  'history',
 ];
 
 export function navItemsFor(profile: Profile | null | undefined): readonly NavItem[] {
   if (!isAssistant(profile)) return NAV_ITEMS;
   return NAV_ITEMS.filter((item) => !HIDDEN_FROM_ASSISTANT.includes(item.section));
+}
+
+/**
+ * Whether settled money is any of this person's business.
+ *
+ * ---------------------------------------------------------------------------
+ * A named question rather than `!isAssistant(profile)` at each call site.
+ *
+ * Paid history is reachable by more than the menu row above: a link on every
+ * business's week view, the URL itself, and the activity bell, which announces
+ * *"Mani marked paid"* whether or not anybody can open the screen it refers
+ * to. **Hiding the row and leaving the other three is a curtain, not a
+ * wall** — and the failure mode is the worst kind, because the menu makes it
+ * look done.
+ *
+ * So the rule is written once and asked four times. The name is what it is
+ * asking, not who it is about: a fifth tier answers this question on its own
+ * terms rather than inheriting whatever `isAssistant` happens to mean then.
+ *
+ * HANDOFF §2's trap applies — this is an allowlist by exclusion, so a tier
+ * added later is included by default and must be visited on purpose. It is
+ * the ninth such place; §46.3 named six, §52 made it eight.
+ * ---------------------------------------------------------------------------
+ */
+export function maySeePaymentHistory(profile: Profile | null | undefined): boolean {
+  return !isAssistant(profile);
 }
 
 /**

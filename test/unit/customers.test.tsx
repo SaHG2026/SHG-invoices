@@ -329,6 +329,42 @@ describe('the customer list', () => {
     expect(await screen.findByText(/already a customer/)).toBeInTheDocument();
   });
 
+  /* The same check the Suppliers screen got, and the same reasoning.
+     `lib/derive/near-match.ts` and `near-match.test.ts` have the comparing. */
+  it('asks before adding something that looks like a customer already there', async () => {
+    openList();
+    fireEvent.change(screen.getByLabelText('New customer name'), {
+      target: { value: 'Harris Farm Markets Pty Ltd' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    const dialog = within(await screen.findByRole('alertdialog'));
+    expect(dialog.getByText('Harris Farm Markets')).toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('never blocks — the first button adds it anyway', async () => {
+    openList();
+    fireEvent.change(screen.getByLabelText('New customer name'), {
+      target: { value: 'Harris Farm Markets Pty Ltd' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add it anyway' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+  });
+
+  it('offers to add a customer from the +, not only an invoice', async () => {
+    openList();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    const sheet = within(await screen.findByRole('dialog'));
+    expect(sheet.getByRole('button', { name: 'New customer' })).toBeInTheDocument();
+    // Deli sells as well as buys, so both ledgers are still one tap away.
+    expect(sheet.getByRole('button', { name: 'Invoice from a supplier' })).toBeInTheDocument();
+    expect(sheet.getByRole('button', { name: 'Invoice to a customer' })).toBeInTheDocument();
+  });
+
   it('searches', () => {
     openList();
     fireEvent.change(screen.getByLabelText('Search customers'), { target: { value: 'alpine' } });

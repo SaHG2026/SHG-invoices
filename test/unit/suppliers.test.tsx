@@ -271,17 +271,109 @@ describe('the supplier list', () => {
     const box = screen.getByLabelText('New supplier name');
 
     fireEvent.change(box, { target: { value: 'New Wholesaler' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalled());
     expect(box).toHaveValue('');
 
     mocks.create.mockRejectedValue(new Error('There is already a supplier called X.'));
     fireEvent.change(box, { target: { value: 'Duplicate Co' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
 
     // Losing what somebody typed is never acceptable.
     await waitFor(() => expect(box).toHaveValue('Duplicate Co'));
     expect(await screen.findByText(/already a supplier/)).toBeInTheDocument();
+  });
+
+  /*
+   * "Is this one you already have?"
+   *
+   * The client's case, in his words: "there is a supplier by the name Global
+   * Foods Department and a manager enters it as its full name. but another
+   * manager has been entering it as GFD." The unique index refuses only a
+   * character-for-character repeat, so nothing was looking at this path at
+   * all. `lib/derive/near-match.ts` does the comparing and has its own file;
+   * what is asserted here is that the screen asks, and that the answer is a
+   * question rather than a refusal.
+   */
+  it('asks before adding something that looks like a supplier already there', async () => {
+    openList();
+    fireEvent.change(screen.getByLabelText('New supplier name'), {
+      target: { value: 'Bidfood Pty Ltd' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    const dialog = within(await screen.findByRole('alertdialog'));
+    expect(dialog.getByText('Bidfood')).toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('never blocks — spec §6, and the way through is the first button', async () => {
+    openList();
+    fireEvent.change(screen.getByLabelText('New supplier name'), {
+      target: { value: 'Bidfood Pty Ltd' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add it anyway' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0]![0]).toMatchObject({ name: 'Bidfood Pty Ltd' });
+  });
+
+  it('keeps what was typed when the answer is "no, that is the same one"', async () => {
+    openList();
+    const box = screen.getByLabelText('New supplier name');
+    fireEvent.change(box, { target: { value: 'Bidfood Pty Ltd' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Go back' }));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(box).toHaveValue('Bidfood Pty Ltd');
+  });
+
+  it('does not ask about a supplier that is genuinely new', async () => {
+    openList();
+    fireEvent.change(screen.getByLabelText('New supplier name'), {
+      target: { value: 'Wollongong Dry Goods' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  /*
+   * Reported: "the + on supplier interface is creating invoice still."
+   *
+   * §16 made the `+` global because writing to the ledger is not hierarchical,
+   * and that reasoning still holds — the button stays on every screen, and the
+   * invoice is still one tap from here. What changed is that "global" was
+   * implemented as "means one thing", and on a list of suppliers the thing
+   * under your thumb should be able to add a supplier.
+   */
+  it('offers to add a supplier from the + , not only an invoice', async () => {
+    openList();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    const sheet = within(await screen.findByRole('dialog'));
+    expect(sheet.getByRole('button', { name: 'New supplier' })).toBeInTheDocument();
+    // Nothing was taken away.
+    expect(sheet.getByRole('button', { name: 'Invoice from a supplier' })).toBeInTheDocument();
+  });
+
+  it('does not offer a customer invoice from a screen about suppliers', async () => {
+    openList();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    const sheet = within(await screen.findByRole('dialog'));
+    expect(sheet.queryByRole('button', { name: /to a customer/i })).not.toBeInTheDocument();
+  });
+
+  it('puts the cursor in the add field, which is the one place a supplier is added', async () => {
+    openList();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New supplier' }));
+
+    expect(screen.getByLabelText('New supplier name')).toHaveFocus();
   });
 
   it('finds a supplier by a fragment of the name', () => {

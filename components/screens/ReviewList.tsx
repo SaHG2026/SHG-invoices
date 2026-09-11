@@ -24,11 +24,29 @@ import { formatDateTime, formatDay } from '@/lib/date';
 import type { Business, Supplier } from '@/lib/types';
 
 /**
- * What the shops have entered, waiting for one of the four to accept it.
+ * What is waiting for one of the four to accept it.
  *
  * The client's reason for the whole feature: *"whenever gmh or gmp adds an
  * invoice, then it has to be approved by one of the managements before it
  * shows in the pending or overdue"*.
+ *
+ * ---------------------------------------------------------------------------
+ * It is no longer only the shops, and the screen needed no code for that.
+ *
+ * CATCH_UP_026 sends one more thing here: an assistant's invoice filed against
+ * "Supplier not listed". Not all of their entries — one naming a real supplier
+ * still goes straight into the ledger, which is CATCH_UP_022 §5's decision and
+ * it stands. Only the case where the row still has an unanswered question in
+ * it, and the answer is in a note that only this screen displays.
+ *
+ * Everything below already handled it. The queue is `approved_at is null`, not
+ * "entered by a venue"; the cards group by business, and an assistant picks a
+ * business like anybody else; `blocked` tests `is_placeholder`, which is
+ * exactly the condition that put these here. **The only thing that had to
+ * change was the words**, because the words said "the shops" and that was no
+ * longer true — and a screen that misnames who is asking is a screen somebody
+ * makes the wrong decision on.
+ * ---------------------------------------------------------------------------
  *
  * ---------------------------------------------------------------------------
  * Three things about this screen are load-bearing rather than layout.
@@ -68,12 +86,18 @@ export function ReviewList() {
   const [rejecting, setRejecting] = useState<ReviewRow | null>(null);
 
   /*
-   * Grouped by venue, because that is how the work arrives: one shop's
+   * Grouped by business, because that is how the work arrives: one shop's
    * morning, then the other's. "Approve all from Parramatta" is the action
    * somebody actually wants, and it is only expressible if the screen knows
-   * what a venue's batch is.
+   * what a batch is.
+   *
+   * Called `byBusiness` and not `byVenue` since CATCH_UP_026, because it is no
+   * longer only venues that land here — an assistant's placeholder entry
+   * groups under whichever business they picked, which may not be a shop at
+   * all. The grouping was always `business_id`; only the name was narrower
+   * than the thing.
    */
-  const byVenue = useMemo(() => {
+  const byBusiness = useMemo(() => {
     const groups = new Map<string, { business: Business; rows: ReviewRow[] }>();
     for (const row of rows) {
       const existing = groups.get(row.business_id);
@@ -118,8 +142,8 @@ export function ReviewList() {
       <header className="mb-4">
         <h1 className="text-h1 text-ink">Review</h1>
         <p className="mt-1 text-sm text-muted">
-          Entered by the shops. Nothing here is in Pending, Overdue or any total until it is
-          approved.
+          Entered by the shops, and anything filed on “Supplier not listed”. Nothing here is in
+          Pending, Overdue or any total until it is approved.
         </p>
       </header>
 
@@ -139,15 +163,15 @@ export function ReviewList() {
             : rows.length === 0
               ? 'Nothing to review.'
               : `${rows.length} invoice${rows.length === 1 ? '' : 's'} across ${
-                  byVenue.length
-                } venue${byVenue.length === 1 ? '' : 's'}`}
+                  byBusiness.length
+                } business${byBusiness.length === 1 ? '' : 'es'}`}
         </p>
       </section>
 
-      {byVenue.map(({ business, rows: batch }) => (
+      {byBusiness.map(({ business, rows: batch }) => (
         <section key={business.id} className="mb-6">
           {/*
-            The venue's name is not allowed to truncate.
+            The business name is not allowed to truncate.
 
             It was "GroceryMate Hu…" beside a full-width "Approve all 2" at
             360px — the one thing on the row that has to be read, losing to the
@@ -203,7 +227,8 @@ export function ReviewList() {
 
       {!isLoading && rows.length === 0 ? (
         <p className="rounded-sm border border-edge bg-card p-4 text-sm text-muted">
-          The shops have entered nothing that needs looking at. Anything they add will appear here.
+          Nothing needs looking at. New entries from the shops appear here, and so does any invoice
+          filed on “Supplier not listed”.
         </p>
       ) : null}
 
@@ -216,8 +241,8 @@ export function ReviewList() {
             {rejecting ? `, ${formatCents(rejecting.amount_cents)}` : ''}.
           </>,
           <>
-            The shop is not told. Their copy simply stops appearing, so tell them, or they will
-            enter it again.
+            Whoever entered it is not told. It simply stops appearing for them, so tell them, or
+            they will enter it again.
           </>,
         ]}
         question="Reject it?"

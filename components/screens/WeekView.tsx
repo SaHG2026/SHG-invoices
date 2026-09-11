@@ -5,7 +5,8 @@ import type { Route } from 'next';
 import { useMemo, useState } from 'react';
 import { useUnpaidInvoices } from '@/lib/queries/invoices';
 import { useBusinesses } from '@/lib/queries/reference';
-import { useProfiles } from '@/lib/queries/session';
+import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
+import { maySeePaymentHistory } from '@/lib/nav';
 import { AppChrome, useSydneyToday } from '@/components/app/AppChrome';
 import { PaymentRunRow } from '@/components/invoice/PaymentRunRow';
 import { MarkPaidSheet } from '@/components/invoice/MarkPaidSheet';
@@ -77,6 +78,13 @@ export function WeekView({ scope }: { scope: Scope }) {
 
   const known = businesses.length === 0 || isKnownScope(scope, businesses);
 
+  /*
+   * The second door into Paid history, after the menu row. Hiding one and
+   * leaving the other is the failure `maySeePaymentHistory` exists to stop.
+   */
+  const { data: profile } = useCurrentProfile();
+  const seesHistory = maySeePaymentHistory(profile);
+
   return (
     <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
       {!known ? (
@@ -118,7 +126,9 @@ export function WeekView({ scope }: { scope: Scope }) {
             {(
               [
                 [pendingHref(scope), 'Pending'],
-                [historyHref(scope), 'History'],
+                ...(seesHistory
+                  ? ([[historyHref(scope), 'History']] as [Route, string][])
+                  : []),
                 /*
                   The selling side, only here.
 

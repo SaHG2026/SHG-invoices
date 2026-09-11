@@ -8,6 +8,7 @@ import { useCurrentProfile, useProfiles } from '@/lib/queries/session';
 import { countUnseen, describeActivity } from '@/lib/derive/activity';
 import { formatDateTime } from '@/lib/date';
 import { invoiceHref } from '@/lib/scope';
+import { maySeePaymentHistory } from '@/lib/nav';
 
 /**
  * The header bell. ARCHITECTURE §8.1.
@@ -58,7 +59,29 @@ function BellGlyph() {
 export function ActivityBell() {
   const { data: profile } = useCurrentProfile();
   const { data: people = [] } = useProfiles();
-  const { data: activity = [] } = useRecentActivity();
+  const { data: allActivity = [] } = useRecentActivity();
+
+  /*
+   * The fourth door into payment history, and the one easiest to miss,
+   * because it is not a screen: the bell announces "Mani marked paid" whether
+   * or not the reader can open anything that shows it.
+   *
+   * Filtered here rather than in the query. `useRecentActivity` is one cached
+   * list shared by the bell and anything else that grows to want it, and a
+   * query that quietly returns different rows per role is the kind of thing
+   * that is right once and wrong the next time it is reused. The badge count
+   * is computed from the filtered list below, so it cannot offer to show
+   * something that is not there — a "3 new" that opens onto two entries is
+   * its own small lie.
+   */
+  const seesPayments = maySeePaymentHistory(profile);
+  const activity = useMemo(
+    () =>
+      seesPayments
+        ? allActivity
+        : allActivity.filter((entry) => entry.action !== 'paid' && entry.action !== 'unpaid'),
+    [allActivity, seesPayments],
+  );
 
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);

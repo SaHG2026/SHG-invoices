@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { Route } from 'next';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
@@ -103,6 +103,15 @@ export function ProductsList({ businessCode = 'DDL' }: { businessCode?: string }
     toast.show(outcome.kind === 'queued' ? `Added ${name} — will send when you’re back online.` : `Added ${name}.`);
   }
 
+  /* The `+` reaches the add row at the top. See `addHere` in AppChrome. */
+  const addFieldRef = useRef<HTMLInputElement>(null);
+
+  /* Focus only — it scrolls and opens the keyboard as one movement. The
+     Suppliers screen has the full note. */
+  function focusAddField() {
+    addFieldRef.current?.focus();
+  }
+
   async function save(product: Product, changes: Partial<Product>) {
     try {
       await updateProduct.mutateAsync({ id: product.id, ...changes });
@@ -114,7 +123,10 @@ export function ProductsList({ businessCode = 'DDL' }: { businessCode?: string }
   }
 
   return (
-    <AppChrome back={{ href: '/customers' as Route, label: 'Customers' }}>
+    <AppChrome
+      back={{ href: '/customers' as Route, label: 'Customers' }}
+      addHere={{ label: 'New product', onPress: focusAddField }}
+    >
       <h1 className="text-h1 mb-1 text-ink">Products</h1>
       <p className="mb-3 text-sm text-muted">
         {business ? `${business.name}. ` : ''}Prices here are what a new invoice suggests. Changing
@@ -124,6 +136,7 @@ export function ProductsList({ businessCode = 'DDL' }: { businessCode?: string }
       <form onSubmit={add} className="mb-4 rounded-sm border border-edge bg-card p-3">
         <div className="mb-2 flex gap-2">
           <input
+            ref={addFieldRef}
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
             placeholder="Product"

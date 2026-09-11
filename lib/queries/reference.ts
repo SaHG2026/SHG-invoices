@@ -19,6 +19,48 @@ import type { Business, Supplier } from '@/lib/types';
 
 const LONG = 10 * 60_000;
 
+/**
+ * Every column of `Supplier`, in one place, because leaving one out was
+ * silent and cost a round.
+ *
+ * ===========================================================================
+ * What happened, because it is the whole reason this constant exists.
+ *
+ * Three queries each listed their columns by hand and **all three left out
+ * `is_placeholder`**, then cast the result `as Supplier[]`. A cast is not a
+ * check: `tsc` was perfectly happy, every row arrived with
+ * `is_placeholder: undefined`, and that one absent boolean broke the feature
+ * in BOTH directions at once —
+ *
+ *   `placeholderSupplier()` found nothing, so the hint that says "choose
+ *   Supplier not listed and write who it is from" never rendered for a shop
+ *   or an assistant. Reported as the option not existing, correctly: the row
+ *   was in the list, filed alphabetically under S, with nothing anywhere
+ *   saying what it was for.
+ *
+ *   `onPlaceholder` was `undefined`, so the required note never blocked — on
+ *   the venue sheet since Round B — and `awaitsReview` was never set.
+ *
+ *   `rankSuppliers` excludes it with `!supplier.is_placeholder`, and
+ *   `!undefined` is **true**. So the one row that is default-off everywhere
+ *   was showing to the four, which is the exact outcome §36.7 calls losing an
+ *   invoice in plain sight.
+ *
+ * The database was right the whole time. `stamp_approval` reads
+ * `is_placeholder` from the row and never trusted the client, which is why
+ * nothing was actually misfiled.
+ *
+ * **Why no test caught it.** Every fixture and every mock sets
+ * `is_placeholder`, because they are written against the TYPE. The real query
+ * is the only thing that decides which columns exist, and nothing compared
+ * the two. That is §39.8 exactly — a mock that cannot produce a real state
+ * guarantees bugs in it — and `test/unit/supplier-columns.test.ts` now makes
+ * the comparison, so a column added to `Supplier` and not to this list fails.
+ * ===========================================================================
+ */
+export const SUPPLIER_COLUMNS =
+  'id, name, default_terms_days, contact_name, contact_phone, notes, active, is_placeholder';
+
 export function useBusinesses() {
   return useQuery({
     queryKey: qk.businesses.all,
@@ -42,7 +84,7 @@ export function useSuppliers() {
     queryFn: async (): Promise<Supplier[]> => {
       const { data, error } = await supabase()
         .from('suppliers')
-        .select('id, name, default_terms_days, contact_name, contact_phone, notes, active')
+        .select(SUPPLIER_COLUMNS)
         .eq('active', true)
         .order('name');
 

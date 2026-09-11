@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase/browser';
 import { buildHistorySearch } from '@/lib/derive/history';
 import { HISTORY_PAGE_SIZE, SUPPLIER_RANGE_MAX } from '@/lib/constants';
 import { compareDates, isDateStr, type DateStr } from '@/lib/date';
+import { SUPPLIER_COLUMNS } from './reference';
 import { qk } from './keys';
 import type { InvoiceRow, Supplier } from '@/lib/types';
 
@@ -159,7 +160,7 @@ export function registerSupplierEditMutations(queryClient: QueryClient) {
         .from('suppliers')
         .update(changes)
         .eq('id', id)
-        .select('id, name, default_terms_days, contact_name, contact_phone, notes, active')
+        .select(SUPPLIER_COLUMNS)
         .single();
 
       if (error) {
@@ -197,7 +198,7 @@ export function useAllSuppliers() {
     queryFn: async (): Promise<Supplier[]> => {
       const { data, error } = await supabase()
         .from('suppliers')
-        .select('id, name, default_terms_days, contact_name, contact_phone, notes, active')
+        .select(SUPPLIER_COLUMNS)
         .order('name');
 
       if (error) throw error;

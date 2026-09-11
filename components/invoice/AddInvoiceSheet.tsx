@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { isAssistant } from '@/lib/staff';
 import { Sheet } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -104,6 +104,32 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const mayAddSupplier = !isAssistant(profile);
   const placeholder = suppliers.find((entry) => entry.is_placeholder) ?? null;
 
+  /*
+   * On "Supplier not listed" — which only an assistant can be, since the
+   * placeholder is only offered to whoever may not create a supplier.
+   *
+   * ---------------------------------------------------------------------------
+   * Two things follow from it, and they are the same two the venue sheet has
+   * had since Round B. They were missing here for a whole tier.
+   *
+   * **The note becomes required.** Everywhere else in this sheet a check is a
+   * warning you can save past (spec §6 is emphatic). Not this one: an invoice
+   * against the placeholder with nothing written down is a record saying money
+   * arrived from nobody, and the person entering it is the only place that
+   * knowledge exists. §36.7.
+   *
+   * **It waits for review.** CATCH_UP_026 stops `stamp_approval` approving it,
+   * so it lands in the queue a manager already works instead of in the ledger
+   * under a placeholder — which is §36.7's other half, and the failure it
+   * names by name: an invoice lost in plain sight. CATCH_UP_022 §5 decided an
+   * assistant's entries do not queue, and that decision stands for all the
+   * ones naming a real supplier; this is the narrow case where the invoice
+   * still has an unanswered question in it.
+   * ---------------------------------------------------------------------------
+   *
+   * Declared below, with the supplier state it reads.
+   */
+
   const pathname = usePathname();
   const today = useMemo(() => sydneyToday(), []);
 
@@ -127,6 +153,13 @@ function SheetBody({ onClose }: { onClose: () => void }) {
     [pathname, businesses],
   );
   const [supplier, setSupplier] = useState<Supplier | null>(null);
+
+  /** "Supplier not listed" is chosen. See the block above `mayAddSupplier`. */
+  const onPlaceholder = supplier !== null && supplier.is_placeholder;
+
+  /* So a refusal on the note can bring the note onto the screen. */
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -231,7 +264,14 @@ function SheetBody({ onClose }: { onClose: () => void }) {
 
     if (invoiceNumber.trim() !== '' && supplier) {
       try {
-        const duplicates = await findDuplicates(parsed.supplier_id, invoiceNumber);
+        /*
+         * The assistant path asks a different function for the same answer.
+         * CATCH_UP_027 §3 — narrowing their SELECT policy would otherwise
+         * have stopped this finding anything already paid, silently.
+         */
+        const duplicates = await findDuplicates(parsed.supplier_id, invoiceNumber, {
+          asAssistant: isAssistant(profile),
+        });
         for (const existing of duplicates.slice(0, 3)) {
           // Spec §6 asks for the amount and who entered it; the client asked
           // for the supplier, the number and when it was logged. All five fit,
@@ -280,6 +320,28 @@ function SheetBody({ onClose }: { onClose: () => void }) {
       setErrors(next);
       return;
     }
+    /*
+     * The one blocking check in a sheet whose every other check is a warning.
+     * Before `skipChecks`, deliberately: "Save anyway" past the duplicate
+     * dialog must not also carry an invoice past this.
+     */
+    if (onPlaceholder && note.trim() === '') {
+      setErrors({ note: 'Write who this invoice is from — nothing else will know.' });
+      /*
+       * And scroll to it, because the note is the LAST field in the sheet and
+       * its error renders below it — measured at six pixels under the fold on
+       * a 375×812 phone, which is a refusal nobody sees. Tapping Save and
+       * having nothing happen is worse than the block itself.
+       *
+       * A scroll is safe here and was not on the Suppliers `+` (see the note
+       * on `focusAddField` there): nothing else is moving at this moment. The
+       * sheet is open and settled, no keyboard is arriving, and this is one
+       * movement in answer to one tap.
+       */
+      noteRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+
     setErrors({});
 
     if (!skipChecks) {
@@ -307,6 +369,9 @@ function SheetBody({ onClose }: { onClose: () => void }) {
       payload,
       supplier: { id: supplier.id, name: supplier.name },
       business: { id: business.id, code: business.code, name: business.name },
+      // Mirrors CATCH_UP_026's `stamp_approval`. The trigger decides; this
+      // only decides what is rendered before the trigger has run.
+      awaitsReview: onPlaceholder,
     });
 
     /*
@@ -348,6 +413,20 @@ function SheetBody({ onClose }: { onClose: () => void }) {
 
     if (outcome.kind === 'queued') {
       toast.show('Saved — will send when you’re back online.', 'queued');
+      return;
+    }
+
+    /*
+     * A different sentence, because a different thing happened.
+     *
+     * This invoice is not in Pending, not in any total, and not on any screen
+     * this person can open — so "Saved" on its own would be true and would
+     * still read as a lie ten seconds later, when they go looking for it. The
+     * toast is the only place that gap can be explained, because there is no
+     * row anywhere to carry the explanation.
+     */
+    if (onPlaceholder) {
+      toast.show(`Sent for review · ${formatCents(payload.amount_cents)} — a manager will set the supplier.`);
       return;
     }
 
@@ -423,8 +502,14 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           includePlaceholder={!mayAddSupplier}
           creating={createSupplier.isPending}
           error={errors.supplier_id}
+          /*
+           * Gone once the placeholder IS chosen. Telling somebody to choose a
+           * thing they have already chosen is the interface not keeping up
+           * with them, and the note field below has taken over the job of
+           * saying what to do next — its label becomes the question.
+           */
           hint={
-            mayAddSupplier || !placeholder ? undefined : (
+            mayAddSupplier || !placeholder || onPlaceholder ? undefined : (
               <>
                 Not on the list? Choose <span className="text-ink">{placeholder.name}</span> and
                 write who it is from in the note.
@@ -573,22 +658,42 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           written after the sheet has closed, as a second queued write. A
           textarea rather than an input because an irregularity is a sentence,
           and a single-line field that scrolls sideways invites one word.
+
+          Optional except on "Supplier not listed", where it stops being a note
+          about the invoice and becomes the only record of who sent it. The
+          label, the placeholder and whether it blocks all change together —
+          three signals, one state, so it cannot half-look required.
         */}
         <div className="mt-4">
           <label
             className="mb-1 block text-xs uppercase tracking-widest text-muted"
             htmlFor="invoice-note"
           >
-            Note
+            {onPlaceholder ? 'Who is it from?' : 'Note'}
           </label>
           <textarea
             id="invoice-note"
+            ref={noteRef}
             rows={2}
-            placeholder="Anything odd about this one? Optional."
+            placeholder={
+              onPlaceholder
+                ? 'The supplier’s name, so a manager can add them.'
+                : 'Anything odd about this one? Optional.'
+            }
             value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="w-full rounded-sm border border-hairline bg-card px-3 py-2 text-base text-ink outline-none focus:border-action"
+            onChange={(event) => {
+              setNote(event.target.value);
+              if (errors.note) setErrors((current) => ({ ...current, note: '' }));
+            }}
+            className={`w-full rounded-sm border bg-card px-3 py-2 text-base text-ink outline-none focus:border-action ${
+              errors.note ? 'border-overdue' : 'border-hairline'
+            }`}
           />
+          {errors.note ? (
+            <p role="alert" className="mt-1 text-sm text-overdue">
+              {errors.note}
+            </p>
+          ) : null}
         </div>
       </Sheet>
 

@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AppChrome } from '@/components/app/AppChrome';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { findNearMatches, nearMatchWording } from '@/lib/derive/near-match';
 import { useCurrentProfile } from '@/lib/queries/session';
 import {
   optimisticCustomer,
@@ -55,15 +57,45 @@ export function CustomersList() {
   const [query, setQuery] = useState('');
   const [newName, setNewName] = useState('');
 
+  /* The `+` reaches the add panel at the top. See `addHere` in AppChrome. */
+  const addFieldRef = useRef<HTMLInputElement>(null);
+
+  /* Focus only — it scrolls and opens the keyboard as one movement. The
+     Suppliers screen has the full note. */
+  function focusAddField() {
+    addFieldRef.current?.focus();
+  }
+
   const visible = useMemo(
     () => orderCustomers(filterCustomers(customers, query)),
     [customers, query],
   );
 
-  async function add(event: React.FormEvent) {
+  /*
+   * "Is this one you already have?" Same check and same reasoning as the
+   * Suppliers screen — `lib/derive/near-match.ts`. Deactivated customers are
+   * searched too, which they are anyway on this screen.
+   */
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const nearMatches = useMemo(
+    () => (pendingName === null ? [] : findNearMatches(customers, pendingName)),
+    [customers, pendingName],
+  );
+
+  function attempt(event: React.FormEvent) {
     event.preventDefault();
-    if (!profile || newName.trim() === '') return;
     const name = newName.trim();
+    if (!profile || name === '') return;
+
+    if (findNearMatches(customers, name).length > 0) {
+      setPendingName(name);
+      return;
+    }
+    void add(name);
+  }
+
+  async function add(name: string) {
+    if (!profile) return;
     setNewName('');
     const outcome = await submitWrite(createCustomer, {
       id: optimisticCustomer(crypto.randomUUID(), name).id,
@@ -84,7 +116,10 @@ export function CustomersList() {
   }
 
   return (
-    <AppChrome back={{ href: '/' as Route, label: 'Invoices' }}>
+    <AppChrome
+      back={{ href: '/' as Route, label: 'Invoices' }}
+      addHere={{ label: 'New customer', onPress: focusAddField }}
+    >
       <h1 className="text-h1 mb-4 text-ink">Customers</h1>
 
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
@@ -111,8 +146,9 @@ export function CustomersList() {
       */}
       <section className="mb-4 rounded-sm border border-edge bg-card p-4">
         <h2 className="mb-2 text-xs uppercase tracking-widest text-muted">Add a customer</h2>
-        <form onSubmit={add} className="flex gap-2">
+        <form onSubmit={attempt} className="flex gap-2">
           <input
+            ref={addFieldRef}
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
             placeholder="Their business name"
@@ -203,6 +239,36 @@ export function CustomersList() {
           ))}
         </ul>
       )}
+
+      {/* Spec §6: a warning, never a block. The Suppliers screen has the note. */}
+      <ConfirmDialog
+        open={pendingName !== null && nearMatches.length > 0}
+        title="Already have this one?"
+        points={nearMatches.map(({ entry, reason }) => (
+          <span key={entry.id} className="block">
+            <Link
+              href={`/customers/${entry.id}` as Route}
+              onClick={() => setPendingName(null)}
+              className="text-action underline"
+            >
+              {entry.name}
+            </Link>
+            <span className="mt-0.5 block text-sm text-muted">
+              {nearMatchWording(reason)}
+              {entry.active ? '' : ' · deactivated'}
+            </span>
+          </span>
+        ))}
+        question={pendingName ? `Add “${pendingName}” as well?` : undefined}
+        confirmLabel="Add it anyway"
+        cancelLabel="Go back"
+        onConfirm={() => {
+          const name = pendingName;
+          setPendingName(null);
+          if (name) void add(name);
+        }}
+        onCancel={() => setPendingName(null)}
+      />
     </AppChrome>
   );
 }

@@ -16,8 +16,8 @@ missed once and cost a round trip through a person.
 | `CLAUDE-CODE-NOTES.md` | **Where the bugs will be.** Written from his previous app, which shipped these exact failures. Not hypothetical. |
 | `ARCHITECTURE.md` | **How** it is built, and every decision since, with reasoning. Long. §2 below says how to read it without reading all of it. |
 
-`ARCHITECTURE.md` is 176KB and is an archive, not a briefing. Do not read it
-end to end. Grep for the section you need:
+`ARCHITECTURE.md` is 360KB and is an archive, not a briefing. Do not read
+it end to end. Grep for the section you need:
 
 | Question | Section |
 |---|---|
@@ -36,6 +36,12 @@ end to end. Grep for the section you need:
 | J3 — the PDF, and how a file leaves the app | §48 |
 | J4 — the export, the wipe, and the dialog bug | §49 |
 | J4b — the workbook, the archive, and a lying status column | §50 |
+| The assistant tier, and J5 | §52, §53 |
+| Rounds K and K2 — the `+`, the placeholder, payment history | §56, §57 |
+| The placeholder row that was never created | §58 |
+| Why a migration's notices are never read | §59 |
+| The Review screen's create control, and the year-old test flake | §60 |
+| The wipe, and Supabase's safeupdate guard | §61 |
 | The audit from scratch, and what it found | §43 |
 
 ---
@@ -251,19 +257,20 @@ Not preferences. Each one is load-bearing and several were paid for.
 ## 5. Things that will waste your time
 
 **PARSE EVERY `.sql` FILE BEFORE SENDING IT.** A file goes to the client by
-hand and a syntax error costs a full round trip through a person — which is
-the most expensive unit of time in this project. One command, and it uses the
-REAL PostgreSQL grammar rather than a guess at it:
+hand, so a syntax error costs a round trip through a person — the most
+expensive unit of time in this project. Balanced brackets and a tidy diff are
+not a parse; `verify_catchups.sql` went out with two `union all` in a row and
+came back `42601`. §59.6.
 
 ```bash
 pip install pglast   # once
 python -c "import pglast,glob; [pglast.parse_sql(open(f,encoding='utf-8').read()) for f in glob.glob('db/**/*.sql',recursive=True)]" && echo PARSE OK
 ```
 
-`verify_catchups.sql` was sent with two `union all` in a row and came back
-`ERROR: 42601: syntax error at or near "union"`. Balanced parentheses and a
-sensible-looking diff both said it was fine. **A structural eyeball is not a
-parse.** All 46 files parse clean as of 2026-09-11.
+**`RAISE NOTICE` is invisible in the Supabase SQL editor.** It shows result
+grids and errors and swallows notices, so every `raise notice 'ok'` in every
+CATCH_UP file has been printed into nothing. A check must `raise exception` to
+be felt; anything the client should READ has to be a `select`. §59.
 
 **Bash heredocs break here, and backslashes are the worst of it.** Writing a
 `.tsx`, `.sql` or `.md` file with `cat <<'EOF'` fails on apostrophes, `$$` and
@@ -307,11 +314,11 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. Every database file through `CATCH_UP_027` applied
-and verified. J1 to J5 complete, and Rounds K and K2 with them.
-Deployed — `711b1c5`.**
+**Live and in daily use. Every database file through `CATCH_UP_030` applied
+and verified. J1 to J5 complete, and Rounds K to K2 with them.
+Deployed — `916c2a1`, and `origin/main` matches.**
 
-**Nothing is waiting on anybody.** 1051 tests under three timezones.
+**Nothing is waiting on anybody.** 1062 tests under three timezones.
 
 **The build stamp is a commit, so uncommitted work deploys anonymously.**
 `next.config.ts` takes it from `VERCEL_GIT_COMMIT_SHA` or `git rev-parse
@@ -346,261 +353,152 @@ Phases 1–7, the venue accounts (§34), then eight rounds of feedback:
 | §55 | Next 16, vitest 5, and a linter's first run over this codebase |
 | §56 | **Round K** — the Add control the chevron hid, a `+` that means the screen it is on, near-duplicate names, and an assistant's placeholder entry that was never reviewed |
 | §57 | **Round K2** — one column missing from three selects, and payment history's four doors |
+| §58 | The placeholder row that was never created, and the app that failed silently without it |
+| §59 | Every "ok" a migration printed, nobody read — and two checks that were themselves wrong |
+| §60 | The Review screen's create control, disabled under a comment saying it was the point |
+| §61 | The wipe refused itself: ten bare deletes against Supabase's safeupdate guard |
 
-### The two lessons worth more than the features
+### What this codebase has learned the hard way
+
+The reasoning for each is in `ARCHITECTURE.md` at the section named. These are
+the one-line versions; do not go looking for the control, go looking for the
+§.
+
+**Two that carry an instruction rather than a caution:**
 
 **A fence proven to keep things out has not been proven to have a gate.**
 `verify_staff.mjs` passed for weeks while a shop could not save a single
 invoice, because from outside a missing permission and a working refusal are
-both `42501`. Its one positive write test sat behind `--write` and was never
-run. `db/diagnose_venue_write.mjs` is the other half; run both after any change
-to the staff policies.
-
-**Both halves are now proven** (2026-09-11, §7 item 10). The fence by running
-the script as Parramatta; the gate by that venue having entered a real invoice
-and a real note, which the script reads back. The lesson stands — it was true
-for weeks — but the gap it describes is closed.
-
-**A check that was never extended can cry wolf as easily as it can go
-blind.** `verify_catchups.sql` reported the three venue accounts as a failed
-migration for as long as venue accounts have existed, because it asked "is
-every accent `person-N`" when what CATCH_UP_003 guaranteed was "is any accent
-still a hex colour". A standing false MISSING teaches everybody to skim past
-MISSING. **Ask what a check was protecting, not what it currently tests.**
-§59.4.
-
-**A comment describing behaviour is not behaviour.** The Review screen's
-supplier picker carried `allowCreate={false}` and an empty `onCreate`,
-directly beneath a comment saying "creating from here is on purpose and is the
-point of the note" — and `lib/queries/review.ts` said the same at length. The
-intent was written down twice and the negation wired once, and it survived
-every round that touched the screen. **When a comment says a control exists,
-check that it does.** §60.
-
-**A conditional INSERT that finds nothing is indistinguishable from
-success.** CATCH_UP_013 §5 seeded the placeholder supplier by selecting a
-`created_by` from a role that did not exist yet, matched nothing, inserted
-nothing, and reported success. Its own verification printed the count `0` into
-a result grid, where nobody read it. The row was missing for a year and three
-separate fixes were built on top of it. **Seed with a check that RAISES.**
-§58.1.
-
-**An interface that cannot offer what it was told to offer should say so.**
-Notes §6 says do not offer what cannot be done; this is its mirror, and its
-absence is what made the missing row read as a feature that was never built.
-§58.2.
-
-**A hand-written column list beside a cast is a type that has stopped being
-checked.** Three supplier queries each listed their columns and each omitted
-the same one, then cast the result `as Supplier[]`. `tsc` agreed, every row
-arrived with `is_placeholder: undefined`, and the placeholder feature broke
-in both directions at once — invisible to the tiers that needed it, visible to
-the four who must never see it, because `!undefined` is `true`. Every test
-passed and none of them could have failed: fixtures are written against the
-TYPE, and only the select string decides what actually arrives. **Compare the
-list to something, in a test.** §57.1.
-
-**Ask what else reads through a policy before you narrow it.** Restricting an
-assistant to unpaid rows would also have silenced their duplicate warning,
-because `find_duplicate_invoices` is `security invoker` over `setof invoices`
-— a spec §6 protection removed as a side effect of a permission change, and
-it would have failed silently. CATCH_UP_010 §5 had already hit this for the
-shops and left the answer. §57.3.
-
-**A control is absent along the path somebody actually walks, or it is
-absent.** Twice now — §24.7 on Customers, §56.1 on the supplier picker — the
-answer to "there is no way to add one" has been "there is, just not where you
-looked". Both times the code was right and the report was right. When a report
-says a control is missing, do not go looking for the control; go looking for
-the **path**, and walk it the way the person described. §56.1, §56.4.
-
-**Half a mechanism copied is a mechanism that does not work.** The placeholder
-supplier was given to a new tier without the Review screen that completes it,
-so invoices filed on it were approved into the ledger with nobody asked to
-fix them — for a whole tier, silently. **When a pattern is reused for a new
-role, list what the pattern DEPENDS on, not just what it is.** §56.2.
-
-**A change made for appearance can silently disable behaviour elsewhere.**
-`overflow-hidden`, added to the header to contain the mountain ridge, clipped
-the activity panel that hangs below it — the bell was dead for a whole round
-while the panel rendered perfectly every time. **jsdom does no layout, so no
-rendering test can see this class of bug.** Assert the structural fact, and
-measure the real thing with `getBoundingClientRect`. §45.
-
-**"It doesn't feel smooth" is usually not the animations.** Two of the four
-causes in §41.5 were not animation at all — a missing `touch-action:
-manipulation` putting every tap ~300ms behind the finger, and Chrome's grey
-flash painting over the considered transition. **Check what happens BEFORE the
-animation starts before touching a keyframe.**
-
-**A check that is never extended stops being a check and becomes a claim.**
-`verify_rls.mjs` was proving 8 of 11 tables and reading as though it proved
-all of them; `verify_catchups.mjs` covered 5 of 18 migrations and could not
-see a column at all. Both had been green for months. **When you add a table or
-a column, add it to the verifier in the same commit.** §43.2.
-
-**Read the size of an instruction, not just its direction.** *"Maybe place
-that row just a little bit below"* produced a block pinned to the bottom of
-the page, and the bank details ended up most of a page under the total. **"A
-little bit below" is a gap; what got built was an anchor.** A gap is 30
-points. An anchor is however much white the invoice happens to leave, which on
-a short invoice is most of the page. When an instruction carries a magnitude,
-the magnitude is part of it. §48.4.
-
-**Ask the store what is in it before designing around what you assume.**
-§44.4 spent a paragraph on how to avoid implementing zlib, because it assumed
-uploaded artwork is PNG. One `curl` at the bucket showed Deli's logo is a
-baseline JPEG — which a PDF embeds untouched, no canvas and no zlib. The
-planned complication did not exist. §48.5.
-
-**A default is a claim.** A due date filled in because the field wanted one
-prints a deadline nobody agreed to, and drives every overdue figure off it.
-Where the honest answer is "nobody has decided", the column is nullable and
-the switch is off. §40.1.
-
-**A mock that cannot produce a real state guarantees bugs in it.** The compose
-screen threw on every open for a whole round -- `useSydneyToday()` returns
-**null on the first render** and the screen passed that to `addDays`. Both test
-files and the preview harness mocked the hook to a fixed date, so the frame
-every phone actually renders was the one state nothing could reach. It is a
-knob now. **When a hook is documented as returning null first, the test must
-render that.** §39.8.
-
-**A label is a promise, and an unkept one reads as broken.** "New invoice for
-this customer" navigated to a screen asking who the invoice was for, and was
-reported as "doesn't work" — correctly. Before hunting for a crash, check what
-the control said it would do. §39.1.
+both `42501`. **Run `db/verify_staff.mjs` AND `db/diagnose_venue_write.mjs`
+after any change to the staff policies** — one proves the fence, the other the
+gate. Both proven 2026-09-11.
 
 **`.upsert()` is not `.insert()` under RLS.** PostgREST compiles an upsert to
 `INSERT ... ON CONFLICT`, which brings the table's **UPDATE** policies into the
-permission check. A member passes them via `member_all`; an account whose only
-update policy is conditional does not. Where the replay guarantee is needed
-without upsert: generate the id on the client, use a plain insert, and treat a
-`23505` naming **the primary key and only that key** as the replay succeeding.
-`test/unit/venue-write.test.ts`.
+check. Where the replay guarantee is needed without upsert: generate the id on
+the client, use a plain insert, and treat a `23505` naming **the primary key
+and only that key** as the replay succeeding. `test/unit/venue-write.test.ts`.
+
+**On checks, and trusting them:**
+
+| | |
+|---|---|
+| A check that is never extended stops being a check and becomes a claim. Add a table or column to the verifier in the same commit. | §43.2 |
+| A check never extended can cry wolf as easily as go blind — a standing false MISSING teaches everybody to skim past MISSING. Ask what it was protecting, not what it tests. | §59.4 |
+| A conditional INSERT that finds nothing is indistinguishable from success. Seed with a check that RAISES. | §58.1 |
+| A hand-written column list beside a cast is a type that has stopped being checked. Compare the list to something, in a test. | §57.1 |
+| A mock that cannot produce a real state guarantees bugs in it. | §39.8 |
+| A file that has not been parsed has not been checked, however carefully read. | §59.6 |
+| When every failure is a timeout and never an assertion, the suite is reporting on the machine, not the code. | §60.1 |
+| When somebody reports a partial failure of something that cannot partially fail, count the rows and show them. | §61.1 |
+
+**On what the interface promises:**
+
+| | |
+|---|---|
+| A control absent along the path somebody actually walks is absent. Go looking for the path, not the control. | §24.7, §56.1 |
+| A comment describing behaviour is not behaviour. When a comment says a control exists, check that it does. | §60 |
+| A label is a promise, and an unkept one reads as broken. | §39.1 |
+| An interface that cannot offer what it was told to offer should say so — the mirror of notes §6. | §58.2 |
+| A default is a claim. Where the honest answer is "nobody has decided", the column is nullable and the switch is off. | §40.1 |
+| Read the size of an instruction, not just its direction. "A little bit below" is a gap, not an anchor. | §48.4 |
+
+**On mechanisms, and what they rest on:**
+
+| | |
+|---|---|
+| Half a mechanism copied is a mechanism that does not work. When reusing a pattern for a new role, list what it DEPENDS on. | §56.2 |
+| Ask what else reads through a policy before you narrow it — a permission change must not weaken a protection as a side effect. | §57.3 |
+| A change made for appearance can silently disable behaviour elsewhere; jsdom does no layout, so measure with `getBoundingClientRect`. | §45 |
+| "It doesn't feel smooth" is usually not the animations. Check what happens BEFORE the animation starts. | §41.5 |
+| Ask the store what is in it before designing around what you assume. | §48.5 |
 
 ---
 
-## 6b. What is being built next — J1 to J5
+## 6b. The J roadmap — all of it delivered
 
-**J1 to J5 are built, deployed and complete.** The roadmap agreed after a
-week of real use is finished. §46 to §53. ARCHITECTURE §44 has the design and the reasoning for each;
-§46–§48 have what was actually done, including where §44 was overruled.
+**J1 to J5 are built, deployed and complete**, and so are Rounds K to K2.
+ARCHITECTURE §44 has the design and the reasoning; §46–§53 have what was
+actually done, including where §44 was overruled.
 
-| | | |
-|---|---|---|
-| **J1** | **Done** — §46 | Add-customer while composing; Edit moved inside the panel it edits. `member` is now `manager`, paid/unpaid is the owner's alone, `set_user_role` promotes and demotes, the builder is an invisible owner. |
-| **J2** | **Done** — §47 | Deli's contact block and bank details, owner-only to edit and printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen onto each invoice — §47.1 overrules §44.3 and says why. |
-| **J3** | **Done** — §48 | A PDF written by hand in `lib/pdf/` (no library, nothing compressed), with Deli's logo embedded as a JPEG. Download always, Share where the phone can take a file. Gmail-with-attachment stays unbuildable; the share sheet does the same job. |
-| **J4** | **Built, not deployed** — §49, §50 | Three CSVs (bills, Deli's invoices, their lines) over an optional date range, written by hand like the PDF; and the wipe behind four acts, gated on `is_owner()` in `wipe_everything`. Needs `CATCH_UP_021` run FIRST. It also fixed a dialog bug that predates it — §49.6. |
-| **J5** | **Done** — §53 | **Deli's customers only** — the receivables side; payables untouched. **Manager level**, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. Reopens a decision §28.3 closed. §44.6 |
+| | |
+|---|---|
+| **J1** §46 | Add-customer while composing; Edit inside the panel it edits. `member` became `manager`, paid/unpaid is the owner's alone, the builder is an invisible owner. |
+| **J2** §47 | Deli's contact block and bank details, owner-only, printed on every invoice, plus a ruled signature line that stores nothing. Read **live**, not frozen — §47.1 overrules §44.3. |
+| **J3** §48 | A PDF written by hand in `lib/pdf/`, no library, logo embedded as JPEG. Download always, Share where the phone can take a file. |
+| **J4** §49, §50 | Three CSVs and Excel workbooks over an optional date range; the wipe behind four acts, gated on `is_owner()`. Deployed; `CATCH_UP_021` applied. |
+| **J5** §53 | **Deli's customers only.** Manager level, unlike marking paid. Append-only adjustment rows carrying who and why, every total derived. |
 
-**The three things J1 established, which the rest of the roadmap leans on:**
+**The three things J1 established, which everything since leans on:**
 
-1. **Six allowlists, all named in §46.3.** J2–J5 each ask a permission
-   question; ask it with `is_owner()` or `is_manager_or_above()` and it is
-   already right.
-2. **`set_user_role` refuses five things**, and each refusal comes back as a
-   sentence the screen shows verbatim. CATCH_UP_019 §6 has why each matters.
-3. **The builder is hidden from lists, never from attribution.** An account
-   that can move money and leaves no trace makes the audit trail lie. §44.2.
-
-**Settled since the roadmap was written:** the signature line is a ruled line
-on the paper, nothing stored. The PDF is written by hand rather than imported.
-Discounts are Deli-only and manager-level.
+1. **Nine allowlists** — six named in §46.3, §52 made it eight, §59's
+   `maySeePaymentHistory` is the ninth. Ask a permission question with
+   `is_owner()` or `is_manager_or_above()` and it is already right.
+2. **`set_user_role` refuses five things**, each coming back as a sentence the
+   screen shows verbatim. CATCH_UP_019 §6.
+3. **The builder is hidden from lists, never from attribution.** §44.2.
 
 **Not being built, and why:** creating and deleting logins. Supabase does that
-only through the Auth Admin API, which needs the service-role key — rule 1, the
-one thing this architecture is built to not have. Deactivating covers the real
-need, and the client agreed.
+only through the Auth Admin API, which needs the service-role key — rule 1.
+Deactivating covers the real need, and the client agreed.
 
 ---
 
 ## 7. What is still open
 
-**Nothing is blocking.** Everything through `CATCH_UP_029` is applied,
-`npm audit` is clean, and 1058 tests pass under three timezones.
+**Nothing is blocking.** Everything through `CATCH_UP_030` is applied, `npm
+audit` is clean, and 1062 tests pass under three timezones. Live at
+`916c2a1`, and `origin/main` matches.
 
-**Confirm the database with `db/verify_catchups.sql`, not with the notices.**
-Paste it into the Supabase SQL editor; it returns a table, which is the only
-thing that editor actually shows. It now covers 026 to 029, names the
-placeholder supplier, counts what is filed against it, and ends with a listing
-of who can sign in. §59.
+**Confirm the database with `db/verify_catchups.sql`.** Paste it into the
+Supabase SQL editor — it returns a table, which is the only thing that editor
+shows (§59). Twenty-seven rows: every migration 001–030 it can see, the
+placeholder supplier by name, what is filed against it, who can sign in, and
+who the daily reminder reaches. Last full run 2026-09-11: **every row `ok`**,
+two `info`.
 
-Last full run, 2026-09-11: **every row ok**, one `info` (nothing filed against
-the placeholder). Row 7 reported MISSING against the three venue accounts and
-was the CHECK being wrong, not the database — fixed in §59.4.
+### Never exercised — the real gap
 
-**There is a third venue account, "Test Shop".** §2 names two, GMP and GMH.
-Not necessarily wrong; nobody wrote it down. Row 24 lists every login, and
-`set_user_active` (§54) suspends one if it is not wanted.
-
-The list is in the order it is worth picking things up.
-
-### Never exercised, and that is the real gap
-
-Each of these is BUILT and TESTED and has never been used against live data by
-a person. Tests prove the program checks its own arithmetic; they do not prove
-the feature works on a phone.
+Built, tested, and never used against live data by a person. Tests prove the
+program checks its own arithmetic; they do not prove it works on a phone.
 
 1. **The export has never been run against the live database.** Every byte the
-   CSV and workbook writers produce is asserted, and both were opened with
+   CSV and workbook writers produce is asserted and both were opened with
    independent readers (§50.3). The three *reads* behind them have never run
    with a real session. §49.4.
 
-2. **The wipe has been ATTEMPTED and refused itself, 2026-09-11 — and the
-   deletion is still untested.** It came back "DELETE requires a WHERE
-   clause": ten bare `delete from x;` statements meeting Supabase's
-   **safeupdate** guard, which is preloaded per SESSION by the role the app
-   connects as, so `SECURITY DEFINER` does not exempt it. CATCH_UP_030 adds
-   `where true` to all ten. §61.
+2. **The wipe's deletion has still never run.** It was attempted 2026-09-11
+   and refused itself — ten bare `delete from x;` against Supabase's
+   **safeupdate** guard, which loads per SESSION by the connecting role, so
+   `SECURITY DEFINER` does not exempt it. `CATCH_UP_030` adds `where true` to
+   all ten and it is applied. **Nothing was lost**: a plpgsql function is one
+   transaction, confirmed by counting every table afterwards. §61.
 
-   **Nothing was lost.** A plpgsql function is one transaction, so every
-   delete rolled back with the one that raised — confirmed by counting every
-   table afterwards, all non-zero. "It only wiped some part" was the app
-   clearing its own cache and screens reading empty.
+   **Do not test the deletion on real data.** There is no backup at all
+   (§33.1) and the ledger holds real invoices.
 
-   The deletion itself has STILL never run. Do not test it on real data: there
-   is no backup at all (§33.1), and the ledger currently holds real invoices.
-
-3. ~~Suspension has never been used.~~ **Used** — Test Shop is suspended
-   (verified 2026-09-11, row 24). §54's mechanism works on a real account.
-
-4. **No discount or refund exists yet.** J5's arithmetic, document, PDF and
-   panel are all tested against fixtures. Nothing has been applied to a real
+3. **No discount or refund exists yet.** J5's arithmetic, document, PDF and
+   panel are tested against fixtures; nothing has been applied to a real
    invoice. §53.
 
-4b. **No assistant has ever filed against "Supplier not listed."** There is
-   now a live assistant — Sujan — so this is testable by a real person rather
-   than hypothetically. The path is
-   tested end to end against fixtures and the trigger is verified by the SQL
-   file, but nothing has gone through it with a real session — and neither
-   Mani nor Milan has signed in at all (item 7). The one real test is worth
-   doing right after the deploy: file one on the placeholder, confirm it
-   appears in **Review** and not in Pending; then file one naming a real
-   supplier and confirm it does the opposite. §56.2.
+4. **No assistant has filed against "Supplier not listed."** Sujan is a live
+   assistant, so this is testable by a real person. File one on the
+   placeholder and confirm it reaches **Review**, not Pending; then file one
+   naming a real supplier and confirm it does the opposite — that second half
+   is CATCH_UP_022 §5's decision and must still hold. §56.2.
 
-4c. **Nothing was stranded on the placeholder — answered, 2026-09-11.**
-   `CATCH_UP_026` §5 counts invoices already approved against "Supplier not
-   listed" and reported none, so there is nothing to go back and reassign.
-
-   Worth knowing WHY that count was zero, because it is not luck: §57.1 found
-   that no supplier query ever selected `is_placeholder`, so the placeholder
-   was never offered to the tiers meant to use it and nobody could file
-   against it. The count and the bug explain each other. **If the same
-   question is ever asked again the answer may not be zero**, so the query at
-   the bottom of the file stays worth running.
+   A shop has now done the first half for real (Parramatta, $300, note "Sokko
+   Pastry"), which is what found §60.
 
 ### Waiting on the client, not on code
 
 5. **Deli's bank details are still not set**, by choice — *"I don't have it."*
-   The document handles it (§47.2). Nothing to do unless he gets them.
+   The document handles it (§47.2).
 
-6. **A 7-day undo after a deletion.** Asked for; still undecided. Nothing in
+6. **A 7-day undo after a deletion.** Asked for, still undecided. Nothing in
    the app deletes anything, so losing an account loses no data — but there is
    **no backup at all**, accepted at handover (§33.1). The real answer is
-   Supabase point-in-time recovery, a paid add-on. Needs the plan checked and
-   a decision, not code.
+   Supabase point-in-time recovery, a paid add-on. Needs a decision, not code.
 
 7. **Mani and Milan have never signed in.** `last_sign_in_at` is null for both
    (2026-09-11). Only Parramatta, Sujan and the builder have used the app.
@@ -609,58 +507,40 @@ the feature works on a phone.
 
 ### Known, and not urgent
 
-12. **The daily reminder has no real users.** Round C (§37) built *"a daily
-    reminder at a time each person chooses"* and, measured 2026-09-11 with
-    `verify_catchups.sql` row 25, exactly one reminder exists: **Rabindra, at
-    00:01** — the builder's account, at one minute past midnight, which reads
-    as a leftover test value rather than a time anybody chose.
+8. **`npm run lint` reports 15 problems**, all deliberate documented patterns
+   — a ref read during render, `window.location.href` on sign-out, and nine
+   `set-state-in-effect` findings that are the hydration pattern. The two that
+   were real bugs are fixed. **Do not "fix" the fifteen** without reading what
+   each protects. §55.5, §55.6.
 
-    Mani, Milan and Sujan have none set. Alongside §7 item 7 — Mani and Milan
-    have never signed in at all — the feature is built, tested, deployed and
-    unused.
+9. **The app feels a touch slower on a phone.** Reported long ago, never
+   diagnosed. The database is fast (~45ms warm), so this is round trips.
+   §34.12 has the three things to localise.
 
-    **Asked and answered: leave it as is** (2026-09-11). The 00:01 reminder
-    stays. Do not raise this again as a tidy-up.
+10. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1). Print
+    is unaffected and the CSV and workbook carry any name exactly (§49.1).
+    Only worth reopening if a real customer name hits it.
 
-    **The near-miss that was checked and was not real.** An assistant is
-    excluded from all three audiences — `push_targets` and
-    `push_targets_payment` are `role in ('manager','owner')`, the reminder job
-    is `role in ('manager','owner','builder') and reminder_time is not null`
-    (CATCH_UP_019 §4) — and a `reminder_time` SURVIVES a role change, so
-    somebody demoted to assistant would keep the setting, keep seeing the
-    switch in Settings, and receive nothing.
+11. **The daily reminder has no real users.** Exactly one exists — Rabindra at
+    00:01, the builder's account, which reads as a leftover test value.
+    **Asked and answered 2026-09-11: leave it as is.** Do not raise it again
+    as a tidy-up.
 
-    Sujan's demotion looked like exactly that case. **It was not: he had never
-    set one**, so nothing was lost. Row 26 asks the question on every run and
-    currently answers `ok`. If a fifth tier arrives, or anybody is demoted
-    after setting a time, it is the row that will say so.
+    The near-miss worth keeping: an assistant is in none of the three
+    notification audiences, and a `reminder_time` SURVIVES a role change — so
+    anybody demoted after setting one would keep the switch in Settings and
+    receive nothing. Sujan's demotion looked like that case and was not; he
+    had never set one. `verify_catchups.sql` row 26 asks on every run.
 
-8. ~~An intermittent test failure, never captured.~~ **Captured and fixed,
-   2026-09-11.** Every failure was `Test timed out in 5000ms` and never an
-   assertion; the tests took 5-11 seconds in the suite and milliseconds
-   alone; the four hardest-hit files are the four that render 40-60 rows; the
-   machine was idle with 16 cores. **The suite saturates itself** — one jsdom
-   per file, sixty files, every worker at once.
+### Closed this round, recorded so they are not re-opened
 
-   `testTimeout` is 30s now, and `vitest.config.ts` carries the whole
-   diagnosis. It hides nothing: a timeout is not an assertion and no
-   expectation was relaxed. `pool: 'vmThreads'` was tried first and breaks
-   `pin-storage.test.ts`, because a `node:vm` context has no real
-   `localStorage`. §60.1.
-
-9. **`npm run lint` reports 15 problems**, all of them deliberate documented
-   patterns — a ref read during render, `window.location.href` on sign-out,
-   and nine `set-state-in-effect` findings that are the hydration pattern.
-   The two that were real bugs are fixed. §55.5, §55.6. **Do not "fix" the
-   fifteen** without reading what each one is protecting.
-
-10. **The app feels a touch slower on a phone.** Reported long ago, never
-    diagnosed. The database is fast (~45ms warm), so this is round trips.
-    §34.12 has the three things to localise.
-
-11. **The PDF cannot draw Devanagari**, or any non-Latin script (§48.1).
-    Print is unaffected, and the CSV and workbook carry any name exactly
-    (§49.1). Only worth reopening if a real customer name hits it.
+| | |
+|---|---|
+| The intermittent test failure, uncaptured for a year | every failure a 5s timeout, never an assertion; the suite saturates itself. `testTimeout` is 30s. §60.1 |
+| Suspension never used | Test Shop is suspended, 2026-09-11 |
+| Anything stranded on the placeholder | none — and §57.1 explains why the count could only have been zero |
+| The venue fence and its gate | both proven, 2026-09-11 |
+| `CATCH_UP_021` not run / J4 not deployed | both long since done |
 
 ---
 
@@ -674,8 +554,8 @@ Written for that, because it is the next thing planned.
 |---|---|
 | **Anonymous access** | `node db/verify_rls.mjs` — every table refuses the anon key |
 | **The venue fence AND its gate** | `node db/verify_staff.mjs` — **all pass**, 2026-09-11, as `gmp@shg.com`. §54's note explains why it must be run as Parramatta, not Hurstville |
-| **Every migration applied** | `node db/verify_catchups.mjs` — clean through `CATCH_UP_025` |
-| **Schema, functions, policies** | `db/verify_schema.sql`, pasted into the Supabase SQL editor. **Re-run it — the last run predates `CATCH_UP_025`**, so `set_user_active` is not in that output |
+| **Every migration applied** | `node db/verify_catchups.mjs` for what is visible from outside, then **`db/verify_catchups.sql` in the SQL editor** for the rest — 27 rows, clean through `CATCH_UP_030`, 2026-09-11 |
+| **Schema, functions, policies** | `db/verify_schema.sql`, pasted into the Supabase SQL editor. **Re-run it — the last run predates `CATCH_UP_025`**, so `set_user_active`, `find_duplicate_invoices_assistant` and `ensure_placeholder_supplier` are not in that output |
 | **Dependencies** | `npm audit` — 0 vulnerabilities, Next 16 and vitest 5 |
 | **The assistant tier** | 8 policies, 6 read and 2 insert, and nothing that can UPDATE or DELETE. Confirmed in a live schema dump. §52.3 |
 | **The workbook and the zip** | opened with Python's `zipfile` and `ElementTree`; the money column sums. §50.3 |

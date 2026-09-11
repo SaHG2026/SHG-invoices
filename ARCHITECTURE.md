@@ -16,6 +16,85 @@ This document is the third leg: **how it is put together, and in what order.**
 Everything here is a decision, not an option. Where I have deviated from the spec or chosen between
 two defensible paths, it is marked **[decision]** with the reasoning.
 
+
+---
+
+## Sections
+
+Every section, in order, so that finding one does not require grepping blind.
+**This list is navigation and nothing else** — no section below is summarised
+here, because a summary of an append-only record is a second record that goes
+stale on its own.
+
+Nothing in this file is edited when it is superseded. A later section says so
+and says why, so if two sections disagree the **higher number is what is
+true** and the lower one is why it changed.
+
+| | |
+|---|---|
+| §0 | The shape of the thing, in one paragraph |
+| §1 | Rendering model — [decision] client-first, not server-first |
+| §2 | The most important data decision — [decision] the unpaid set is client-resident |
+| §3 | Time — one module, one hook, no exceptions |
+| §4 | Money — one parser, one formatter |
+| §5 | Database |
+| §6 | The form guard — [decision] one global, not one per component |
+| §7 | Writes, optimism and the offline queue |
+| §8 | Auth and the PIN — the security posture, stated plainly |
+| §9 | Constants |
+| §10 | Directory layout |
+| §11 | Styling |
+| §12 | Testing — small, and aimed at the known bugs |
+| §13 | Environments |
+| §14 | Workflow |
+| §15 | Decisions taken, and what is still open |
+| §18 | Supplier payment terms — deferred to Phase 6, deliberately |
+| §16 | Information architecture — revised after the Phase 1 review |
+| §17 | Deli Delights — [decision] a second ledger, not a flag |
+| §19 | Where the build has got to |
+| §20 | Navigation, branding and the customer list — after the Phase 6 review |
+| §21 | The home screen — the second half of the §20 tidy-up |
+| §22 | Faces and marks |
+| §23 | The tick that erased two invoices, and a motion pass |
+| §24 | Second round of phone feedback |
+| §25 | Receivables, and the sheet that would not sit still |
+| §26 | Copy, and who hears about a payment |
+| §27 | The green repaint, and native screen transitions |
+| §28 | Going live — the clean slate, and who counts as one of the four |
+| §29 | Phase 7 — the app off the network, and push |
+| §30 | The builder, and pictures that change without a deployment |
+| §31 | The third motion pass, and the slate |
+| §32 | Signing out no longer takes somebody's work with it |
+| §33 | Handover — what was accepted, and what is next |
+| §34 | Venue staff accounts — the day `role` became a permission |
+| §35 | Round A — the figures became controls |
+| §36 | Round B — a shop's invoice waits to be let in |
+| §37 | Round C — a reminder at a time you choose |
+| §38 | Round D — Deli issues an invoice it can print |
+| §39 | Round E — the price list is the compose screen |
+| §40 | Round F — the receivables side grows up |
+| §41 | Round G — the design, and why the app felt slow |
+| §42 | Round H — the band settles down |
+| §43 | Round I — the shop edit boundary, and an audit from scratch |
+| §44 | The roadmap — J1 to J5 |
+| §45 | The bell that rendered perfectly and could not be seen |
+| §46 | J1 — the two bugs, and three real tiers |
+| §47 | J2 — the document |
+| §48 | J3 — Download, Share, Print |
+| §49 | J4 — the records leaving the app |
+| §50 | J4b — a workbook, an archive, and a status that was lying |
+| §51 | The notification icon that was a white blob |
+| §52 | A fourth tier — assistant |
+| §53 | J5 — discounts and refunds |
+| §54 | Suspending an account |
+| §55 | Next 15 to 16, and vitest 2 to 5 |
+| §56 | Round K — the three finds, and the hole one of them opened |
+| §57 | Round K2 — one missing column, and a curtain made into a wall |
+| §58 | The row that was never there |
+| §59 | Every "ok" a migration has ever printed, nobody has read |
+| §60 | The control whose comment said it existed |
+| §61 | The wipe refused itself |
+
 ---
 
 ## 0. The shape of the thing, in one paragraph
@@ -6074,6 +6153,19 @@ it was not written for.
 the working tree has real changes in.
 
 ---
+
+## 53. J5 — discounts and refunds
+
+The heading this section never had. `53.1` to `53.3` were written and the
+`## 53.` above them was not, so seven cross-references in `HANDOFF.md` and
+this file pointed at a section that did not exist — and every one of them
+resolved by eye, because a reader scanning for "53" finds `53.1` and stops.
+
+Found by generating the index at the top of this file: §52 was followed by
+§54. **An index is a check as well as a map**, and it is the only one that
+would have caught this.
+
+The design is in §44.6; what follows is what was actually built.
 
 ### 53.1 The migration a cosmetic fix rolled back
 

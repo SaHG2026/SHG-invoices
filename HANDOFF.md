@@ -597,7 +597,10 @@ the feature works on a phone.
 
     Mani, Milan and Sujan have none set. Alongside §7 item 7 — Mani and Milan
     have never signed in at all — the feature is built, tested, deployed and
-    unused. Nothing to fix; worth knowing before anybody spends time on it.
+    unused.
+
+    **Asked and answered: leave it as is** (2026-09-11). The 00:01 reminder
+    stays. Do not raise this again as a tidy-up.
 
     **The near-miss that was checked and was not real.** An assistant is
     excluded from all three audiences — `push_targets` and

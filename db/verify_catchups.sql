@@ -292,5 +292,54 @@ select * from (
                             ', ' order by role, display_name)
             from profiles)
 
+
+  -- ------------------------------------------------------- notifications ----
+  -- Who the daily reminder actually reaches.
+  --
+  -- The job's audience is an allowlist: `role in ('manager','owner','builder')
+  -- and reminder_time is not null` (CATCH_UP_019 section 4). An assistant is
+  -- in none of the three audiences — the two push views say
+  -- `role in ('manager','owner')` — and §52 recorded that exclusion as
+  -- deliberate and correct.
+  --
+  -- It was reasoned when the tier was hypothetical. Row 26 is what happens
+  -- when it is not.
+  union all
+  select 25, 'notifications', 'who the daily reminder reaches',
+         'info',
+         coalesce(
+           (select string_agg(display_name || ' at ' || reminder_time::text,
+                              ', ' order by display_name)
+              from profiles
+             where active
+               and role in ('manager', 'owner', 'builder')
+               and reminder_time is not null),
+           'nobody has set a reminder time')
+
+  union all
+  -- The silent loss.
+  --
+  -- Somebody who set a reminder time and then changed role keeps the setting,
+  -- keeps the switch showing it in Settings, and stops receiving anything.
+  -- Nothing tells them, because the audience is decided by the job rather
+  -- than by the row. `CHECK`, not `MISSING`: it is a consequence to notice,
+  -- and possibly to accept, not a migration that failed.
+  select 26, 'notifications', 'a reminder set that will never fire',
+         case when exists (
+           select 1 from profiles
+            where active
+              and reminder_time is not null
+              and role not in ('manager', 'owner', 'builder')
+         ) then 'CHECK' else 'ok' end,
+         coalesce(
+           (select string_agg(display_name || ' (' || role || ', set ' ||
+                              reminder_time::text || ')',
+                              ', ' order by display_name)
+              from profiles
+             where active
+               and reminder_time is not null
+               and role not in ('manager', 'owner', 'builder')),
+           'everyone with a reminder time is in the audience')
+
 ) checks
 order by n;

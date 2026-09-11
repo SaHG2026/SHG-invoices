@@ -53,10 +53,18 @@ instantaneous". Every feature decision defers to it.
 - **Database:** Supabase, project `wkjesptogulnemfhmfod`
 - **Local config:** `.env.local`, gitignored, already populated
 
-**Who is who.** Mani (owner, CEO), Milan (manager, COO), Sujan (manager, GM),
-Rabindra (builder — maintains the app, out of every list and both notification
-audiences, access untouched). Plus two shared shop logins, GMP and GMH, role
-`staff`.
+**Who is who**, as of 2026-09-11, read out of the database rather than
+remembered — `db/verify_catchups.sql` row 24 lists it:
+
+Mani (owner, CEO), Milan (manager, COO), **Sujan (assistant** — was manager,
+GM), Rabindra (builder — maintains the app, out of every list and both
+notification audiences, access untouched). Plus shop logins GMP and GMH, role
+`staff`, and a third, **Test Shop, suspended**.
+
+**Sujan is an assistant now, and that is a bigger change than a label.** §7
+item 7 records that Sujan is one of only three accounts that has ever signed
+in, so the tier §52 built for a hypothetical person is now held by the app's
+most active real user. What it costs him is in §7 item 12.
 
 ### The one thing that everything else assumes
 
@@ -530,13 +538,16 @@ the feature works on a phone.
 2. **The wipe has never been run**, deliberately, and should not be tested on
    real data. Its four steps and its refusals are tested; the deletion is not.
 
-3. **Suspension has never been used.** §54.
+3. ~~Suspension has never been used.~~ **Used** — Test Shop is suspended
+   (verified 2026-09-11, row 24). §54's mechanism works on a real account.
 
 4. **No discount or refund exists yet.** J5's arithmetic, document, PDF and
    panel are all tested against fixtures. Nothing has been applied to a real
    invoice. §53.
 
-4b. **No assistant has ever filed against "Supplier not listed."** The path is
+4b. **No assistant has ever filed against "Supplier not listed."** There is
+   now a live assistant — Sujan — so this is testable by a real person rather
+   than hypothetically. The path is
    tested end to end against fixtures and the trigger is verified by the SQL
    file, but nothing has gone through it with a real session — and neither
    Mani nor Milan has signed in at all (item 7). The one real test is worth
@@ -572,6 +583,25 @@ the feature works on a phone.
    found the switch.
 
 ### Known, and not urgent
+
+12. **Sujan's daily reminder stopped when he became an assistant, and
+    nothing said so.** All three notification audiences are allowlists that
+    exclude the tier — `push_targets` and `push_targets_payment` are
+    `role in ('manager','owner')`, and the reminder job is
+    `role in ('manager','owner','builder') and reminder_time is not null`
+    (CATCH_UP_019 §4). §52 recorded that exclusion as deliberate and correct,
+    and it was — reasoned when the tier was hypothetical.
+
+    **The setting survives the role change.** His `reminder_time` is still
+    set, Settings still shows the switch, and nothing arrives. `verify_catchups.sql`
+    row 26 now names anybody in that state, and row 25 lists who the reminder
+    actually reaches.
+
+    Not a bug — the allowlists are doing what they were written to do. It is a
+    consequence of the demotion that is invisible from inside the app, and a
+    decision for the owner: leave it, or add `assistant` to the reminder
+    audience alone (one view, not the push ones — §52.2 explains why widening
+    is the tempting wrong move).
 
 8. **An intermittent test failure, and it is NOT timezone-specific.** See the
    long note in this section's history — recorded for a year as a

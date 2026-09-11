@@ -189,13 +189,8 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied.
-  **001 to 026 are applied and verified. 027 is written and NOT yet
-  applied** — hiding settled money from an assistant. Unlike 026 it may run
-  before, with or after its deploy: neither order leaves a broken state, and
-  the file's header says why. `verify_catchups.mjs` reports
-  `find_duplicate_invoices_assistant` MISSING until it has been run, which is
-  the check working, not a fault
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 027,
+  all applied and verified** by `verify_catchups.mjs` (2026-09-11)
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -278,12 +273,11 @@ Scope queries with `within()`.
 
 ## 6. Where the build has got to
 
-**Live and in daily use. Every database file through `CATCH_UP_025` applied
-and verified. J1 to J5 complete. Deployed — `7f7b43a`.**
+**Live and in daily use. Every database file through `CATCH_UP_027` applied
+and verified. J1 to J5 complete, and Rounds K and K2 with them.
+Deployed — `711b1c5`.**
 
-**Round K is deployed and `CATCH_UP_026` is applied.** Round K2 — §57 — is
-built and NOT deployed, and `CATCH_UP_027` has not been run. That pair is
-order-independent, unlike 026's. 1051 tests under three timezones.
+**Nothing is waiting on anybody.** 1051 tests under three timezones.
 
 **The build stamp is a commit, so uncommitted work deploys anonymously.**
 `next.config.ts` takes it from `VERCEL_GIT_COMMIT_SHA` or `git rev-parse
@@ -461,11 +455,10 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**One thing is waiting on a person, and it is not urgent.**
-`CATCH_UP_027` is written and NOT applied — settled money hidden from an
-assistant. It may run before, with or after its deploy. Everything through
-`CATCH_UP_026` is applied and confirmed by `verify_catchups.mjs`, `npm audit`
-is clean, and 1051 tests pass under three timezones.
+**Nothing is blocking.** Everything through `CATCH_UP_027` is applied and
+confirmed by `verify_catchups.mjs`, `npm audit` is clean, and 1051 tests pass
+under three timezones. The deploy is aliased to the live domain and its
+commit is `711b1c5`.
 
 The list is in the order it is worth picking things up.
 
@@ -497,12 +490,16 @@ the feature works on a phone.
    appears in **Review** and not in Pending; then file one naming a real
    supplier and confirm it does the opposite. §56.2.
 
-4c. **Anything already sitting on the placeholder is NOT moved by
-   `CATCH_UP_026`**, deliberately — un-approving a row somebody may have acted
-   on would take money out of a total with no notice, and would assert these
-   were never approved, which is false. §5 of the file counts them and prints
-   the query to list them. If it reports a number, each one needs a real
-   supplier chosen from its invoice screen.
+4c. **Nothing was stranded on the placeholder — answered, 2026-09-11.**
+   `CATCH_UP_026` §5 counts invoices already approved against "Supplier not
+   listed" and reported none, so there is nothing to go back and reassign.
+
+   Worth knowing WHY that count was zero, because it is not luck: §57.1 found
+   that no supplier query ever selected `is_placeholder`, so the placeholder
+   was never offered to the tiers meant to use it and nobody could file
+   against it. The count and the bug explain each other. **If the same
+   question is ever asked again the answer may not be zero**, so the query at
+   the bottom of the file stays worth running.
 
 ### Waiting on the client, not on code
 

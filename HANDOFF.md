@@ -189,8 +189,10 @@ There is no migration CLI. **The client applies SQL by hand** in the Supabase
 SQL editor.
 
 - `db/migrations/` is the source of truth for a fresh install
-- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 027,
-  all applied and verified** by `verify_catchups.mjs` (2026-09-11)
+- `db/CATCH_UP_0NN.sql` are deltas already sent and applied — **001 to 027
+  applied and verified. 028 is written and NOT yet applied** — it repairs the
+  missing "Supplier not listed" row, and its notices say WHICH of the two ways
+  it went missing, which is the only record of why. §58
 - Write a new `CATCH_UP`, send it with `SendUserFile`, make it **idempotent**
 - **Batch changes.** Each file is a round trip through a person
 - **Say explicitly whether the SQL must run before or after the deploy.** It
@@ -327,6 +329,19 @@ the script as Parramatta; the gate by that venue having entered a real invoice
 and a real note, which the script reads back. The lesson stands — it was true
 for weeks — but the gap it describes is closed.
 
+**A conditional INSERT that finds nothing is indistinguishable from
+success.** CATCH_UP_013 §5 seeded the placeholder supplier by selecting a
+`created_by` from a role that did not exist yet, matched nothing, inserted
+nothing, and reported success. Its own verification printed the count `0` into
+a result grid, where nobody read it. The row was missing for a year and three
+separate fixes were built on top of it. **Seed with a check that RAISES.**
+§58.1.
+
+**An interface that cannot offer what it was told to offer should say so.**
+Notes §6 says do not offer what cannot be done; this is its mirror, and its
+absence is what made the missing row read as a feature that was never built.
+§58.2.
+
 **A hand-written column list beside a cast is a type that has stopped being
 checked.** Three supplier queries each listed their columns and each omitted
 the same one, then cast the result `as Supplier[]`. `tsc` agreed, every row
@@ -455,10 +470,15 @@ need, and the client agreed.
 
 ## 7. What is still open
 
-**Nothing is blocking.** Everything through `CATCH_UP_027` is applied and
-confirmed by `verify_catchups.mjs`, `npm audit` is clean, and 1051 tests pass
-under three timezones. The deploy is aliased to the live domain and its
-commit is `711b1c5`.
+**One thing is blocking a live feature.** `CATCH_UP_028` is written and NOT
+applied: the "Supplier not listed" row does not exist in the database, so a
+shop and an assistant still have no way to file a delivery from somebody new.
+Two rounds of app work behind that row are correct and inert until it runs.
+§58.
+
+Everything through `CATCH_UP_027` is applied and confirmed by
+`verify_catchups.mjs`, `npm audit` is clean, and 1058 tests pass under three
+timezones.
 
 The list is in the order it is worth picking things up.
 

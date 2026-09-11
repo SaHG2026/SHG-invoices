@@ -120,6 +120,29 @@ export function SupplierField({
    */
   const offerTypeToAdd = allowCreate && browsing && !offerCreate;
 
+  /*
+   * The placeholder was asked for and is not in the list.
+   *
+   * -------------------------------------------------------------------------
+   * This exists because its absence was silent for a year.
+   *
+   * `includePlaceholder` is true on exactly the two sheets whose only way to
+   * file an unknown delivery is that row — a shop, and an assistant. Neither
+   * may create a supplier. So if the row is missing from the data, those two
+   * tiers get a picker with no way out of it and NOTHING anywhere says why:
+   * no error, no empty state, just an absence that reads as the feature never
+   * having been built. It was reported exactly that way, twice.
+   *
+   * The row went missing in the database (CATCH_UP_028 has the two ways that
+   * happens, and the wipe is still one of them). The app cannot fix that and
+   * should not try. What it can do is stop failing silently — an interface
+   * that cannot offer what it was told to offer should say so, which is the
+   * other half of notes §6.
+   * -------------------------------------------------------------------------
+   */
+  const placeholderMissing =
+    includePlaceholder && !suppliers.some((supplier) => supplier.active && supplier.is_placeholder);
+
   function choose(supplier: Supplier) {
     onSelect(supplier);
     setQuery(supplier.name);
@@ -183,6 +206,20 @@ export function SupplierField({
       ) : null}
 
       {hint && !error ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+
+      {/*
+        Not styled as an error, because the person reading it has done nothing
+        wrong and cannot act on it either. It tells them the one thing that
+        keeps the invoice moving — write it in the note — and names the fault
+        so the message they send upstream is useful rather than "it's broken".
+      */}
+      {placeholderMissing && !error ? (
+        <p className="mt-1 text-xs text-muted">
+          <span className="text-ink">“Supplier not listed” is missing from this list.</span> Pick
+          the closest supplier and write who it is really from in the note, then tell head office
+          the placeholder row needs restoring.
+        </p>
+      ) : null}
 
       {listOpen ? (
         <ul className="mt-1 max-h-[40dvh] overflow-y-auto overscroll-contain border border-hairline bg-card">

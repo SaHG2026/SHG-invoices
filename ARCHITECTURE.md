@@ -6847,3 +6847,82 @@ directions; the bell filter and the menu row were both proven by deletion
 too).
 
 `npm run lint` still reports the same 15, and §55.6 still applies.
+
+
+---
+
+## 58. The row that was never there
+
+Two rounds were spent making "Supplier not listed" work, and it still did not
+appear for a shop or an assistant. §56.2 wired the behaviour behind it. §57.1
+found the column that made it invisible and fixed it. Reported again anyway:
+*"nope. still not in staff/assistant."*
+
+With the code path proven and the column restored, one candidate was left.
+**The row does not exist.**
+
+### 58.1 Two ways a seeded row goes missing, and both were open
+
+**CATCH_UP_013 §5 seeded it conditionally, against a role that did not exist
+yet.** The insert selected a `created_by` from `profiles` where
+`role in ('owner', 'builder')` — and 013 ran *before* CATCH_UP_019 renamed the
+tiers, so `owner` was not a value any profile could hold. Only the builder
+could match. If that profile was absent, inactive, or differently named at
+that moment, the SELECT returned nothing, the INSERT wrote nothing, and **the
+file reported success**, because an insert of zero rows is not an error.
+
+Its verification block did count `placeholder_suppliers`. The count would have
+read `0`. It printed into a result grid, and a number nobody reads is not a
+check — the same failure §43.2 named about `verify_rls.mjs` and
+`verify_catchups.mjs`, one layer down. CATCH_UP_028 §4 raises instead.
+
+**`wipe_everything` deletes every supplier and recreates none.** The wipe has
+never been run, so it is not what happened here — but the first time it is,
+the two tiers lose the row again and the symptom is exactly this week's. It is
+written down in 028 §3 with the statement to fix it, deliberately not applied:
+replacing the function that deletes the entire ledger, from a file whose job
+is to repair one row, is more risk than the problem is worth.
+
+> A conditional INSERT that finds nothing is indistinguishable from success.
+> Seed with a check that RAISES, or the absence is silent.
+
+### 58.2 The app now says when it cannot do what it was told
+
+The deeper fault is not the missing row. It is that **nothing anywhere said
+so**.
+
+`includePlaceholder` is true on exactly two sheets, and both belong to tiers
+forbidden from creating a supplier. The row is their only way to file a
+delivery from somebody new. With it missing they got a picker with no way out
+and no message — an absence that reads as the feature never having been built,
+which is precisely how it was reported, twice.
+
+`SupplierField` now checks whether the row it was told to offer is actually
+there, and says so if it is not: pick the closest supplier, write the real one
+in the note, and tell head office the placeholder needs restoring. Not styled
+as an error — the person reading it has done nothing wrong and cannot fix it
+— and it blocks nothing.
+
+This is the other half of notes §6. "Do not offer what cannot be done" has a
+mirror: **an interface that cannot offer what it was told to offer should say
+so**, rather than rendering a smaller list and hoping.
+
+### 58.3 Why no test could have caught it, for the third time
+
+Every fixture and every mock in the suite contained the placeholder, because
+they are written from the type and the intent. The state those two tiers were
+actually in — the list without it — was the one state nothing in the suite
+could reach.
+
+That is §39.8 for the third time in three rounds (the compose screen's null
+first render, the missing `is_placeholder` column, and now the missing row).
+The shape is always the same: **the mock is built from what the code expects,
+so it cannot produce what the code fears.**
+
+`test/unit/placeholder-missing.test.tsx` renders the list without it on
+purpose, and asserts all three things the notice has to do — name the fault,
+say what to do instead, and get out of the way.
+
+### 58.4 Counts
+
+1058 tests under three timezones, up from 1051.

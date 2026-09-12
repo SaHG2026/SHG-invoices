@@ -114,9 +114,12 @@ select * from (
          case when (
            select count(*) from profiles where accent like '#%'
          ) = 0 then 'ok' else 'MISSING' end,
-         (select coalesce(string_agg(display_name || '=' || accent, ', '
-                                     order by display_name), 'all converted')
-            from profiles where accent like '#%')
+         coalesce(
+           (select string_agg(display_name || '=' || accent, ', ' order by display_name)
+              from profiles where accent like '#%'),
+           -- Says what it searched. A pass that does not is indistinguishable
+           -- from a pass over an empty table. §62.
+           'none of ' || (select count(*)::text from profiles) || ' profiles')
 
   union all
   select 23, 'accents', 'every accent is a slot the app knows',
@@ -339,7 +342,11 @@ select * from (
              where active
                and reminder_time is not null
                and role not in ('manager', 'owner', 'builder')),
-           'everyone with a reminder time is in the audience')
+           -- The count is the point: "everyone" over zero reminders is a
+           -- sentence that is true and says nothing. §62.
+           'checked ' || (select count(*)::text from profiles
+                           where active and reminder_time is not null)
+                      || ' reminder(s) — all in the audience')
 
 
   -- ---------------------------------------------------------------- 030 ----

@@ -386,6 +386,7 @@ and only that key** as the replay succeeding. `test/unit/venue-write.test.ts`.
 | A check that is never extended stops being a check and becomes a claim. Add a table or column to the verifier in the same commit. | §43.2 |
 | A check never extended can cry wolf as easily as go blind — a standing false MISSING teaches everybody to skim past MISSING. Ask what it was protecting, not what it tests. | §59.4 |
 | A conditional INSERT that finds nothing is indistinguishable from success. Seed with a check that RAISES. | §58.1 |
+| A scan that finds nothing is indistinguishable from a scan searching for nothing. Make a check say what it SEARCHED, not just what it found. | §62 |
 | A hand-written column list beside a cast is a type that has stopped being checked. Compare the list to something, in a test. | §57.1 |
 | A mock that cannot produce a real state guarantees bugs in it. | §39.8 |
 | A file that has not been parsed has not been checked, however carefully read. | §59.6 |

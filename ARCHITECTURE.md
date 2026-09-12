@@ -94,6 +94,7 @@ true** and the lower one is why it changed.
 | §59 | Every "ok" a migration has ever printed, nobody has read |
 | §60 | The control whose comment said it existed |
 | §61 | The wipe refused itself |
+| §62 | A scan that finds nothing, and a scan that searches for nothing |
 
 ---
 
@@ -7312,3 +7313,64 @@ run.
 That is the second time this round a check nearly shipped broken, and both
 were caught by simulating what the database would actually see rather than by
 reading the file.
+
+
+---
+
+## 62. A scan that finds nothing, and a scan that searches for nothing
+
+This one arrived from outside, which is why it is worth writing down twice as
+carefully. ClockR — a sibling project on this machine — was building a gate to
+prove its service-role key never reaches the client bundle, and found the trap
+while writing it:
+
+> a scan that finds nothing looks identical to a scan that searches for
+> nothing
+
+`grep` exiting clean is the same observable whether the needle is genuinely
+absent, the pattern is malformed, the path does not exist, or the variable
+holding the needle is empty. Their remedy was to prove it in both directions
+and to add a third: it passes on a real build, it exits 1 and names the file
+when the key is planted under `.next/static/`, **and it refuses to print a
+pass at all when there is nothing to search for.**
+
+### 62.1 It lands here, in the file written to catch exactly this
+
+`verify_catchups.sql` had two rows of that shape:
+
+```sql
+select 7, 'CATCH_UP_003', 'no accent is still a hex colour',
+       case when (select count(*) from profiles where accent like '#%') = 0
+            then 'ok' else 'MISSING' end,
+       ... 'all converted'
+```
+
+Over an empty `profiles` it reports **ok — all converted**, which is true and
+says nothing. Row 26 had it too: *"everyone with a reminder time is in the
+audience"* is a sentence that survives zero reminders intact.
+
+Neither was going to fire, and the reason is worse than the bug: rows 24 and
+25 happen to print the population beside them, so an empty table would have
+been obvious from the row underneath. **Protected by adjacency, not by
+design** — and adjacency is a property of the current row order, which nothing
+enforces.
+
+Both rows now say what they searched: `none of 7 profiles`, `checked 0
+reminder(s)`. A pass that names its denominator cannot be mistaken for a pass
+over nothing.
+
+### 62.2 Where this sits in the family
+
+The fourth variant of one idea, and the first to arrive from another project:
+
+| | |
+|---|---|
+| §43.2 | a check never extended stops being a check and becomes a claim |
+| §59.4 | …and can cry wolf as easily as go blind |
+| §58.1 | a conditional INSERT that finds nothing is indistinguishable from success |
+| §62 | a scan that finds nothing is indistinguishable from a scan searching for nothing |
+
+The common shape: **absence is the same observable as success**, and only
+naming the denominator tells them apart.
+
+> Make a check say what it searched, not just what it found.
